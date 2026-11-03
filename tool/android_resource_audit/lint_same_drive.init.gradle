@@ -1,0 +1,13 @@
+// Diagnostic-only Windows environment repair: Kotlin test/lint task creation
+// cannot relativize C: pub-cache projects against a D: output directory.
+// Keep those external projects' outputs on C:, with every lint rule enabled.
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects.each { project ->
+        def sourceDrive = project.projectDir.toPath().root
+        def outputDrive = project.layout.buildDirectory.get().asFile.toPath().root
+        if (sourceDrive != outputDrive) {
+            def auditCache = new File('C:/Users/11/AppData/Local/Temp/android-resource-audit-lint-20261101')
+            project.layout.buildDirectory.set(new File(auditCache, project.name))
+        }
+    }
+}

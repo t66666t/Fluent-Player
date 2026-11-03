@@ -1,0 +1,14 @@
+Lyricify Lyrics Helper
+Copyright 2023 XY Wang, WXRIW
+https://github.com/WXRIW/Lyricify-Lyrics-Helper
+Reference revision: e875781e2e889d97c3c518fe388decd14805a56f
+Licensed under the Apache License, Version 2.0; see LICENSE in this directory.
+
+Fluent Player adapts the provider request structures for QQ Music, NetEase
+Cloud Music and LRCLIB into a Dart implementation in
+lib/features/lyrics/lyric_search_service.dart. The NetEase adapter uses the
+HTTPS plain API variants, and the Flutter implementation adds cancellation,
+partial-source error reporting, synchronized-lyrics validation, previews,
+and integration with the application's existing subtitle storage.
+
+The .NET library itself is not bundled or required at runtime.

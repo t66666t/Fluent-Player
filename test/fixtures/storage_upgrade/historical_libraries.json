@@ -1,0 +1,28 @@
+[
+  {
+    "tag": "release",
+    "library": {
+      "collections": [{"id":"old-folder","name":"旧收藏","createTime":1700000000,"childrenIds":["old-video"]}],
+      "videos": [{"id":"old-video","path":"@DATA@/imported_videos/中文 视频.mp4","title":"历史节目","parentId":"old-folder","durationMs":90000,"lastPositionMs":23000,"subtitlePath":"@DATA@/subtitles/中文.srt","lastUpdated":1700000010,"type":"video"}],
+      "rootChildrenIds": ["old-folder"]
+    }
+  },
+  {
+    "tag": "v0.4.4",
+    "library": {
+      "schemaVersion":2,
+      "collections": [{"id":"old-folder","name":"旧收藏","createTime":1700000000,"childrenIds":["old-video"]}],
+      "videos": [{"id":"old-video","path":"@DATA@/imported_videos/中文 视频.mp4","title":"历史节目","parentId":"old-folder","durationMs":90000,"lastPositionMs":23000,"subtitlePath":"@DATA@/subtitles/中文.srt","lastUpdated":1700000010,"type":"video","extraSubtitles":{"原字幕":"@DATA@/subtitles/中文.srt"}}],
+      "rootChildrenIds": ["old-folder"]
+    }
+  },
+  {
+    "tag": "v0.5.1",
+    "library": {
+      "schemaVersion":2,
+      "collections": [{"id":"old-folder","name":"旧收藏","createTime":1700000000,"childrenIds":["old-video"]}],
+      "videos": [{"id":"old-video","path":"@DATA@/imported_videos/中文 视频.mp4","title":"历史节目","parentId":"old-folder","durationMs":90000,"lastPositionMs":23000,"subtitlePath":"@DATA@/subtitles/中文.srt","lastUpdated":1700000010,"type":"video","extraSubtitles":{"原字幕":"@DATA@/subtitles/中文.srt"},"usesManagedAssociatedSubtitles":true}],
+      "rootChildrenIds": ["old-folder"]
+    }
+  }
+]

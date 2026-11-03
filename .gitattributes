@@ -1,0 +1,6 @@
+packaging/linux/*.sh text eol=lf
+
+# Keep frozen model identities and compatibility fixtures byte-for-byte on every OS.
+assets/models/catalog.json -text
+assets/models/ocr_catalog.json -text
+test/fixtures/local_model_compatibility.json -text

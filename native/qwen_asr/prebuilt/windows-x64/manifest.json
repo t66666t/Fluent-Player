@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "platform": "windows",
+  "arch": "x64",
+  "backend": "vulkan",
+  "build": "f7811973fc537ef9b13cd5e530e5d3100e3e93e801911b742e60b40b6dcd9080",
+  "sources": {
+    "native/qwen_asr/CMakeLists.txt": "9e710a6bb43bacaec40b1b59320a6cb0e255729fbbd42cbc48fb651061574932",
+    "native/qwen_asr/fluent_qwen_asr.podspec": "0393fa2094f5e571134bfc4b26b8d2f744786754ae58e04ded2e813bc263e708",
+    "native/qwen_asr/qwen_jni.cpp": "87c414c884889af72bbb7ccc1f35d70f1056873dde8805392e4eae64e970f194",
+    "native/qwen_asr/qwen_worker.cpp": "00d739201bee88710e6ef132f2e64db6e0869514b4c37a8c1b62ca9d94e4d1b0",
+    "native/qwen_asr/qwen_worker.h": "ebc2ceee26383c26ead79c6380444350acb801d2193d204c7cfbeb54f9e609c7",
+    "native/qwen_asr/runtime.lock.json": "7361b5696bfe22a453ebee7ba7a130caccb487fe2cf7d991de1dad460cd0d708",
+    "native/qwen_asr/text/Cargo.lock": "7d8414939cc1f87ab55b836cf3fef1622f95af22e44910679e1a555ca142ebe2",
+    "native/qwen_asr/text/Cargo.toml": "2a87663da6bc2417d3e567d192757df07199248eee3e9797f02c981842488cfa",
+    "native/qwen_asr/text/src/lib.rs": "f0302632490fcf1f3711b2d77a8967bfb5ac3204efc0b947d3c2425b3863f127",
+    "tool/build_qwen_asr.py": "534b1a642c66526e46131b1d8348ede5af4833b640e0a4e6049ed7fae5f93073",
+    "tool/prepare_qwen_native.py": "9e0c870afbe2402b46cad894713fc3c1e4b545dd4f8ffce215f7652abc045484",
+    "tool/qwen_licenses.py": "bad510d787246c354816ebdef79aa3dacb392150227b191228f6d4a457ad535b"
+  },
+  "pins": {
+    "version": 1,
+    "crispasr": {
+      "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+    },
+    "ggml": {
+      "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+    },
+    "dictionaries": {
+      "mecab-ipadic-2.7.0-20250920.tar.gz": "a7ba9f645ffe7094e56ae1c4a81d100df8fbb1e28bbe1792622e9728e162db3d",
+      "mecab-ko-dic-2.1.1-20180720.tar.gz": "702ced21c6167e9d9aebc674ab5ee54af58d4443975f2940d37d0567c020591a"
+    },
+    "lindera": {
+      "version": "6.2.0",
+      "revision": "0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+      "url": "https://codeload.github.com/lindera/lindera/zip/0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+      "sha256": "4a7280070a7070a178876fdd1c3f8605451e7b4116c425679aca60aed45190cf"
+    }
+  },
+  "files": {
+    "ggml-base.dll": "f9d9e3e42d59abb05b65aaac2b2802afe5442cc5405c2b59a488ea2f0722dc5d",
+    "ggml-cpu-alderlake.dll": "c0e6765533dfe81bd9a63df31d5c2eb9915849b8873896864eb3faf91776df9c",
+    "ggml-cpu-cannonlake.dll": "3027f9334fcc64d01f329f58a6c2bc04ea2a03312e91b6bcc2ebbb30630f94a6",
+    "ggml-cpu-cascadelake.dll": "80111f34f4c4fd3eea654d89339b23b8314c507d038932784df851d347509259",
+    "ggml-cpu-haswell.dll": "475d856ea89a71b7ec7b0284b674a956f06add95fe90745cc03241348bdbcf0c",
+    "ggml-cpu-icelake.dll": "e92c96c7903294235a288a292d466a4efbe2b9a362fb03287bc51d16ee225f06",
+    "ggml-cpu-sandybridge.dll": "0bc8fcb8718c0558c71a929047abc67cecd85df693de5bd7a55ddb8a67d4c982",
+    "ggml-cpu-skylakex.dll": "ba08d58c18139efe18938f8dc6107ce3a0347c001cbf714726e4e00a2f9fe77f",
+    "ggml-cpu-sse42.dll": "24446e77588a4d580bc48e2ed0698ca26aa974e485048e058cb87cb8412a4cbe",
+    "ggml-cpu-x64.dll": "9728e766e1cef6750a8f09638d06aa5bfb4c90f5c4b99ea59bfb95fbbc0086ac",
+    "ggml-vulkan.dll": "809a05267f7433bcb964617e9bebd6bd36f93ebeed4f20d5bc04a6c7046d1fc8",
+    "ggml.dll": "cf36b21a4c1614042e34fb0c69d6e3faf0f224c955ca4002ef4601dc047102b5",
+    "qwen_asr_worker.exe": "e097b0592bb4f2c72a63d0ea76b9e383f24892973e93711977bf1aa5e048e040",
+    "licenses/Apache-2.0.txt": "6223c6d6f06d7b0336505416124d9aa427545441a03eb9a8fb94370a9d0a8522",
+    "licenses/CrispASR-MIT.txt": "aa918fb53ff1948e12cdae8136e045210fb6db222a1f6f0c14bad48e6de2100e",
+    "licenses/ggml-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14",
+    "licenses/Text-processing-notices.txt": "6fbc89b0448573dd512f09dddf9042f119194b58dd55067ae5df352f01a17dee"
+  },
+  "textProcessingVersion": 1,
+  "rustTarget": "x86_64-pc-windows-msvc",
+  "cmakeArguments": [
+    "-DCMAKE_PREFIX_PATH=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk",
+    "-DVulkan_INCLUDE_DIR=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Include",
+    "-DVulkan_LIBRARY=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Lib/vulkan-1.lib",
+    "-DVulkan_GLSLC_EXECUTABLE=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Bin/glslc.exe"
+  ],
+  "batchSize": 1
+}

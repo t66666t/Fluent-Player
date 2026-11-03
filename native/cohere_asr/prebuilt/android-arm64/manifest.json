@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "platform": "android",
+  "arch": "arm64",
+  "backend": "cpu",
+  "build": "68c7933e78145dba044eed659a57274898f1f2b19671e663768096250102174d",
+  "sources": {
+    "native/cohere_asr/CMakeLists.txt": "9f94c48c61f00d23fdd04b1a972d471571a6ee9c76e48884e28ac85f4e59f6c8",
+    "native/cohere_asr/cohere_jni.cpp": "98c5126bbf4914a6ea623e6d3a70a2cd090096b9e12cac1a4744a3e4b1b34bdf",
+    "native/cohere_asr/cohere_worker.cpp": "1358066469718244c5601bce7947fdaa0533b3767a890087d656bc714c09aa18",
+    "native/cohere_asr/cohere_worker.h": "a1b0f3a2c6a536c85c7107c04fddf230fc571e12d92329f6305be91ee93dfe57",
+    "native/cohere_asr/LICENSE": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "native/cohere_asr/runtime.lock.json": "d4a7c0f97c7f36dfe762a3d33ff6eae973eb0b477704b1ab67224cdc48bf573e",
+    "tool/build_cohere_asr.py": "e90f20cde4285d44e109c0dac47e976895bebb482b5267aa3701a9e9043833e0"
+  },
+  "pins": {
+    "transcribe": {
+      "revision": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "url": "https://codeload.github.com/handy-computer/transcribe.cpp/zip/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "sha256": "001977775c412aa4d114034d451424464709e95cd27b57f2e94eb6197d809a2e",
+      "version": "0.4.1",
+      "license": "MIT"
+    },
+    "json": {
+      "revision": "v3.11.3",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "license": "MIT"
+    },
+    "jsonLicense": {
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+    }
+  },
+  "files": {
+    "libfluent_cohere_asr.so": "ce4505817c78031086df3b6b19377a67ceb158f5752ab147b7ca1e1194a9d065",
+    "licenses/transcribe/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-ggml": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-miniz": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-silero_vad": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+    "licenses/transcribe/bindings/rust/sys/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/rust/transcribe-cpp/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/swift/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/typescript/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/ggml/LICENSE": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/transcribe/scripts/hf_cards/files/moonshine-community-license/LICENSE": "fa7d1174dd8af6a7cd280be20b80d10095ed4c19b5b20b61a7715c3ad790dc5f",
+    "licenses/transcribe/scripts/hf_cards/files/moonshine-community-license/NOTICE": "58b8610fe096d88511757c5bbb375c00d887c709c02f2f8b5d36699ff79daa4f",
+    "licenses/transcribe/src/third_party/miniz/LICENSE": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d",
+    "licenses/transcribe/src/third_party/silero_vad/LICENSE": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+    "licenses/Fluent-Player-MIT.txt": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "licenses/Apache-2.0.txt": "6223c6d6f06d7b0336505416124d9aa427545441a03eb9a8fb94370a9d0a8522",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  "batchSize": 1,
+  "maxSpeechSeconds": 8,
+  "cmakeArguments": []
+}

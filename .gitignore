@@ -1,0 +1,149 @@
+# Flutter / Dart 构建产物
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# IDE 配置
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+.DS_Store
+
+# 临时文件
+*.log
+*.tmp
+out.txt
+
+# 分析报告（可选保留）
+analyze_*.txt
+dart_analyze_*.txt
+
+# 临时测试文件
+temp_*
+dummy*.mkv
+test_draw*.png
+test_draw*.ass
+test_bg*.png
+test_bg*.ass
+
+# ffmpeg 临时解压目录
+ffmpeg_temp/
+ffmpeg*.zip
+
+# 其他工具目录
+.qoder/
+.kiro/
+.trae/
+.dbg/
+.uploads/
+.workbuddy/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+
+# Large local/runtime artifacts not suitable for regular Git hosting
+*.hprof
+assets/binaries/windows/ffprobe.exe
+# Downloaded, checksummed iOS build inputs. Sources and runtime.lock.json are tracked.
+packages/ios_ytdlp/ios/Vendor/
+.artifacts/ios-runtime-inspect/
+.artifacts/ios-runtime-downloads/
+
+# Local build, test and download artifacts
+.artifacts/
+
+# Reproducible hardened packages; private maps remain under .artifacts/.
+dist/hardened/
+dist/linux/
+dist/windows/
+dist/android/
+dist/ios/
+dist/macos/
+dist/release/
+
+# MiSans is prepared from Xiaomi's official archive for app embedding only.
+assets/fonts/MiSans-*.otf
+
+# Local conversation exports and their one-off extraction script.
+/_extract_notes.py
+/_yt_audio_task_notes.txt
+
+# Local prototypes, historical working notes and preview-only checks.
+# Files stay on disk; release source and CI retain the application and regression tests.
+/.codebuddy/
+/.codex-remote-attachments/
+/website-showcase/
+/tooling/
+/doc_gen/
+/docs/previews/
+/docs/research/
+/docs/media-library-learning-plan/
+/docs/media-library-learning-plan.zip
+/docs/podcast-transcription-audit/
+/docs/manual_tests/
+/docs/design/
+/docs/*-plan.md
+/docs/*-validation.md
+/docs/*-audit.md
+/docs/*-execution.md
+/docs/*-trial.md
+/docs/*-verification.md
+/docs/LINUX_ADAPTATION_PLAN.md
+/docs/LINUX_L[0-3]*.md
+/docs/hardened-release-result-*.md
+/BILIBILI_STREAMING_DOWNLOAD_IMPLEMENTATION_GUIDE.md
+/FLUTTER_PAGES_BUTTONS_REFERENCE.md
+/项目介绍.md
+/upload.ps1
+/上传到GitHub.bat
+/scripts/music_backdrop_brightness_comparison.py
+/scripts/music_backdrop_brightness_preview.dart
+/scripts/music_lyric_motion_preview.dart
+/test/selector_visual_preview_test.dart
+/test/video_action_buttons_preview_test.dart
+
+# Signing credentials and local developer environments
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.pfx
+/docs/subtitle-sidebar-implementation.md
+
+# Kotlin incremental compilation state
+.kotlin/
+
+# Local website drafts, design previews and exported archives
+/.cursor/
+/design/
+/fluent-player-web/
+/Fluent-Player-website.zip
+/third_party/audio_service/example/
+
+# Local native build outputs. Keep sources, locks, manifests and licenses.
+# Already tracked runtime files remain tracked for compatibility.
+/native/**/prebuilt/**/*.dll
+/native/**/prebuilt/**/*.exe
+/native/**/prebuilt/**/*.so
+/native/**/prebuilt/**/*.a
+/native/**/prebuilt/**/*.lib
+/native/**/prebuilt/**/*.dylib
+
+# Dated local audit reports
+/docs/*-audit-*.md
+
+# Community source stays small; runtime weights are prepared locally/on demand.
+*.gguf
+*.safetensors
+/assets/models/**/*.onnx
+!/docs/community-verification.md

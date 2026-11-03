@@ -1,0 +1,303 @@
+name: video_player_app
+description: "Fluent Player: cross-platform media, subtitles and learning."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.1+3
+
+environment:
+  sdk: ^3.10.7
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  app_network:
+    path: packages/app_network
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+  characters: ^1.4.1
+  video_player: ^2.10.1
+  # video_player_win: ^1.1.6  # 已替换为 media_kit 实现
+  
+  # media_kit 相关依赖 - Windows 视频播放器修复
+  media_kit: ^1.1.11
+  media_kit_video: ^1.2.5
+  # Ship the same FFmpeg/libmpv based decoder on every native platform so
+  # containers/codecs such as WAV/FLAC/Opus/MKV are not limited by the OS.
+  media_kit_libs_android_video: ^1.3.8
+  media_kit_libs_ios_video: ^1.1.4
+  media_kit_libs_macos_video: ^1.1.4
+  media_kit_libs_windows_video: ^1.0.10
+  media_kit_libs_linux: ^1.2.1
+  universal_platform: ^1.0.0+1
+  video_player_platform_interface: ^6.2.0
+  
+  file_picker: ^10.3.7
+  cross_file: ^0.3.5+1
+  image_picker: ^1.1.2
+  image_picker_android: ^0.8.12+17
+  provider: ^6.1.5+1
+  permission_handler: ^12.0.1
+  path: ^1.9.1
+  fast_gbk: ^1.0.0
+  scrollable_positioned_list: ^0.3.8
+  super_sliver_list: ^0.4.1
+  screen_brightness: ^2.1.7
+  shared_preferences: ^2.3.5
+  shared_preferences_platform_interface: ^2.4.2
+  shared_preferences_windows: ^2.4.1
+  window_manager: ^0.4.3
+  volume_controller: ^3.4.1
+  video_thumbnail: ^0.5.6
+  uuid: ^4.5.2
+  path_provider: ^2.1.5
+  ffmpeg_kit_flutter_new: ^4.1.0
+  dio: ^5.9.0
+  archive: ^4.0.7
+  linked_scroll_controller: ^0.2.0
+  crypto: ^3.0.7
+  xml: 7.0.1
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.3.0
+  qr_flutter: ^4.1.0
+  wakelock_plus: ^1.4.0
+  audio_service: ^0.18.18
+  audio_session: ^0.2.2
+  photo_manager: ^3.8.3
+  wechat_assets_picker: ^10.1.0
+  open_filex: ^4.4.0
+  desktop_drop: ^0.7.0
+  share_plus: ^12.0.1
+  intl: ^0.20.2
+  url_launcher: ^6.3.2
+  lpinyin: ^2.0.3
+  flutter_lyric: 3.0.7
+  image: ^4.8.0
+  yaml: ^3.1.3
+  onnxruntime_v2: ^1.23.2+2
+  # This release's ORT API remains compatible with the existing OCR runtime.
+  # Newer 1.13.x binaries require ORT 27/28 and must not be mixed with it.
+  sherpa_onnx: 1.12.12
+  llamadart: 0.15.1
+  llamadart_llama_cpp_flutter: 0.15.1
+  flutter_secure_storage: ^10.3.4
+  flutter_inappwebview: ^6.1.5
+  flutter_markdown_plus:
+    path: third_party/flutter_markdown_plus
+  markdown: ^7.3.0
+  flutter_math_fork: ^0.7.4
+  cryptography: ^2.9.0
+  ffi: 2.2.0
+  sqlite3: ^2.9.4
+  sqlite3_flutter_libs: ^0.5.41
+  connectivity_plus: ^6.1.5
+  workmanager: ^0.9.0
+  flutter_local_notifications: ^22.3.2
+  html: ^0.15.6
+  enough_convert: 1.6.0
+
+# Keep the Windows JavaScript bridge null-safe during retained-page teardown.
+dependency_overrides:
+  # Same open_filex 4.7.0; restore its channel when a cached engine gets an activity.
+  open_filex:
+    path: third_party/open_filex
+  # Same audio_service 0.18.19; Darwin keeps hidden Now Playing metadata hidden.
+  audio_service:
+    path: third_party/audio_service
+  # Same FFmpeg 4.6.2 bindings, with Windows worker shutdown before DLL unload.
+  ffmpeg_kit_flutter_new:
+    path: third_party/ffmpeg_kit_flutter_new
+  # media_kit_video 1.3.1 with Android Surface lifecycle recovery; native ABI unchanged.
+  media_kit_video:
+    path: third_party/media_kit_video
+  # Keep one native drop receiver for files, text and browser URLs.
+  desktop_drop:
+    path: third_party/desktop_drop
+  # Keep large Windows preference files off the UI isolate and support atomic
+  # batches for the reversible default-settings trial.
+  shared_preferences_windows:
+    path: third_party/shared_preferences_windows
+  # Upstream uses caret constraints for its native companions. Pin them to the
+  # Dart ABI version; resolving newer native structs can crash before Dart can catch it.
+  sherpa_onnx_android: 1.12.12
+  sherpa_onnx_ios: 1.12.12
+  sherpa_onnx_macos: 1.12.12
+  sherpa_onnx_linux: 1.12.12
+  sherpa_onnx_windows: 1.12.12
+  flutter_inappwebview_windows:
+    path: third_party/flutter_inappwebview_windows
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_launcher_icons: "^0.14.2"
+  flutter_test:
+    sdk: flutter
+  path_provider_platform_interface: ^2.1.3
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  
+  # 属性测试库
+  glados: ^1.1.7
+
+# Keep a CPU fallback and the portable GPU backend. Apple uses the companion's
+# Metal runtime; Android Vulkan remains an explicit, device-dependent option.
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+      llamadart_native_backends:
+        platforms:
+          android: [cpu, opencl, vulkan]
+          # Vulkan is packaged only beside the isolated translation worker.
+          # The player keeps the CPU runtime and never probes this GPU module.
+          windows: [cpu, vulkan]
+          linux: [cpu, vulkan]
+          windows-x64: [cpu, cuda, vulkan]
+          linux-x64: [cpu, cuda, vulkan]
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  config:
+    enable-swift-package-manager: true
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  assets:
+    - NOTICE
+    - THIRD_PARTY_NOTICES.md
+    - PRIVACY.md
+    - assets/licenses/
+    - assets/fonts/licenses/
+    - assets/models/ocr_catalog.json
+    - assets/models/catalog.json
+    - assets/models/asr/
+    - assets/language_id/
+    # Reuse the small Android launcher artwork for the lightweight Flutter
+    # startup frame. The 2048px source is intentionally avoided here so image
+    # decoding cannot become startup work itself.
+    - android/app/src/main/res/mipmap-xxxhdpi/launcher_icon.png
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  fonts:
+    - family: App Reading
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+    - family: MiSans
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+    - family: Noto Sans SC
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+    - family: Brawler
+      fonts:
+        - asset: assets/fonts/Brawler-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Brawler-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Brawler-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Brawler-SemiBold.otf
+          weight: 600
+    - family: Comic Relief
+      fonts:
+        - asset: assets/fonts/ComicRelief-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/ComicRelief-Regular.ttf
+          weight: 400
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto_Condensed-Black.ttf
+          weight: 900
+        - asset: assets/fonts/Roboto_Condensed-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Roboto_Condensed-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Roboto_Condensed-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/Roboto_Condensed-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Roboto_Condensed-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto_Condensed-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto_Condensed-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Roboto_Condensed-Thin.ttf
+          weight: 100
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Black.otf
+          weight: 900
+        - asset: assets/fonts/Inter-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.otf
+          weight: 800
+        - asset: assets/fonts/Inter-ExtraLight.otf
+          weight: 200
+        - asset: assets/fonts/Inter-Light.otf
+          weight: 300
+        - asset: assets/fonts/Inter-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Inter-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Inter-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Inter-Thin.otf
+          weight: 100
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/fluent-player.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/icon/fluent-player.png"
+    background_color: "#000000"
+    theme_color: "#000000"
+  windows:
+    generate: true
+    image_path: "assets/icon/fluent-player.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/fluent-player.png"

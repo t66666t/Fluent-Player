@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "windowsFfmpeg": {
+    "version": "8.0.1",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.0.1/ffmpeg-8.0.1-essentials_build.zip",
+    "sha256": "e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673",
+    "files": {
+      "ffmpeg-8.0.1-essentials_build/bin/ffmpeg.exe": "assets/binaries/windows/ffmpeg.exe",
+      "ffmpeg-8.0.1-essentials_build/bin/ffprobe.exe": "assets/binaries/windows/ffprobe.exe"
+    }
+  },
+  "windowsOnnxRuntime": {
+    "version": "1.21.0",
+    "url": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.21.0",
+    "sha256": "12bed6e1e870f30e0150e039ebb6853da32eba381eda1c373faeeb17168785e6",
+    "member": "runtimes/win-x64/native/onnxruntime.dll",
+    "path": "windows/runtime/onnxruntime.dll",
+    "fileSha256": "d3c7c34aef827763bb3fe3d6bb1becbae68c70e85dece5c21b973a05911aaa5f"
+  }
+}

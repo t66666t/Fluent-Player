@@ -1,0 +1,19 @@
+{
+  "transcribe": {
+    "revision": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+    "url": "https://codeload.github.com/handy-computer/transcribe.cpp/zip/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+    "sha256": "001977775c412aa4d114034d451424464709e95cd27b57f2e94eb6197d809a2e",
+    "version": "0.4.1",
+    "license": "MIT"
+  },
+  "json": {
+    "revision": "v3.11.3",
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+    "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+    "license": "MIT"
+  },
+  "jsonLicense": {
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+    "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  }
+}

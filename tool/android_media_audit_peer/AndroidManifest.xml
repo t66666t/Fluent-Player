@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.fluentplayer.audit.controls">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+    <application android:label="Fluent Media Audit Peer"
+        android:debuggable="true" android:testOnly="true" android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".AuditMediaButtonActivity" android:exported="true"
+            android:launchMode="singleTop" android:configChanges="orientation|screenSize" />
+        <activity android:name=".AuditFocusActivity" android:exported="true"
+            android:launchMode="singleTop" android:configChanges="orientation|screenSize" />
+    </application>
+    <instrumentation android:name=".UiDumpInstrumentation"
+        android:targetPackage="com.fluentplayer.audit.controls"
+        android:functionalTest="false" android:handleProfiling="false"
+        android:label="Immediate read-only UI snapshot" />
+    <instrumentation android:name=".TextInputInstrumentation"
+        android:targetPackage="com.fluentplayer.audit.controls"
+        android:functionalTest="false" android:handleProfiling="false"
+        android:label="Explicit isolated-player text input" />
+    <instrumentation android:name=".ExpandModelNotificationInstrumentation"
+        android:targetPackage="com.fluentplayer.audit.controls"
+        android:functionalTest="false" android:handleProfiling="false"
+        android:label="Expand only the unique known model-task notification" />
+</manifest>

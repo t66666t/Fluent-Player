@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "sherpa": "1.12.12",
+  "platform": "windows",
+  "arch": "x64",
+  "files": {
+    "asr_worker.exe": "d8e051725d47f91279e514010cc06ad2d47f76d0ae29766c6db00aab84248438",
+    "DirectML.dll": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+    "flatbuffers-LICENSE.txt": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",
+    "fluent_asr_mnn.dll": "7abd3d1e36ba9fe721c3a3458a063b30e94b5b0c4ed05485e3350f2db68be8e0",
+    "half-LICENSE.txt": "1269110471a5506d5cc9c115c57b855206f69a90cc57bbbf27860907067ed946",
+    "LICENSE": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5",
+    "MNN-3.6.1-LICENSE.txt": "a830d59c4f98d110e0540d0581efada06192ba6e798434307d1794b07a290302",
+    "mnn-manifest.json": "4d241f851da7703ed451536a0521951e473977608df1ebf3a837d18d9d6bbc5e",
+    "MNN-ThirdPartyNotices.txt": "6206c8c1e041e47968dba4254320c3c336102025082daf85a981fc45562eb077",
+    "onnxruntime.dll": "d3c7c34aef827763bb3fe3d6bb1becbae68c70e85dece5c21b973a05911aaa5f",
+    "protobuf-LICENSE": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+    "ThirdPartyNotices.txt": "f2e5a645835874bda9d3f92e4d786a665ec3519deec635e990fe3fae97b51347"
+  },
+  "sourceHashes": {
+    "native/asr/asr_accelerator.cpp": "bee3fd9ac6adb78e43c99205bb954aeee46f8a6fbdb71f2c4b0a0004f153d00e",
+    "native/asr/firered_ctc.h": "c36e0b5349431299e9fd49a42288d80f1715bc410c909d63dadb51ffd472ea3d",
+    "native/asr/session_options.inc": "c8ae6e77cf2a1999e355ee24e570af7587f006bd2acb445be35c951300f513ae",
+    "native/asr/fluent_asr_observer.h": "0d81028fb1b072489ecb15bf03fa187871d05ce14ba5894077b164e8649ef5ad",
+    "native/asr/CMakeLists.txt": "fc36e25eaa8fd41bc6b7bb4d69391b90a62e6bbcbd6942b3ae67ee9e7f282fcb",
+    "native/asr/mnn_session.h": "c0f3210278d7e4d63df2632462d34005789242c13f26049cc5d14641267e6c99",
+    "native/asr_mnn/mnn_graph.h": "a569cbd6a094438d3b293e81bdb14cd39617dc452fc3239c23a72a3bc23effbf",
+    "tool/prepare_asr_native.py": "5a2ae39a76f099cfe52c57ec7cfa42476bc1da7779a9a4bb732f6071fe9a6007"
+  },
+  "mnnSourceHashes": {
+    "native/asr_mnn/CMakeLists.txt": "dba1c416b41ce326037811bcd0e60e2fefd4473113f2b0531a2038b51b130c27",
+    "native/asr_mnn/mnn_graph.h": "a569cbd6a094438d3b293e81bdb14cd39617dc452fc3239c23a72a3bc23effbf",
+    "native/asr_mnn/mnn_graph.cpp": "2921accfd3621ebc28e2e3bb53d3f1e84ab1763112ba549794029f481475561e",
+    "native/ocr/ocr_gpu_device.cpp": "55539a7855d8566d9ae3511a7a3c257d0138a36635b01a83448a9f1a243e9d4f",
+    "native/ocr/ocr_accelerator.h": "b5336c93b56559cdec4044b09ac7926bb3c2ca97e23e094cfcb43022f9b1528b",
+    "tool/build_asr_mnn.py": "a9ae3e6e60baf525b55e2c96b10fef0ecdad395f51ae263fcceb2c0fe4fe4ffc",
+    "tool/build_ocr_acceleration.py": "7b1f80054de8cb02363eb4853c09596b59591916b35cddab6b1ac732d6a41b4d"
+  }
+}

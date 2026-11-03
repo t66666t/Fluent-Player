@@ -1,0 +1,68 @@
+/// Canonical media extensions shared by the library and cloud-drive classifiers.
+///
+/// Keeping one const set stops the browser, launcher and import path from
+/// drifting into different ideas of what "audio" means.
+const Set<String> kSupportedVideoExtensions = {
+  '.mp4',
+  '.mov',
+  '.avi',
+  '.mkv',
+  '.flv',
+  '.webm',
+  '.wmv',
+  '.3gp',
+  '.m4v',
+  '.ts',
+  '.rmvb',
+  '.mpg',
+  '.mpeg',
+  '.f4v',
+  '.m2ts',
+  '.mts',
+  '.vob',
+  '.ogv',
+  '.divx',
+  '.asf',
+  '.mxf',
+  '.qt',
+  '.y4m',
+};
+
+const Set<String> kSupportedAudioExtensions = {
+  '.mp3',
+  '.m4a',
+  '.wav',
+  '.flac',
+  '.ogg',
+  '.aac',
+  '.wma',
+  '.opus',
+  '.m4b',
+  '.aiff',
+  '.aif',
+  '.aifc',
+  '.ape',
+  '.alac',
+  '.caf',
+  '.amr',
+  '.ac3',
+  '.eac3',
+  '.dts',
+  '.mka',
+  '.mp2',
+  '.oga',
+  '.ra',
+  '.tta',
+  '.wv',
+  '.dsf',
+  '.dff',
+  '.au',
+  '.snd',
+};
+
+const Set<String> kSupportedTextSubtitleExtensions = {
+  '.srt',
+  '.vtt',
+  '.ass',
+  '.ssa',
+};

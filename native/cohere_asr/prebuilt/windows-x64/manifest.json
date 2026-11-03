@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "platform": "windows",
+  "arch": "x64",
+  "backend": "cpu",
+  "build": "4c7506f99899a30b0d379cf4da97e0ec913c11686f61ad48dc0428b0cae2895c",
+  "sources": {
+    "native/cohere_asr/CMakeLists.txt": "9f94c48c61f00d23fdd04b1a972d471571a6ee9c76e48884e28ac85f4e59f6c8",
+    "native/cohere_asr/cohere_jni.cpp": "98c5126bbf4914a6ea623e6d3a70a2cd090096b9e12cac1a4744a3e4b1b34bdf",
+    "native/cohere_asr/cohere_worker.cpp": "1358066469718244c5601bce7947fdaa0533b3767a890087d656bc714c09aa18",
+    "native/cohere_asr/cohere_worker.h": "a1b0f3a2c6a536c85c7107c04fddf230fc571e12d92329f6305be91ee93dfe57",
+    "native/cohere_asr/LICENSE": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "native/cohere_asr/runtime.lock.json": "d4a7c0f97c7f36dfe762a3d33ff6eae973eb0b477704b1ab67224cdc48bf573e",
+    "tool/build_cohere_asr.py": "e90f20cde4285d44e109c0dac47e976895bebb482b5267aa3701a9e9043833e0"
+  },
+  "pins": {
+    "transcribe": {
+      "revision": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "url": "https://codeload.github.com/handy-computer/transcribe.cpp/zip/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "sha256": "001977775c412aa4d114034d451424464709e95cd27b57f2e94eb6197d809a2e",
+      "version": "0.4.1",
+      "license": "MIT"
+    },
+    "json": {
+      "revision": "v3.11.3",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "license": "MIT"
+    },
+    "jsonLicense": {
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+    }
+  },
+  "files": {
+    "ggml-base.dll": "347d88cf16705f36e25dafd44604339898a505ffbcb083c62079e49dd9883676",
+    "ggml-cpu-alderlake.dll": "ba04e437b5acf2e257f58cc745ed7e6f712a884a4c98b42afae66c26ff04d011",
+    "ggml-cpu-cannonlake.dll": "f233afba6a1b8beace98bb83f21c4e7dbc88923ffdf3f89f6d513d1e6bd0ad24",
+    "ggml-cpu-cascadelake.dll": "7646b806f028d2747773506a4c08cb2d0c03c6720cdbc4c3a760a465ce46a2c2",
+    "ggml-cpu-haswell.dll": "6b4696bd70fec1e02f820f7c890b34d2efc8393de323c28a8ea3c7c17e6d6fd8",
+    "ggml-cpu-icelake.dll": "b645bbd2650e8ad8212c11c9c93427dca8fd8a934c5d0574327addc8ea89026e",
+    "ggml-cpu-sandybridge.dll": "114e52290427071e43af4d93e060c8e7aabc35b1642e851686e3d833bd8be0d4",
+    "ggml-cpu-skylakex.dll": "9b84812e93c4849c8ca1f7a48a04172554a07738e643bc6fd9940bae6a8885c0",
+    "ggml-cpu-sse42.dll": "bd7693afbe1a871600a3e40551b36bd552f7c6dfd4574285db632d21b438f861",
+    "ggml-cpu-x64.dll": "bbf4b6f53e71f613b85305852194d5f3f540bf503cbaf7248a1020fa7df3ce9a",
+    "ggml.dll": "fbfc7ada06f8b3341e22cc3c46716a3a834d9081791a1a361cd17cd18687e235",
+    "transcribe.dll": "f130fad1dc2c52d87bf48d56336a0b88ad54d4190a6e70ecf90f053581716029",
+    "cohere_asr_worker.exe": "cdf3aa67810d28960d8713ebd3a303824173a4e595939bc7c93779c9d06fbb86",
+    "licenses/transcribe/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-ggml": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-miniz": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d",
+    "licenses/transcribe/bindings/python-native-cu12/LICENSE-silero_vad": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+    "licenses/transcribe/bindings/rust/sys/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/rust/transcribe-cpp/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/swift/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/bindings/typescript/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
+    "licenses/transcribe/ggml/LICENSE": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/transcribe/scripts/hf_cards/files/moonshine-community-license/LICENSE": "fa7d1174dd8af6a7cd280be20b80d10095ed4c19b5b20b61a7715c3ad790dc5f",
+    "licenses/transcribe/scripts/hf_cards/files/moonshine-community-license/NOTICE": "58b8610fe096d88511757c5bbb375c00d887c709c02f2f8b5d36699ff79daa4f",
+    "licenses/transcribe/src/third_party/miniz/LICENSE": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d",
+    "licenses/transcribe/src/third_party/silero_vad/LICENSE": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+    "licenses/Fluent-Player-MIT.txt": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "licenses/Apache-2.0.txt": "6223c6d6f06d7b0336505416124d9aa427545441a03eb9a8fb94370a9d0a8522",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  "batchSize": 1,
+  "maxSpeechSeconds": 8,
+  "cmakeArguments": []
+}

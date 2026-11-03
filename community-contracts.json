@@ -1,0 +1,7 @@
+{
+  "preservedModelContracts": {
+    "assets/models/catalog.json": "1ab458e1608fde2e0873aed97a5df981836f3aba182bc9d3b2c9432e17221308",
+    "assets/models/ocr_catalog.json": "8475f0d8bb3e975b378670f438786645df98bf7cb0200e739f71bfd73a67c552",
+    "test/fixtures/local_model_compatibility.json": "43d6d5b1f223131a50db1693ee7ae632e254835834e17146d5041857e82bd2e0"
+  }
+}
