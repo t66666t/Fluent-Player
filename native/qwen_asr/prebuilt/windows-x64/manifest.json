@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "platform": "windows",
+  "arch": "x64",
+  "backend": "cpu",
+  "build": "0f2e92954e0e312f2db2eb52fcfe34336ac049f73a8a1851da51ccfe41295e4c",
+  "sources": {
+    "native/qwen_asr/CMakeLists.txt": "9e710a6bb43bacaec40b1b59320a6cb0e255729fbbd42cbc48fb651061574932",
+    "native/qwen_asr/fluent_qwen_asr.podspec": "0393fa2094f5e571134bfc4b26b8d2f744786754ae58e04ded2e813bc263e708",
+    "native/qwen_asr/qwen_jni.cpp": "87c414c884889af72bbb7ccc1f35d70f1056873dde8805392e4eae64e970f194",
+    "native/qwen_asr/qwen_worker.cpp": "00d739201bee88710e6ef132f2e64db6e0869514b4c37a8c1b62ca9d94e4d1b0",
+    "native/qwen_asr/qwen_worker.h": "ebc2ceee26383c26ead79c6380444350acb801d2193d204c7cfbeb54f9e609c7",
+    "native/qwen_asr/runtime.lock.json": "7361b5696bfe22a453ebee7ba7a130caccb487fe2cf7d991de1dad460cd0d708",
+    "native/qwen_asr/text/Cargo.lock": "7d8414939cc1f87ab55b836cf3fef1622f95af22e44910679e1a555ca142ebe2",
+    "native/qwen_asr/text/Cargo.toml": "2a87663da6bc2417d3e567d192757df07199248eee3e9797f02c981842488cfa",
+    "native/qwen_asr/text/src/lib.rs": "f0302632490fcf1f3711b2d77a8967bfb5ac3204efc0b947d3c2425b3863f127",
+    "tool/build_qwen_asr.py": "8081b8711f913b3e5e44cff43bcf99d20c9462f9e8a8b8ec8f76efd63401d171",
+    "tool/prepare_qwen_native.py": "9e0c870afbe2402b46cad894713fc3c1e4b545dd4f8ffce215f7652abc045484",
+    "tool/qwen_licenses.py": "bad510d787246c354816ebdef79aa3dacb392150227b191228f6d4a457ad535b"
+  },
+  "pins": {
+    "version": 1,
+    "crispasr": {
+      "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+    },
+    "ggml": {
+      "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+    },
+    "dictionaries": {
+      "mecab-ipadic-2.7.0-20250920.tar.gz": "a7ba9f645ffe7094e56ae1c4a81d100df8fbb1e28bbe1792622e9728e162db3d",
+      "mecab-ko-dic-2.1.1-20180720.tar.gz": "702ced21c6167e9d9aebc674ab5ee54af58d4443975f2940d37d0567c020591a"
+    },
+    "lindera": {
+      "version": "6.2.0",
+      "revision": "0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+      "url": "https://codeload.github.com/lindera/lindera/zip/0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+      "sha256": "4a7280070a7070a178876fdd1c3f8605451e7b4116c425679aca60aed45190cf"
+    }
+  },
+  "files": {
+    "ggml-base.dll": "bb3e8b7374de7e1b22108b9da2924d811379dd5fdbb654b005d912fc768f12af",
+    "ggml-cpu-alderlake.dll": "edc77f51bc69899c04be4b5c474c8838178f426b250d58317a97831161bd7328",
+    "ggml-cpu-cannonlake.dll": "24c798ecd240c78f873a1320a0ad1e9c70df64578f130ce349a0405832350f4a",
+    "ggml-cpu-cascadelake.dll": "eb5b26853f501bc2fb36156c4d049cafec0ffa4439c457a0c3e0362d0be1bb5b",
+    "ggml-cpu-haswell.dll": "fbc36c415a6bacbb6b67bec9559568f4add0b92fcea3fe2951aa07f043d6bad7",
+    "ggml-cpu-icelake.dll": "2a40bf03dd9b12a266a4a0a3041e0bfc37700811f4ef1042b8bedbdee7db9697",
+    "ggml-cpu-sandybridge.dll": "257ba768f8d762a242081a21827c495979e5f13a446735eb1d4a7b60390ae18b",
+    "ggml-cpu-skylakex.dll": "e2a8f11ccd70b2825be07c61d175b490023b2fc2ab1be639c8863f56b1d9f37f",
+    "ggml-cpu-sse42.dll": "237482581f6cbbd1c27d5412c8951b88dcee67732de35543901be8c63a34afb9",
+    "ggml-cpu-x64.dll": "6abaa491a608d0cab2e096ddc6b04eac75c06e1511507393eb684b99a4a0b585",
+    "ggml.dll": "74c1c10d7f2f96a9f8d908d0d5c794a8a873fee347cb1cc71ad969bceeb1efc8",
+    "qwen_asr_worker.exe": "dea845037b10edbbf02a4ea51ed40941cdfc2bfb78c70b6cbee29f50dc8c773e",
+    "licenses/Apache-2.0.txt": "6223c6d6f06d7b0336505416124d9aa427545441a03eb9a8fb94370a9d0a8522",
+    "licenses/CrispASR-MIT.txt": "aa918fb53ff1948e12cdae8136e045210fb6db222a1f6f0c14bad48e6de2100e",
+    "licenses/ggml-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14",
+    "licenses/Text-processing-notices.txt": "6fbc89b0448573dd512f09dddf9042f119194b58dd55067ae5df352f01a17dee"
+  },
+  "textProcessingVersion": 1,
+  "rustTarget": "x86_64-pc-windows-msvc",
+  "cmakeArguments": [],
+  "batchSize": 1
+}

@@ -1,0 +1,1456 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-10-27",
+  "models": [
+    {
+      "id": "sensevoice-small-int8",
+      "name": "SenseVoice Small",
+      "engine": "sensevoice",
+      "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "parameters": "234M",
+      "quantization": "INT8 · ONNX",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "yue",
+        "en",
+        "ja",
+        "ko"
+      ],
+      "description": "普通话、粤语、英语、日语、韩语；支持自动语言识别和文本规整。",
+      "license": "FunASR Model License（权重）",
+      "homepage": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议从 4 GB 内存设备、单任务开始；实际峰值取决于音频与运行库，需本机检查。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 239233841,
+          "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx",
+            "mainland": "https://modelscope.cn/models/burgess123/sherpa-onnx-SenseVoice-Small-onnx/resolve/463f5fb39a72fe2d85039a9b9fb87309271721ff/model.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt",
+            "mainland": "https://modelscope.cn/models/burgess123/sherpa-onnx-SenseVoice-Small-onnx/resolve/463f5fb39a72fe2d85039a9b9fb87309271721ff/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "dolphin-base-int8",
+      "name": "Dolphin Base",
+      "engine": "dolphin",
+      "revision": "1f3a53d0ecf658f8b0974e2cfde368eee40732fa",
+      "parameters": "100M",
+      "quantization": "INT8 · ONNX",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "ja",
+        "th",
+        "ru",
+        "ko",
+        "id",
+        "vi",
+        "yue",
+        "hi",
+        "ur",
+        "ms",
+        "uz",
+        "ar",
+        "fa",
+        "bn",
+        "ta",
+        "te",
+        "ug",
+        "gu",
+        "my",
+        "tl",
+        "kk",
+        "or",
+        "ne",
+        "mn",
+        "km",
+        "jv",
+        "lo",
+        "si",
+        "fil",
+        "ps",
+        "pa",
+        "kab",
+        "ba",
+        "ks",
+        "tg",
+        "su",
+        "mr",
+        "ky",
+        "az"
+      ],
+      "description": "覆盖 40 种东方语言的轻量识别模型；自动识别语言，可提供 token 时间戳。不支持英语。",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/DataoceanAI/Dolphin",
+      "suggestedRamGb": 4,
+      "memoryNote": "轻量候选；建议单任务运行，时间戳粒度需结合实际分词判断。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 103729802,
+          "sha256": "a3aa46c97f3f60f135ff949793cb05fabe7a0b3c484dc2e3cc699d354ee11b76",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/model.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/model.int8.onnx",
+            "mainland": "https://modelscope.cn/models/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/ea732b784b79cd69017555e692049bdf643e1332/model.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/model.int8.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 504662,
+          "sha256": "c3788261a51df1899ea4b210b552cd42139204de72c0ad60f6cebb199078872e",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/tokens.txt",
+            "mainland": "https://modelscope.cn/models/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/f7bcf4ed7c3932371ba19ff4c5393bc987cf0070/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/resolve/1f3a53d0ecf658f8b0974e2cfde368eee40732fa/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parakeet-v3-int8",
+      "name": "Parakeet TDT v3",
+      "engine": "parakeet",
+      "revision": "2bda32ec70b097a55adaa07d9a7173915b43cc78",
+      "parameters": "600M",
+      "quantization": "INT8 · ONNX",
+      "purpose": "transcription",
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "description": "包含英语在内的 25 种欧洲语言；自动语言识别、标点和 token 时间戳。",
+      "license": "CC-BY-4.0",
+      "homepage": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "suggestedRamGb": 8,
+      "memoryNote": "建议 8 GB 及以上设备起测；模型较大，手机使用单任务并避免同时驻留翻译模型。",
+      "files": [
+        {
+          "name": "encoder.int8.onnx",
+          "bytes": 652184281,
+          "sha256": "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/encoder.int8.onnx"
+          }
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 11845275,
+          "sha256": "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/decoder.int8.onnx"
+          }
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 6355277,
+          "sha256": "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/joiner.int8.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "hy-mt2-1.8b-q4",
+      "name": "混元翻译 Hy-MT2",
+      "engine": "hy-mt",
+      "revision": "a0c709d9fac510f2c807aa3af52872340dc37a4a",
+      "parameters": "1.8B",
+      "quantization": "Q4_K_M · GGUF",
+      "purpose": "translation",
+      "languages": [
+        "zh",
+        "en",
+        "fr",
+        "pt",
+        "es",
+        "ja",
+        "tr",
+        "ru",
+        "ar",
+        "ko",
+        "th",
+        "it",
+        "de",
+        "vi",
+        "ms",
+        "id",
+        "tl",
+        "hi",
+        "pl",
+        "cs",
+        "nl",
+        "km",
+        "my",
+        "fa",
+        "gu",
+        "ur",
+        "te",
+        "mr",
+        "he",
+        "bn",
+        "ta",
+        "uk",
+        "bo",
+        "kk",
+        "mn",
+        "ug",
+        "yue"
+      ],
+      "description": "专用翻译模型；支持上下文与术语要求。官方称覆盖 33 种语言，并列出其他语言变体。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/tencent/Hy-MT2-1.8B",
+      "suggestedRamGb": 8,
+      "memoryNote": "建议 8 GB 及以上设备起测；1.13 GB 为文件体积，不是运行内存。默认使用短上下文和单任务。",
+      "files": [
+        {
+          "name": "Hy-MT2-1.8B-Q4_K_M.gguf",
+          "bytes": 1133080448,
+          "sha256": "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699",
+          "sources": {
+            "official": "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf",
+            "mirror": "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf",
+            "mainland": "https://modelscope.cn/models/Tencent-Hunyuan/Hy-MT2-1.8B-GGUF/resolve/ef1d40b8b315575d30d1eb6579996130b8fc0bb2/Hy-MT2-1.8B-Q4_K_M.gguf",
+            "mirror_proxy": "https://hf-mirror.net/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "qwen3-4b-q4",
+      "name": "Qwen3 4B",
+      "engine": "qwen3",
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "parameters": "4B",
+      "quantization": "Q4_K_M · GGUF",
+      "purpose": "translation",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "fr",
+        "de",
+        "es",
+        "ru",
+        "ar",
+        "hi",
+        "pt",
+        "it",
+        "vi",
+        "th"
+      ],
+      "description": "多语言通用指令模型；字幕翻译关闭思考模式，适合较高配置设备。完整语言覆盖见官方介绍。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/Qwen/Qwen3-4B",
+      "suggestedRamGb": 16,
+      "memoryNote": "建议 16 GB 设备起测；12 GB 设备能否运行取决于系统当前可用内存、字幕增强和播放占用，可尝试 CPU 与节省内存模式。4B 模型在平板 CPU 上翻译可能较慢，可在模型中心进行本机测速或选择更小的翻译模型。",
+      "files": [
+        {
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+          "sources": {
+            "official": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+            "mirror": "https://hf-mirror.com/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+            "mainland": "https://modelscope.cn/models/Qwen/Qwen3-4B-GGUF/resolve/8cca206c792af04f8d452368bd30b43ec18007f1/Qwen3-4B-Q4_K_M.gguf",
+            "mirror_proxy": "https://hf-mirror.net/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-punctuation-zh-en-int8",
+      "name": "中英标点 CT-Transformer",
+      "engine": "punctuation",
+      "revision": "5cccf43af83e4fc50d1d55b8410312e87709be70",
+      "parameters": "优化导出未单列参数量",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "license": "Apache-2.0（原始权重）",
+      "homepage": "https://k2-fsa.github.io/sherpa/onnx/punctuation/pretrained_models.html",
+      "description": "为缺少标点的中英文恢复标点；仅接受标点和空白变更，保留识别词与时间映射。社区副本已与官方发布文件核对。",
+      "purpose": "enhancement",
+      "quantization": "INT8 · ONNX",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议 4 GB 设备起测；CPU 串行执行，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 75519198,
+          "sha256": "65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1",
+          "sources": {
+            "official": "https://huggingface.co/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/5cccf43af83e4fc50d1d55b8410312e87709be70/model.int8.onnx",
+            "mirror": "https://hf-mirror.com/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/5cccf43af83e4fc50d1d55b8410312e87709be70/model.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/5cccf43af83e4fc50d1d55b8410312e87709be70/model.int8.onnx"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-gtcrn",
+      "name": "轻量降噪 GTCRN",
+      "engine": "denoiser",
+      "revision": "080f79f8c66b07e655347137d734d5556117eda3",
+      "parameters": "48.2K（含 ERB）",
+      "languages": [
+        "language-independent"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/Xiaobin-Rong/gtcrn",
+      "description": "16 kHz 轻量语音增强。与官方发布文件逐字节一致；保持原始采样时间轴，适用于噪声录音，可单独关闭。",
+      "purpose": "enhancement",
+      "quantization": "FP32 · ONNX",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议 4 GB 设备起测；CPU 串行执行，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 535638,
+          "sha256": "e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534",
+          "sources": {
+            "official": "https://huggingface.co/bitsydarel/gtcrn-onnx/resolve/080f79f8c66b07e655347137d734d5556117eda3/gtcrn_simple.onnx",
+            "mirror": "https://hf-mirror.com/bitsydarel/gtcrn-onnx/resolve/080f79f8c66b07e655347137d734d5556117eda3/gtcrn_simple.onnx",
+            "mirror_proxy": "https://hf-mirror.net/bitsydarel/gtcrn-onnx/resolve/080f79f8c66b07e655347137d734d5556117eda3/gtcrn_simple.onnx",
+            "upstream": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-alignment-en-int8",
+      "name": "英语时间精校 Wav2Vec2 Base",
+      "engine": "ctc-alignment-en",
+      "revision": "729c1a6730fb549c20a1c73a3d3f96f11020225e",
+      "parameters": "约 94M",
+      "languages": [
+        "en"
+      ],
+      "license": "Apache-2.0（原始权重）",
+      "homepage": "https://huggingface.co/facebook/wav2vec2-base-960h",
+      "description": "英语 CTC 声学模型的 ONNX 转换；对已有原文做 Viterbi 强制对齐，保留原文并标记低匹配片段。",
+      "purpose": "enhancement",
+      "quantization": "INT8 · ONNX",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议 4 GB 设备起测；CPU 串行执行，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 95212816,
+          "sha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx"
+          }
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 358,
+          "sha256": "4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json"
+          }
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 215,
+          "sha256": "8cdfd65ff4115423185a1512bdae100e2e0cd744f5b322417429944aaafd0827",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/preprocessor_config.json",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/preprocessor_config.json",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/preprocessor_config.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-alignment-zh-int8",
+      "name": "普通话时间精校 XLSR-53",
+      "engine": "ctc-alignment-zh",
+      "revision": "269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b",
+      "parameters": "约 317M",
+      "languages": [
+        "zh"
+      ],
+      "license": "Apache-2.0（原始权重）",
+      "homepage": "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
+      "description": "普通话 CTC 强制对齐；不改写识别结果。逐个短窗口执行，加载前释放识别器；不把普通话模型用于粤语或日语。",
+      "purpose": "enhancement",
+      "quantization": "INT8 · ONNX",
+      "suggestedRamGb": 6,
+      "memoryNote": "建议 6 GB 设备起测；CPU 串行执行，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 320943727,
+          "sha256": "0dfb758126e2ed0fbc5e10df35320800a68b231dbb3d9db91555c676f57a5ec8",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/onnx/model_quantized.onnx",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/onnx/model_quantized.onnx",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/onnx/model_quantized.onnx"
+          }
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 51366,
+          "sha256": "029f7b0629e8ee64c42b1e8b4a0d3c4b0438910ff06b55cd74f81ef410be7d66",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/vocab.json",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/vocab.json",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/vocab.json"
+          }
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 214,
+          "sha256": "60ca5a31e13f69ee2fbf147504c8676db5f6398fd7a6b12294341dff838edfcf",
+          "sources": {
+            "official": "https://huggingface.co/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/preprocessor_config.json",
+            "mirror": "https://hf-mirror.com/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/preprocessor_config.json",
+            "mirror_proxy": "https://hf-mirror.net/onnx-community/wav2vec2-large-xlsr-53-chinese-zh-cn-ONNX/resolve/269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b/preprocessor_config.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "zipformer-zh-en-tiny-int8",
+      "retired": true,
+      "name": "Zipformer Tiny 中英 · 热词",
+      "engine": "zipformer",
+      "revision": "e2382758de9a0219b4efe682b95af30b399db3b8",
+      "parameters": "Tiny · 上游未单列参数量",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t",
+      "description": "轻量中英流式 Transducer，用于本地文件转录；支持修改束搜索与热词。热词帮助专业名词识别，不保证一定输出指定词。",
+      "purpose": "transcription",
+      "quantization": "INT8 · ONNX",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议 4 GB 设备起测；CPU 串行执行，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "encoder.int8.onnx",
+          "bytes": 42980793,
+          "sha256": "db6f51551762e40e549166fe041ea3e45464370b595e9ad23f06478ec3794fbb",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.int8.onnx"
+          }
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 3486740,
+          "sha256": "4b618d383af304cfae281dbf0a53e8bf442c2f0502256cd5694bd6567ebdd834",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.int8.onnx"
+          }
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 3228485,
+          "sha256": "bdda356d6f9b8c2d7cee9ee0e26075fa537490f7fd06520be408d287073667b9",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.int8.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 56317,
+          "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt"
+          }
+        },
+        {
+          "name": "bpe.vocab",
+          "bytes": 12564,
+          "sha256": "d0b642f3a2eacd5fadefdeff9e0e1358cab729647cbb7fe58cf738e1f7407029",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensevoice-small-int8-gpu",
+      "name": "SenseVoice Small GPU 可选加速包",
+      "engine": "sensevoice",
+      "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "parameters": "234M",
+      "quantization": "FP32 · ONNX",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "yue",
+        "en",
+        "ja",
+        "ko"
+      ],
+      "description": "可选浮点识别权重；仅供同名转录模型的硬件后端使用。下载后仍须本机检查和测速，GPU 不可用时保留原 INT8 CPU 路径。",
+      "license": "FunASR Model License（权重）",
+      "homepage": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall",
+      "suggestedRamGb": 4,
+      "memoryNote": "额外权重不替换原模型；显存和内存不足时自动使用 CPU。文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 937617178,
+          "sha256": "977016bd9c79f9eb343430b5cc305e07ab64d5212dff41b0dcfa1694bee9a8cb",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "dolphin-base-int8-gpu",
+      "name": "Dolphin Base GPU 可选加速包",
+      "engine": "dolphin",
+      "revision": "819b6e48f032e58d7800dd1e0550411352f22d1a",
+      "parameters": "100M",
+      "quantization": "FP32 · ONNX",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "ja",
+        "th",
+        "ru",
+        "ko",
+        "id",
+        "vi",
+        "yue",
+        "hi",
+        "ur",
+        "ms",
+        "uz",
+        "ar",
+        "fa",
+        "bn",
+        "ta",
+        "te",
+        "ug",
+        "gu",
+        "my",
+        "tl",
+        "kk",
+        "or",
+        "ne",
+        "mn",
+        "km",
+        "jv",
+        "lo",
+        "si",
+        "fil",
+        "ps",
+        "pa",
+        "kab",
+        "ba",
+        "ks",
+        "tg",
+        "su",
+        "mr",
+        "ky",
+        "az"
+      ],
+      "description": "可选浮点识别权重；仅供同名转录模型的硬件后端使用。下载后仍须本机检查和测速，GPU 不可用时保留原 INT8 CPU 路径。",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/DataoceanAI/Dolphin",
+      "suggestedRamGb": 4,
+      "memoryNote": "额外权重不替换原模型；显存和内存不足时自动使用 CPU。文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 316747488,
+          "sha256": "3e3e2d2a0924c6e272831dc45a8f7a862746cf183a9c1af8491ac1619d6f98bf",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/model.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/model.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/model.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 504662,
+          "sha256": "c3788261a51df1899ea4b210b552cd42139204de72c0ad60f6cebb199078872e",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-2025-04-02/resolve/819b6e48f032e58d7800dd1e0550411352f22d1a/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parakeet-v3-int8-gpu",
+      "name": "Parakeet TDT v3 GPU 可选加速包",
+      "engine": "parakeet",
+      "revision": "1a468a35cbba69418f126de829e75261dea4a4e4",
+      "parameters": "600M",
+      "quantization": "FP32 · ONNX",
+      "purpose": "acceleration",
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "description": "可选浮点识别权重；仅供同名转录模型的硬件后端使用。下载后仍须本机检查和测速，GPU 不可用时保留原 INT8 CPU 路径。",
+      "license": "CC-BY-4.0",
+      "homepage": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "suggestedRamGb": 8,
+      "memoryNote": "额外权重不替换原模型；显存和内存不足时自动使用 CPU。文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 41766257,
+          "sha256": "3eed7ce424bf8339ad09233533c687e2dbd07e74ccf5027b5e7344019ea373b0",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.onnx"
+          }
+        },
+        {
+          "name": "encoder.weights",
+          "bytes": 2435420160,
+          "sha256": "3af3f51af5f2d01dbbf5af47d42c7962a2c205f11004254bb4f2b979862f39a8",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.weights",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.weights",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/encoder.weights"
+          }
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 47233743,
+          "sha256": "d593cdb0e571f5a457ec2219af9968cbf6b0e8198e8f7839b40a8754593bf68c",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/decoder.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/decoder.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/decoder.onnx"
+          }
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 25286330,
+          "sha256": "b9b0bcf88ac571902e69a6536223ed2d94885e981b85045410f1403d53121a63",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/joiner.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/joiner.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/joiner.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/1a468a35cbba69418f126de829e75261dea4a4e4/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "zipformer-zh-en-tiny-int8-gpu",
+      "retired": true,
+      "name": "Zipformer Tiny 中英 · 热词 GPU 可选加速包",
+      "engine": "zipformer",
+      "revision": "e2382758de9a0219b4efe682b95af30b399db3b8",
+      "parameters": "Tiny · 上游未单列参数量",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t",
+      "description": "可选浮点识别权重；仅供同名转录模型的硬件后端使用。下载后仍须本机检查和测速，GPU 不可用时保留原 INT8 CPU 路径。",
+      "purpose": "acceleration",
+      "quantization": "FP32 · ONNX",
+      "suggestedRamGb": 4,
+      "memoryNote": "额外权重不替换原模型；显存和内存不足时自动使用 CPU。文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 88476270,
+          "sha256": "21b820759ba8a2792838748cdc5a14690fe2010bcb6b370f62e71c87ffeefd84",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.onnx"
+          }
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 13877276,
+          "sha256": "89be509a83175261695bdef5fd1c7b9ab1129a663d1284e7ba9f8507b21e0906",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.onnx"
+          }
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 12833675,
+          "sha256": "bcbcf0cc1b449bc32b7777084ab5a65d1199b822e2aae149d3a43adc9f4b5775",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 56317,
+          "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt"
+          }
+        },
+        {
+          "name": "bpe.vocab",
+          "bytes": 12564,
+          "sha256": "d0b642f3a2eacd5fadefdeff9e0e1358cab729647cbb7fe58cf738e1f7407029",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab",
+            "mirror": "https://hf-mirror.com/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/bpe.vocab"
+          }
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo-int8",
+      "retired": true,
+      "name": "Whisper large-v3 Turbo",
+      "engine": "whisper",
+      "revision": "2ca6ff69fc878651b770880507669577ac41c2ff",
+      "parameters": "809M",
+      "quantization": "INT8 · ONNX",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "yue",
+        "af",
+        "am",
+        "ar",
+        "as",
+        "az",
+        "ba",
+        "be",
+        "bg",
+        "bn",
+        "bo",
+        "br",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "el",
+        "es",
+        "et",
+        "eu",
+        "fa",
+        "fi",
+        "fo",
+        "fr",
+        "gl",
+        "gu",
+        "ha",
+        "haw",
+        "he",
+        "hi",
+        "hr",
+        "ht",
+        "hu",
+        "hy",
+        "id",
+        "is",
+        "it",
+        "jw",
+        "ka",
+        "kk",
+        "km",
+        "kn",
+        "la",
+        "lb",
+        "ln",
+        "lo",
+        "lt",
+        "lv",
+        "mg",
+        "mi",
+        "mk",
+        "ml",
+        "mn",
+        "mr",
+        "ms",
+        "mt",
+        "my",
+        "ne",
+        "nl",
+        "nn",
+        "no",
+        "oc",
+        "pa",
+        "pl",
+        "ps",
+        "pt",
+        "ro",
+        "ru",
+        "sa",
+        "sd",
+        "si",
+        "sk",
+        "sl",
+        "sn",
+        "so",
+        "sq",
+        "sr",
+        "su",
+        "sv",
+        "sw",
+        "ta",
+        "te",
+        "tg",
+        "th",
+        "tk",
+        "tl",
+        "tr",
+        "tt",
+        "uk",
+        "ur",
+        "uz",
+        "vi",
+        "yi",
+        "yo"
+      ],
+      "description": "large-v3 的加速版，809M 参数；导出支持中英日韩、粤语等 100 种语言标签。使用语音分段时间轴，中/英语可选 CTC 精校；转录并翻译沿用独立字幕翻译流程。",
+      "license": "MIT",
+      "homepage": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "suggestedRamGb": 8,
+      "memoryNote": "CPU 权重约 1.04 GB；高性能设备可安装独立 FP32 GPU 包，建议 16 GB 以上内存起测。GPU 包约 3.24 GB，文件体积不等于运行内存。",
+      "files": [
+        {
+          "name": "turbo-encoder.int8.onnx",
+          "bytes": 674716297,
+          "sha256": "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.int8.onnx"
+          }
+        },
+        {
+          "name": "turbo-decoder.int8.onnx",
+          "bytes": 361080764,
+          "sha256": "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.int8.onnx"
+          }
+        },
+        {
+          "name": "turbo-tokens.txt",
+          "bytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo-int8-gpu",
+      "retired": true,
+      "name": "Whisper large-v3 Turbo GPU 可选加速包",
+      "engine": "whisper",
+      "revision": "2ca6ff69fc878651b770880507669577ac41c2ff",
+      "parameters": "809M",
+      "quantization": "FP32 · ONNX",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "yue",
+        "af",
+        "am",
+        "ar",
+        "as",
+        "az",
+        "ba",
+        "be",
+        "bg",
+        "bn",
+        "bo",
+        "br",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "el",
+        "es",
+        "et",
+        "eu",
+        "fa",
+        "fi",
+        "fo",
+        "fr",
+        "gl",
+        "gu",
+        "ha",
+        "haw",
+        "he",
+        "hi",
+        "hr",
+        "ht",
+        "hu",
+        "hy",
+        "id",
+        "is",
+        "it",
+        "jw",
+        "ka",
+        "kk",
+        "km",
+        "kn",
+        "la",
+        "lb",
+        "ln",
+        "lo",
+        "lt",
+        "lv",
+        "mg",
+        "mi",
+        "mk",
+        "ml",
+        "mn",
+        "mr",
+        "ms",
+        "mt",
+        "my",
+        "ne",
+        "nl",
+        "nn",
+        "no",
+        "oc",
+        "pa",
+        "pl",
+        "ps",
+        "pt",
+        "ro",
+        "ru",
+        "sa",
+        "sd",
+        "si",
+        "sk",
+        "sl",
+        "sn",
+        "so",
+        "sq",
+        "sr",
+        "su",
+        "sv",
+        "sw",
+        "ta",
+        "te",
+        "tg",
+        "th",
+        "tk",
+        "tl",
+        "tr",
+        "tt",
+        "uk",
+        "ur",
+        "uz",
+        "vi",
+        "yi",
+        "yo"
+      ],
+      "description": "独立的完整浮点识别权重，仅供同名主模型的硬件后端使用；GPU 不可用时保留 INT8 CPU 路径。",
+      "license": "MIT",
+      "homepage": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "suggestedRamGb": 8,
+      "memoryNote": "建议 16 GB 及以上内存设备起测。包含外部权重和匹配词表；下载体积不等于实际内存/显存占用。",
+      "files": [
+        {
+          "name": "turbo-encoder.onnx",
+          "bytes": 735920,
+          "sha256": "1b960f278564fb8bbacd544d4f85f4dd6d8a64d3aa89543d8f2c4021c926f976",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.onnx"
+          }
+        },
+        {
+          "name": "turbo-encoder.weights",
+          "bytes": 2600325120,
+          "sha256": "746f879ecf066450ab0cdecc05383380b85157270ff6c0a9fb7cfdd917036e12",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.weights",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.weights",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.weights"
+          }
+        },
+        {
+          "name": "turbo-decoder.onnx",
+          "bytes": 636209532,
+          "sha256": "b24db5d90fa230c5eaa6b823d74862ced9e0d1dc3e01ec46601968e8db0e09ec",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.onnx"
+          }
+        },
+        {
+          "name": "turbo-tokens.txt",
+          "bytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "firered-asr2-ctc-int8",
+      "retired": true,
+      "name": "FireRedASR2 CTC",
+      "engine": "firered2",
+      "revision": "423be1acfdc5d8aaa5a485fb6263fe4ea8570b06",
+      "parameters": "≈0.74B（CTC 导出）",
+      "quantization": "INT8 · ONNX",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "en",
+        "yue"
+      ],
+      "description": "2026 年 FireRedASR2 的 encoder + CTC 分支，侧重中英混合及粤语、四川话、上海话等二十多种中文方言/口音；提供 40 ms 粒度 token 起点。不是 AED/LLM 导出，不套用其质量榜单。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/FireRedTeam/FireRedASR2-AED",
+      "suggestedRamGb": 8,
+      "memoryNote": "CPU 权重约 776 MB；使用专用特征归一化与 CTC 加载器。可选 FP32 GPU 包约 2.94 GB；建议 16 GB 以上内存设备起测，内存或驱动不足时回退 CPU。",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 775861420,
+          "sha256": "ca3dbabd82170110cc0b343c2890866d449984bc9cd92b9a18371ff80a81bb99",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/model.int8.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/model.int8.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/model.int8.onnx"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 79172,
+          "sha256": "1bc613de2112d257e61a349c3e72d1b1a9cf19c33d3ca954197ad2171e5ea07b",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/423be1acfdc5d8aaa5a485fb6263fe4ea8570b06/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "firered-asr2-ctc-int8-gpu",
+      "retired": true,
+      "name": "FireRedASR2 CTC GPU 可选加速包",
+      "engine": "firered2",
+      "revision": "5816c6e906b01242cb707fd989967a8db8b2a556",
+      "parameters": "≈0.74B（CTC 导出）",
+      "quantization": "FP32 · ONNX",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "en",
+        "yue"
+      ],
+      "description": "独立的完整浮点识别权重，仅供同名主模型的硬件后端使用；GPU 不可用时保留 INT8 CPU 路径。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/FireRedTeam/FireRedASR2-AED",
+      "suggestedRamGb": 8,
+      "memoryNote": "建议 16 GB 及以上内存设备起测。包含外部权重和匹配词表；下载体积不等于实际内存/显存占用。",
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 678133,
+          "sha256": "125cbbc046c6a299a36022582cabd98443156e5f04a1db7eb89243b421ec9070",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.onnx",
+            "mirror": "https://hf-mirror.com/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.onnx",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.onnx"
+          }
+        },
+        {
+          "name": "model.weights",
+          "bytes": 2937780204,
+          "sha256": "ee8ed03b1a0968418981d88d927d5e8daaa9260bc668b36ea6b3c6eb243d6d04",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.weights",
+            "mirror": "https://hf-mirror.com/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.weights",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/model.weights"
+          }
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 79172,
+          "sha256": "1bc613de2112d257e61a349c3e72d1b1a9cf19c33d3ca954197ad2171e5ea07b",
+          "sources": {
+            "official": "https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/tokens.txt",
+            "mirror": "https://hf-mirror.com/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/tokens.txt",
+            "mirror_proxy": "https://hf-mirror.net/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-2026-02-25/resolve/5816c6e906b01242cb707fd989967a8db8b2a556/tokens.txt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "qwen3-asr-0.6b-f16",
+      "name": "Qwen3-ASR 0.6B",
+      "engine": "qwen3-asr",
+      "revision": "58bd3202f835f46b24b17142cb503b0860c737a5",
+      "parameters": "0.6B",
+      "quantization": "FP16 · 音频 GGUF",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "ar",
+        "de",
+        "fr",
+        "es",
+        "pt",
+        "id",
+        "it",
+        "ko",
+        "ru",
+        "th",
+        "vi",
+        "ja",
+        "tr",
+        "hi",
+        "ms",
+        "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
+        "cs",
+        "fil",
+        "fa",
+        "el",
+        "hu",
+        "mk",
+        "ro"
+      ],
+      "description": "官方多语言语音识别基座的 FP16 格式转换；支持中英日韩等 30 种语言，复用现有转录及文字翻译流程。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
+      "suggestedRamGb": 16,
+      "memoryNote": "建议 16 GB 设备起测；文件体积不等于运行内存。内存不足时识别、精校与翻译交替加载，速度和峰值以内置本机检查为准。",
+      "files": [
+        {
+          "name": "qwen3-asr-0.6b.gguf",
+          "bytes": 1882037824,
+          "sha256": "fbfe8f9cd93fd788683c793ff43c9d28847003f925f37fda8b075886f315bdab",
+          "sources": {
+            "official": "https://huggingface.co/cstr/qwen3-asr-0.6b-GGUF/resolve/58bd3202f835f46b24b17142cb503b0860c737a5/qwen3-asr-0.6b.gguf",
+            "mirror": "https://hf-mirror.com/cstr/qwen3-asr-0.6b-GGUF/resolve/58bd3202f835f46b24b17142cb503b0860c737a5/qwen3-asr-0.6b.gguf",
+            "mirror_proxy": "https://hf-mirror.net/cstr/qwen3-asr-0.6b-GGUF/resolve/58bd3202f835f46b24b17142cb503b0860c737a5/qwen3-asr-0.6b.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "qwen3-asr-1.7b-f16",
+      "name": "Qwen3-ASR 1.7B",
+      "engine": "qwen3-asr",
+      "revision": "674df5d44b50a63e7102a18895ed20e3f91de301",
+      "parameters": "1.7B",
+      "quantization": "FP16 · 音频 GGUF",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "ar",
+        "de",
+        "fr",
+        "es",
+        "pt",
+        "id",
+        "it",
+        "ko",
+        "ru",
+        "th",
+        "vi",
+        "ja",
+        "tr",
+        "hi",
+        "ms",
+        "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
+        "cs",
+        "fil",
+        "fa",
+        "el",
+        "hu",
+        "mk",
+        "ro"
+      ],
+      "description": "面向较高配置设备的官方多语言识别基座 FP16 导出；支持日语、韩语和自动语言识别。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B",
+      "suggestedRamGb": 24,
+      "memoryNote": "建议 24 GB 设备起测；文件体积不等于运行内存。内存不足时识别、精校与翻译交替加载，速度和峰值以内置本机检查为准。",
+      "files": [
+        {
+          "name": "qwen3-asr-1.7b-f16.gguf",
+          "bytes": 4704800576,
+          "sha256": "ac6c58f9cb0f2bb22290319cde01b0e25a2c1f1ee69aa2f1a9265f29a8bfc9d7",
+          "sources": {
+            "official": "https://huggingface.co/cstr/qwen3-asr-1.7b-GGUF/resolve/674df5d44b50a63e7102a18895ed20e3f91de301/qwen3-asr-1.7b-f16.gguf",
+            "mirror": "https://hf-mirror.com/cstr/qwen3-asr-1.7b-GGUF/resolve/674df5d44b50a63e7102a18895ed20e3f91de301/qwen3-asr-1.7b-f16.gguf",
+            "mirror_proxy": "https://hf-mirror.net/cstr/qwen3-asr-1.7b-GGUF/resolve/674df5d44b50a63e7102a18895ed20e3f91de301/qwen3-asr-1.7b-f16.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-qwen3-aligner-0.6b-f16",
+      "name": "多语言时间精校 Qwen3",
+      "engine": "qwen3-alignment",
+      "revision": "1ec5110602ccab18c878ddebedab0891e290a95c",
+      "parameters": "0.6B（文本骨干）",
+      "quantization": "FP16 · 音频 GGUF",
+      "purpose": "enhancement",
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "fr",
+        "de",
+        "it",
+        "ja",
+        "ko",
+        "pt",
+        "ru",
+        "es"
+      ],
+      "description": "对已有原文进行时间精校；支持中英日韩等 11 种语言，复用现有字幕整理与翻译流程。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B",
+      "suggestedRamGb": 8,
+      "memoryNote": "建议 8 GB 设备起测；文件体积不等于运行内存。内存不足时识别、精校与翻译交替加载，速度和峰值以内置本机检查为准。",
+      "files": [
+        {
+          "name": "qwen3-forced-aligner-0.6b-f16.gguf",
+          "bytes": 1841707200,
+          "sha256": "35bd243939212f675652d36de061bedf09daee9a7af2a866f47e57be148a8578",
+          "sources": {
+            "official": "https://huggingface.co/cstr/qwen3-forced-aligner-0.6b-GGUF/resolve/1ec5110602ccab18c878ddebedab0891e290a95c/qwen3-forced-aligner-0.6b-f16.gguf",
+            "mirror": "https://hf-mirror.com/cstr/qwen3-forced-aligner-0.6b-GGUF/resolve/1ec5110602ccab18c878ddebedab0891e290a95c/qwen3-forced-aligner-0.6b-f16.gguf",
+            "mirror_proxy": "https://hf-mirror.net/cstr/qwen3-forced-aligner-0.6b-GGUF/resolve/1ec5110602ccab18c878ddebedab0891e290a95c/qwen3-forced-aligner-0.6b-f16.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "asr-language-id-voxlingua107-f16",
+      "name": "共享音频语言识别 VoxLingua107",
+      "engine": "ecapa-language-id",
+      "revision": "4b58255b784cb053591bf10991ef80ff5cc032fb",
+      "parameters": "21M",
+      "quantization": "FP16 · 音频 GGUF",
+      "purpose": "enhancement",
+      "languages": [
+        "ja",
+        "ko",
+        "zh",
+        "en",
+        "multilingual"
+      ],
+      "description": "107 种语言的音频语言识别；只在自动语言信息不足时调用。低置信度片段保留句级时间。",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa",
+      "suggestedRamGb": 4,
+      "memoryNote": "建议 4 GB 设备起测；文件体积不等于运行内存。内存不足时识别、精校与翻译交替加载，速度和峰值以内置本机检查为准。",
+      "files": [
+        {
+          "name": "ecapa-lid-107-f16.gguf",
+          "bytes": 42838944,
+          "sha256": "59db30ba67cec2f36304f794420779c181124332246f75fc66c349f184110340",
+          "sources": {
+            "official": "https://huggingface.co/cstr/ecapa-lid-107-GGUF/resolve/4b58255b784cb053591bf10991ef80ff5cc032fb/ecapa-lid-107-f16.gguf",
+            "mirror": "https://hf-mirror.com/cstr/ecapa-lid-107-GGUF/resolve/4b58255b784cb053591bf10991ef80ff5cc032fb/ecapa-lid-107-f16.gguf",
+            "mirror_proxy": "https://hf-mirror.net/cstr/ecapa-lid-107-GGUF/resolve/4b58255b784cb053591bf10991ef80ff5cc032fb/ecapa-lid-107-f16.gguf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parakeet-ja-0.6b-q8",
+      "name": "Parakeet 0.6B · 日语 Q8",
+      "engine": "parakeet-ja",
+      "revision": "d9e3ba65a6579796389ea89e5939509ed257f972",
+      "parameters": "0.6B",
+      "quantization": "Q8_0 · GGUF",
+      "purpose": "transcription",
+      "languages": [
+        "ja"
+      ],
+      "description": "NVIDIA 日语专用 Hybrid TDT/CTC，使用 CTC 解码、短语音分段和有界漏句恢复。默认保留原音、固定日语；原生 token 时间复用日语分词与字幕流水线，无需另下大精校模型。不是 2026 年新训练基座，动画童声仍可能识别错误。",
+      "license": "CC-BY-4.0（需署名，可商用）",
+      "homepage": "https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja",
+      "suggestedRamGb": 6,
+      "memoryNote": "权重约 674 MB；原生 CPU、短语音分段识别和 CTC 时间戳。预计额外工作集约 2 GiB，按当前可用内存准入；核显、NPU不作为本版本依赖。Windows x64、Android arm64 已实测；其余平台需构建匹配组件并验证。",
+      "files": [
+        {
+          "name": "parakeet-tdt-0.6b-ja-q8_0.gguf",
+          "bytes": 673554880,
+          "sha256": "5a61e6c7d956c3c72a76fafcd798cac0c9ea66d0e29b3910cd04865a1e42cc17",
+          "sources": {
+            "official": "https://huggingface.co/cstr/parakeet-tdt-0.6b-ja-GGUF/resolve/d9e3ba65a6579796389ea89e5939509ed257f972/parakeet-tdt-0.6b-ja-q8_0.gguf",
+            "mirror": "https://hf-mirror.com/cstr/parakeet-tdt-0.6b-ja-GGUF/resolve/d9e3ba65a6579796389ea89e5939509ed257f972/parakeet-tdt-0.6b-ja-q8_0.gguf",
+            "mirror_proxy": "https://hf-mirror.net/cstr/parakeet-tdt-0.6b-ja-GGUF/resolve/d9e3ba65a6579796389ea89e5939509ed257f972/parakeet-tdt-0.6b-ja-q8_0.gguf"
+          }
+        }
+      ]
+    }
+  ]
+}

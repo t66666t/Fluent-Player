@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "platform": "windows",
+  "arch": "x64",
+  "backend": "cpu",
+  "build": "776c81fc0ff9cc70ec120944c57d76d1035270ea1d079608c4e9a783b148e598",
+  "sources": {
+    "native/parakeet_ja/CMakeLists.txt": "b5efb7791c8903e85cd93dc4ff84d3651ccd63fb4abfb262a8526b9506cfda28",
+    "native/parakeet_ja/LICENSE": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "native/parakeet_ja/parakeet_ja_jni.cpp": "813ad2cf5d7fe8c48b23048797e029994293b5d708e7750c4f97760005175df9",
+    "native/parakeet_ja/parakeet_ja_worker.cpp": "217d3c957737a3d87d49096d955c0cd1f7bc97dd076124575ab3997a012b4f1f",
+    "native/parakeet_ja/parakeet_ja_worker.h": "0f5e146a25261c7f37ff477a0f3dae6bd8e6ed42dc0c8c92090a4d3b9bb4beef",
+    "native/parakeet_ja/runtime.lock.json": "c752e21c036841312f22db1b39da4bcd37da6abb9a282ca05dd088fb3fd65301",
+    "tool/build_cohere_asr.py": "e90f20cde4285d44e109c0dac47e976895bebb482b5267aa3701a9e9043833e0",
+    "tool/build_parakeet_ja.py": "a01e093cb4f3f03507da788470d84e92e81a825f77b1998dba772fcef17390e8",
+    "tool/build_qwen_asr.py": "8081b8711f913b3e5e44cff43bcf99d20c9462f9e8a8b8ec8f76efd63401d171",
+    "tool/prepare_qwen_native.py": "9e0c870afbe2402b46cad894713fc3c1e4b545dd4f8ffce215f7652abc045484"
+  },
+  "pins": {
+    "crispasr": {
+      "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+    },
+    "ggml": {
+      "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+    },
+    "json": {
+      "revision": "v3.11.3",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "license": "MIT"
+    },
+    "jsonLicense": {
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+    }
+  },
+  "files": {
+    "ggml-base.dll": "707bf2496d2fb187d66fe6c8d0ac42195f68bb592cfbf6e0cb7e42ef0ef9a5af",
+    "ggml-cpu-alderlake.dll": "1676c6d1eb35746013a1f95734ba2d1533fef50517dd92ec38f16022f4bf2884",
+    "ggml-cpu-cannonlake.dll": "4d16e2096ebe3ba1217625f9193c7e616d31e85b147ff1f3ae6a33cac1beb69e",
+    "ggml-cpu-cascadelake.dll": "1620647ce4a47f136fa6eda8f7a248809b57c712ce3fe8c85624abee2ea3c8e8",
+    "ggml-cpu-haswell.dll": "33145d68b3c19b2cba3af3ec0aba1c671cca80c0f1bfca90af0eae88f67f74de",
+    "ggml-cpu-icelake.dll": "4ebf39080b5b94bd129c144f43fd115b134aa1ce2e9c132f3c395e7a9f585cc3",
+    "ggml-cpu-sandybridge.dll": "c6f13c9c1948da51ceef925e5c3fa930e39b55cb26c07934ccc31b3390bf15fe",
+    "ggml-cpu-skylakex.dll": "e6377865d515d58a3d5071300267a7e1656398e0d8d919f6d4243074f29d6f0f",
+    "ggml-cpu-sse42.dll": "34c3f29ce6778c255d2aa4dcf31e28430333640024415d7ad3c5b8eaf71cb932",
+    "ggml-cpu-x64.dll": "353548e188c33cdeb2a4851d8f04de9390b17099ed1cb8dabf6f06b92aa1740a",
+    "ggml.dll": "1ee608dc8a94e79946e5be064f173c95f8833e94642ab34e1c021c1c01a31ed9",
+    "parakeet_ja_worker.exe": "776deb39f80dfc7555c9c6a404bd42b9bbb10765c567ca28c1e1b0193af6692c",
+    "licenses/Fluent-Player-MIT.txt": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "licenses/CrispASR-MIT.txt": "aa918fb53ff1948e12cdae8136e045210fb6db222a1f6f0c14bad48e6de2100e",
+    "licenses/ggml-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  "batchSize": 1,
+  "maxSpeechSeconds": 8
+}

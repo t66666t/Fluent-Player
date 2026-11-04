@@ -1,0 +1,937 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-10-23",
+  "components": [
+    {
+      "id": "ocr-v6-tiny-det",
+      "name": "PP-OCRv6_tiny_det",
+      "engine": "ppocr",
+      "revision": "2ba1506c0380b8f0b03dd142459aac66d4421f6c",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 1780590,
+          "sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/750411b8371743f219e6fd76c33372292f55f92f/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 883,
+          "sha256": "3ac018be6f97499a08faa3bbdeb33640968d9307f6736d152902747a9f259593",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/750411b8371743f219e6fd76c33372292f55f92f/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v6-small-det",
+      "name": "PP-OCRv6_small_det",
+      "engine": "ppocr",
+      "revision": "28fe5895c24fd108c19eb3e8479f4ab385fbfc62",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 9880512,
+          "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/37b02eded8dbca659f8ee5d51f822ea1ebd9bcba/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 885,
+          "sha256": "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/37b02eded8dbca659f8ee5d51f822ea1ebd9bcba/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v6-small-rec",
+      "name": "PP-OCRv6_small_rec",
+      "engine": "ppocr",
+      "revision": "b8f84f0b80c529de40b4fbb3544b84fa7233a513",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 21159378,
+          "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/ba215b1cc49d9ed4459d161b96778e8643fe0c1f/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 150579,
+          "sha256": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/ba215b1cc49d9ed4459d161b96778e8643fe0c1f/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v6-medium-det",
+      "name": "PP-OCRv6_medium_det",
+      "engine": "ppocr",
+      "revision": "61323801669c338b7891481ec7bac61ce31b576a",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 62032837,
+          "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/8cb026ecab7a28b7f7e479dccd7f93ebe3ff47c1/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 886,
+          "sha256": "7298d5ead546584af2504d03355f881ac7a7bc0eb1e282d3e159277c1d0af871",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/8cb026ecab7a28b7f7e479dccd7f93ebe3ff47c1/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v6-medium-rec",
+      "name": "PP-OCRv6_medium_rec",
+      "engine": "ppocr",
+      "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 76554979,
+          "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/4b0e4965d5d68d048ec6ff9e1fdaaaaed0b7abd5/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 150580,
+          "sha256": "991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/4b0e4965d5d68d048ec6ff9e1fdaaaaed0b7abd5/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v5-mobile-det",
+      "name": "PP-OCRv5_mobile_det",
+      "engine": "ppocr",
+      "revision": "e6f4fa85f00e168c862bc462aebca69eef9b3d3d",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 4826518,
+          "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e52de0a85ad887349cb9b5b68ef28902001ad9ef/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 903,
+          "sha256": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e52de0a85ad887349cb9b5b68ef28902001ad9ef/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-v5-mobile-rec",
+      "name": "PP-OCRv5_mobile_rec",
+      "engine": "ppocr",
+      "revision": "ed152b8b495f84de93cda5709d768548a9127622",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 16534782,
+          "sha256": "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/5fc501974a0c6e957f0d4fe61ff14169f1afef47/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 148345,
+          "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/5fc501974a0c6e957f0d4fe61ff14169f1afef47/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-en-v5-mobile-rec",
+      "name": "en_PP-OCRv5_mobile_rec",
+      "engine": "ppocr",
+      "revision": "3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 7848423,
+          "sha256": "b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/8e313be82761693b17c8522d63784ba6023f601c/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 3964,
+          "sha256": "27e91d0582f40168aa218303c76e184bc78fa7a5d105aad0cfbad8458b441067",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/8e313be82761693b17c8522d63784ba6023f601c/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-korean-v5-mobile-rec",
+      "name": "korean_PP-OCRv5_mobile_rec",
+      "engine": "ppocr",
+      "revision": "5c6f574b8e2230adf4287b33e736d71b9fabd28e",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 13418787,
+          "sha256": "92f0b7785e64fc9090106a241cf4c1eb97472824558272751b88a2a4476d3a08",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/680fae0e83e0b3866d54bd8a4ea1684c9786e19e/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 96039,
+          "sha256": "f757fa1c40e99edcf27e9cce879b93eb2a51fa46f5ef39095689b8c37dd75998",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/680fae0e83e0b3866d54bd8a4ea1684c9786e19e/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-latin-v5-mobile-rec",
+      "name": "latin_PP-OCRv5_mobile_rec",
+      "engine": "ppocr",
+      "revision": "89d3a50e2c27e2e7cceeab0e944c25c807d5db4f",
+      "parameters": "上游未单列组件参数量",
+      "quantization": "FP32 · ONNX",
+      "languages": [],
+      "description": "OCR 共享组件",
+      "license": "Apache-2.0",
+      "homepage": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 8042023,
+          "sha256": "7888113072263cb471b93f66dd5e2ad70548dc526fa1ace760d0d973dd121498",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/0bbca491cfc54ef5c5253b18bc4bd552dff0625c/inference.onnx",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx"
+          }
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 6817,
+          "sha256": "0bbe984570f597af3638e50bdf2e8276f3ab26a61966096538b3b0d1849f5c84",
+          "sources": {
+            "official": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml",
+            "mainland": "https://modelscope.cn/models/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/0bbca491cfc54ef5c5253b18bc4bd552dff0625c/inference.yml",
+            "mirror": "https://hf-mirror.com/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml",
+            "mirror_proxy": "https://hf-mirror.net/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml"
+          }
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "实际运行内存由模型组合、输入尺寸和计算后端决定。"
+    },
+    {
+      "id": "ocr-legacy-chinese",
+      "name": "旧版 OCR · chinese",
+      "engine": "ppocr-legacy",
+      "revision": "7545160ad6ba2effe0428ab3cf1507a1a158c9d4879de2e4a11923c93829a7b6",
+      "parameters": "上游未单列",
+      "quantization": "FP32 · ONNX",
+      "languages": [
+        "chinese"
+      ],
+      "description": "已安装的旧版兼容模型，仅支持从原数据目录迁移或离线导入。",
+      "license": "沿用原模型许可",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+          "sources": {}
+        },
+        {
+          "name": "ch_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 10857958,
+          "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+          "sources": {}
+        },
+        {
+          "name": "ppocr_keys_v1.txt",
+          "bytes": 26250,
+          "sha256": "a1c84d9bdb9ab29043c58896224d32941783eb821629618416dcb08f12886492",
+          "sources": {}
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "旧版兼容模型。"
+    },
+    {
+      "id": "ocr-legacy-english",
+      "name": "旧版 OCR · english",
+      "engine": "ppocr-legacy",
+      "revision": "c91f60b0127e9eae6299357aee18647b195c5956e83491ae3b292f263b633a44",
+      "parameters": "上游未单列",
+      "quantization": "FP32 · ONNX",
+      "languages": [
+        "english"
+      ],
+      "description": "已安装的旧版兼容模型，仅支持从原数据目录迁移或离线导入。",
+      "license": "沿用原模型许可",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+          "sources": {}
+        },
+        {
+          "name": "en_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 7653044,
+          "sha256": "e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318",
+          "sources": {}
+        },
+        {
+          "name": "en_dict.txt",
+          "bytes": 126,
+          "sha256": "e1f9b09d757e60b89b6c5c701b40e4da62e44f9ff556b73959c50edda12cd530",
+          "sources": {}
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "旧版兼容模型。"
+    },
+    {
+      "id": "ocr-legacy-japanese",
+      "name": "旧版 OCR · japanese",
+      "engine": "ppocr-legacy",
+      "revision": "533d0e87eaf8494acc165f5aef8e8b9b8d9c1771e79e0593202b1d3b6b6299c2",
+      "parameters": "上游未单列",
+      "quantization": "FP32 · ONNX",
+      "languages": [
+        "japanese"
+      ],
+      "description": "已安装的旧版兼容模型，仅支持从原数据目录迁移或离线导入。",
+      "license": "沿用原模型许可",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+          "sources": {}
+        },
+        {
+          "name": "japan_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 9753335,
+          "sha256": "e1075a67dba758ecfc7ebc78a10ae61c95ac8fb66a9c86fab5541e33f085cb7a",
+          "sources": {}
+        },
+        {
+          "name": "japan_dict.txt",
+          "bytes": 17332,
+          "sha256": "1dcfcb41eec90576a945b3084f22ade11ced506e24f14879245b071698f308e8",
+          "sources": {}
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "旧版兼容模型。"
+    },
+    {
+      "id": "ocr-legacy-korean",
+      "name": "旧版 OCR · korean",
+      "engine": "ppocr-legacy",
+      "revision": "e2b5fdf329e10d61d6026f4a1027b6c3afa6b82c964e46b2f85ab8fcfff1ba2d",
+      "parameters": "上游未单列",
+      "quantization": "FP32 · ONNX",
+      "languages": [
+        "korean"
+      ],
+      "description": "已安装的旧版兼容模型，仅支持从原数据目录迁移或离线导入。",
+      "license": "沿用原模型许可",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+          "sources": {}
+        },
+        {
+          "name": "korean_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 24067780,
+          "sha256": "ab151ba9065eccd98f884cf4d927db091be86137276392072edd4f9d43ad7426",
+          "sources": {}
+        },
+        {
+          "name": "korean_dict.txt",
+          "bytes": 14480,
+          "sha256": "aa1fdc8ae8f7cd40a0ec4edb472eb0421e11427e6ccfee9915440742c18b0a20",
+          "sources": {}
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "旧版兼容模型。"
+    },
+    {
+      "id": "ocr-legacy-latin",
+      "name": "旧版 OCR · latin",
+      "engine": "ppocr-legacy",
+      "revision": "f351c7c3ddaf948081a09c8737a99a09e16ef38c58b2df79ef7e91119a13cace",
+      "parameters": "上游未单列",
+      "quantization": "FP32 · ONNX",
+      "languages": [
+        "latin"
+      ],
+      "description": "已安装的旧版兼容模型，仅支持从原数据目录迁移或离线导入。",
+      "license": "沿用原模型许可",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "purpose": "ocr",
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+          "sources": {}
+        },
+        {
+          "name": "latin_PP-OCRv3_rec_mobile.onnx",
+          "bytes": 8978191,
+          "sha256": "e9d7a33667e8aaa702862975186adf2012e3f390cc0f9422865957125f8071cf",
+          "sources": {}
+        },
+        {
+          "name": "latin_dict.txt",
+          "bytes": 468,
+          "sha256": "8e6d4e3629788c35c31f7e530287d6147b549bb7a265bd6708bb281134429e2c",
+          "sources": {}
+        }
+      ],
+      "suggestedRamGb": 4,
+      "memoryNote": "旧版兼容模型。"
+    }
+  ],
+  "presets": [
+    {
+      "id": "ppocr-v6-small",
+      "name": "PP-OCRv6 Small",
+      "tier": "small",
+      "detection": "ocr-v6-small-det",
+      "recognition": "ocr-v6-small-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "latin",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi",
+        "ja"
+      ],
+      "parameters": "约 7.7M（官方组合）",
+      "description": "兼顾速度与精度，适合中高性能手机、平板和桌面设备。",
+      "suggestedRamGb": 6,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v6-medium",
+      "name": "PP-OCRv6 Medium",
+      "tier": "medium",
+      "detection": "ocr-v6-medium-det",
+      "recognition": "ocr-v6-medium-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "latin",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi",
+        "ja"
+      ],
+      "parameters": "约 34.5M（官方组合）",
+      "description": "高精度，适合较高性能设备；计算量和运行内存更高。",
+      "suggestedRamGb": 16,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-mobile",
+      "name": "PP-OCRv5 Mobile",
+      "tier": "mobile",
+      "detection": "ocr-v5-mobile-det",
+      "recognition": "ocr-v5-mobile-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "ja"
+      ],
+      "parameters": "上游未单列组合参数量",
+      "description": "成熟的中英日移动端备选。",
+      "suggestedRamGb": 4,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-en",
+      "name": "PP-OCRv5 英文专用",
+      "tier": "language",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-en-v5-mobile-rec",
+      "groups": [
+        "english"
+      ],
+      "languages": [
+        "en"
+      ],
+      "parameters": "上游未单列组合参数量",
+      "description": "针对所列语言优化识别，共享轻量文字检测组件。",
+      "suggestedRamGb": 4,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-korean",
+      "name": "PP-OCRv5 韩英专用",
+      "tier": "language",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-korean-v5-mobile-rec",
+      "groups": [
+        "korean",
+        "english"
+      ],
+      "languages": [
+        "ko",
+        "en"
+      ],
+      "parameters": "上游未单列组合参数量",
+      "description": "针对所列语言优化识别，共享轻量文字检测组件。",
+      "suggestedRamGb": 4,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-latin",
+      "name": "PP-OCRv5 拉丁语专用",
+      "tier": "language",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-latin-v5-mobile-rec",
+      "groups": [
+        "latin"
+      ],
+      "languages": [
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi"
+      ],
+      "parameters": "上游未单列组合参数量",
+      "description": "针对所列语言优化识别，共享轻量文字检测组件。",
+      "suggestedRamGb": 4,
+      "license": "Apache-2.0",
+      "legacy": false
+    },
+    {
+      "id": "legacy-chinese",
+      "name": "旧版兼容",
+      "tier": "legacy",
+      "detection": "ocr-legacy-chinese",
+      "recognition": "ocr-legacy-chinese",
+      "groups": [
+        "chinese"
+      ],
+      "languages": [
+        "chinese"
+      ],
+      "parameters": "上游未单列",
+      "description": "复用此前已安装的模型；可另下载新版模型。",
+      "suggestedRamGb": 4,
+      "license": "沿用原模型许可",
+      "legacy": true
+    },
+    {
+      "id": "legacy-english",
+      "name": "旧版兼容",
+      "tier": "legacy",
+      "detection": "ocr-legacy-english",
+      "recognition": "ocr-legacy-english",
+      "groups": [
+        "english"
+      ],
+      "languages": [
+        "english"
+      ],
+      "parameters": "上游未单列",
+      "description": "复用此前已安装的模型；可另下载新版模型。",
+      "suggestedRamGb": 4,
+      "license": "沿用原模型许可",
+      "legacy": true
+    },
+    {
+      "id": "legacy-japanese",
+      "name": "旧版兼容",
+      "tier": "legacy",
+      "detection": "ocr-legacy-japanese",
+      "recognition": "ocr-legacy-japanese",
+      "groups": [
+        "japanese"
+      ],
+      "languages": [
+        "japanese"
+      ],
+      "parameters": "上游未单列",
+      "description": "复用此前已安装的模型；可另下载新版模型。",
+      "suggestedRamGb": 4,
+      "license": "沿用原模型许可",
+      "legacy": true
+    },
+    {
+      "id": "legacy-korean",
+      "name": "旧版兼容",
+      "tier": "legacy",
+      "detection": "ocr-legacy-korean",
+      "recognition": "ocr-legacy-korean",
+      "groups": [
+        "korean"
+      ],
+      "languages": [
+        "korean"
+      ],
+      "parameters": "上游未单列",
+      "description": "复用此前已安装的模型；可另下载新版模型。",
+      "suggestedRamGb": 4,
+      "license": "沿用原模型许可",
+      "legacy": true
+    },
+    {
+      "id": "legacy-latin",
+      "name": "旧版兼容",
+      "tier": "legacy",
+      "detection": "ocr-legacy-latin",
+      "recognition": "ocr-legacy-latin",
+      "groups": [
+        "latin"
+      ],
+      "languages": [
+        "latin"
+      ],
+      "parameters": "上游未单列",
+      "description": "复用此前已安装的模型；可另下载新版模型。",
+      "suggestedRamGb": 4,
+      "license": "沿用原模型许可",
+      "legacy": true
+    }
+  ]
+}

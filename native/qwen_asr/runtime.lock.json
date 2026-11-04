@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "crispasr": {
+    "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+    "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+    "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+  },
+  "ggml": {
+    "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+    "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+    "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+  },
+  "dictionaries": {
+    "mecab-ipadic-2.7.0-20250920.tar.gz": "a7ba9f645ffe7094e56ae1c4a81d100df8fbb1e28bbe1792622e9728e162db3d",
+    "mecab-ko-dic-2.1.1-20180720.tar.gz": "702ced21c6167e9d9aebc674ab5ee54af58d4443975f2940d37d0567c020591a"
+  },
+  "lindera": {
+    "version": "6.2.0",
+    "revision": "0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+    "url": "https://codeload.github.com/lindera/lindera/zip/0482efcc46b5ec518b7238efae55e9fed9bba0c0",
+    "sha256": "4a7280070a7070a178876fdd1c3f8605451e7b4116c425679aca60aed45190cf"
+  }
+}

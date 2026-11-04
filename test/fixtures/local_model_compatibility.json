@@ -1,0 +1,1553 @@
+{
+  "models": [
+    {
+      "id": "sensevoice-small-int8",
+      "identity": "sensevoice-small-int8@2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "engine": "sensevoice",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "yue",
+        "en",
+        "ja",
+        "ko"
+      ],
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 239233841,
+          "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+        }
+      ]
+    },
+    {
+      "id": "dolphin-base-int8",
+      "identity": "dolphin-base-int8@1f3a53d0ecf658f8b0974e2cfde368eee40732fa",
+      "engine": "dolphin",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "ja",
+        "th",
+        "ru",
+        "ko",
+        "id",
+        "vi",
+        "yue",
+        "hi",
+        "ur",
+        "ms",
+        "uz",
+        "ar",
+        "fa",
+        "bn",
+        "ta",
+        "te",
+        "ug",
+        "gu",
+        "my",
+        "tl",
+        "kk",
+        "or",
+        "ne",
+        "mn",
+        "km",
+        "jv",
+        "lo",
+        "si",
+        "fil",
+        "ps",
+        "pa",
+        "kab",
+        "ba",
+        "ks",
+        "tg",
+        "su",
+        "mr",
+        "ky",
+        "az"
+      ],
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 103729802,
+          "sha256": "a3aa46c97f3f60f135ff949793cb05fabe7a0b3c484dc2e3cc699d354ee11b76"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 504662,
+          "sha256": "c3788261a51df1899ea4b210b552cd42139204de72c0ad60f6cebb199078872e"
+        }
+      ]
+    },
+    {
+      "id": "parakeet-v3-int8",
+      "identity": "parakeet-v3-int8@2bda32ec70b097a55adaa07d9a7173915b43cc78",
+      "engine": "parakeet",
+      "purpose": "transcription",
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "files": [
+        {
+          "name": "encoder.int8.onnx",
+          "bytes": 652184281,
+          "sha256": "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 11845275,
+          "sha256": "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 6355277,
+          "sha256": "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
+        }
+      ]
+    },
+    {
+      "id": "hy-mt2-1.8b-q4",
+      "identity": "hy-mt2-1.8b-q4@a0c709d9fac510f2c807aa3af52872340dc37a4a",
+      "engine": "hy-mt",
+      "purpose": "translation",
+      "languages": [
+        "zh",
+        "en",
+        "fr",
+        "pt",
+        "es",
+        "ja",
+        "tr",
+        "ru",
+        "ar",
+        "ko",
+        "th",
+        "it",
+        "de",
+        "vi",
+        "ms",
+        "id",
+        "tl",
+        "hi",
+        "pl",
+        "cs",
+        "nl",
+        "km",
+        "my",
+        "fa",
+        "gu",
+        "ur",
+        "te",
+        "mr",
+        "he",
+        "bn",
+        "ta",
+        "uk",
+        "bo",
+        "kk",
+        "mn",
+        "ug",
+        "yue"
+      ],
+      "files": [
+        {
+          "name": "Hy-MT2-1.8B-Q4_K_M.gguf",
+          "bytes": 1133080448,
+          "sha256": "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699"
+        }
+      ]
+    },
+    {
+      "id": "qwen3-4b-q4",
+      "identity": "qwen3-4b-q4@bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "engine": "qwen3",
+      "purpose": "translation",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "fr",
+        "de",
+        "es",
+        "ru",
+        "ar",
+        "hi",
+        "pt",
+        "it",
+        "vi",
+        "th"
+      ],
+      "files": [
+        {
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"
+        }
+      ]
+    },
+    {
+      "id": "asr-punctuation-zh-en-int8",
+      "identity": "asr-punctuation-zh-en-int8@5cccf43af83e4fc50d1d55b8410312e87709be70",
+      "engine": "punctuation",
+      "purpose": "enhancement",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 75519198,
+          "sha256": "65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1"
+        }
+      ]
+    },
+    {
+      "id": "asr-gtcrn",
+      "identity": "asr-gtcrn@080f79f8c66b07e655347137d734d5556117eda3",
+      "engine": "denoiser",
+      "purpose": "enhancement",
+      "languages": [
+        "language-independent"
+      ],
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 535638,
+          "sha256": "e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534"
+        }
+      ]
+    },
+    {
+      "id": "asr-alignment-en-int8",
+      "identity": "asr-alignment-en-int8@729c1a6730fb549c20a1c73a3d3f96f11020225e",
+      "engine": "ctc-alignment-en",
+      "purpose": "enhancement",
+      "languages": [
+        "en"
+      ],
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 95212816,
+          "sha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22"
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 358,
+          "sha256": "4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 215,
+          "sha256": "8cdfd65ff4115423185a1512bdae100e2e0cd744f5b322417429944aaafd0827"
+        }
+      ]
+    },
+    {
+      "id": "asr-alignment-zh-int8",
+      "identity": "asr-alignment-zh-int8@269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b",
+      "engine": "ctc-alignment-zh",
+      "purpose": "enhancement",
+      "languages": [
+        "zh"
+      ],
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 320943727,
+          "sha256": "0dfb758126e2ed0fbc5e10df35320800a68b231dbb3d9db91555c676f57a5ec8"
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 51366,
+          "sha256": "029f7b0629e8ee64c42b1e8b4a0d3c4b0438910ff06b55cd74f81ef410be7d66"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 214,
+          "sha256": "60ca5a31e13f69ee2fbf147504c8676db5f6398fd7a6b12294341dff838edfcf"
+        }
+      ]
+    },
+    {
+      "id": "zipformer-zh-en-tiny-int8",
+      "identity": "zipformer-zh-en-tiny-int8@e2382758de9a0219b4efe682b95af30b399db3b8",
+      "engine": "zipformer",
+      "purpose": "transcription",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "files": [
+        {
+          "name": "encoder.int8.onnx",
+          "bytes": 42980793,
+          "sha256": "db6f51551762e40e549166fe041ea3e45464370b595e9ad23f06478ec3794fbb"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "bytes": 3486740,
+          "sha256": "4b618d383af304cfae281dbf0a53e8bf442c2f0502256cd5694bd6567ebdd834"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "bytes": 3228485,
+          "sha256": "bdda356d6f9b8c2d7cee9ee0e26075fa537490f7fd06520be408d287073667b9"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 56317,
+          "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3"
+        },
+        {
+          "name": "bpe.vocab",
+          "bytes": 12564,
+          "sha256": "d0b642f3a2eacd5fadefdeff9e0e1358cab729647cbb7fe58cf738e1f7407029"
+        }
+      ]
+    },
+    {
+      "id": "sensevoice-small-int8-gpu",
+      "identity": "sensevoice-small-int8-gpu@2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "engine": "sensevoice",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "yue",
+        "en",
+        "ja",
+        "ko"
+      ],
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 937617178,
+          "sha256": "977016bd9c79f9eb343430b5cc305e07ab64d5212dff41b0dcfa1694bee9a8cb"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+        }
+      ]
+    },
+    {
+      "id": "dolphin-base-int8-gpu",
+      "identity": "dolphin-base-int8-gpu@819b6e48f032e58d7800dd1e0550411352f22d1a",
+      "engine": "dolphin",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "ja",
+        "th",
+        "ru",
+        "ko",
+        "id",
+        "vi",
+        "yue",
+        "hi",
+        "ur",
+        "ms",
+        "uz",
+        "ar",
+        "fa",
+        "bn",
+        "ta",
+        "te",
+        "ug",
+        "gu",
+        "my",
+        "tl",
+        "kk",
+        "or",
+        "ne",
+        "mn",
+        "km",
+        "jv",
+        "lo",
+        "si",
+        "fil",
+        "ps",
+        "pa",
+        "kab",
+        "ba",
+        "ks",
+        "tg",
+        "su",
+        "mr",
+        "ky",
+        "az"
+      ],
+      "files": [
+        {
+          "name": "model.onnx",
+          "bytes": 316747488,
+          "sha256": "3e3e2d2a0924c6e272831dc45a8f7a862746cf183a9c1af8491ac1619d6f98bf"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 504662,
+          "sha256": "c3788261a51df1899ea4b210b552cd42139204de72c0ad60f6cebb199078872e"
+        }
+      ]
+    },
+    {
+      "id": "parakeet-v3-int8-gpu",
+      "identity": "parakeet-v3-int8-gpu@1a468a35cbba69418f126de829e75261dea4a4e4",
+      "engine": "parakeet",
+      "purpose": "acceleration",
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 41766257,
+          "sha256": "3eed7ce424bf8339ad09233533c687e2dbd07e74ccf5027b5e7344019ea373b0"
+        },
+        {
+          "name": "encoder.weights",
+          "bytes": 2435420160,
+          "sha256": "3af3f51af5f2d01dbbf5af47d42c7962a2c205f11004254bb4f2b979862f39a8"
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 47233743,
+          "sha256": "d593cdb0e571f5a457ec2219af9968cbf6b0e8198e8f7839b40a8754593bf68c"
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 25286330,
+          "sha256": "b9b0bcf88ac571902e69a6536223ed2d94885e981b85045410f1403d53121a63"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
+        }
+      ]
+    },
+    {
+      "id": "zipformer-zh-en-tiny-int8-gpu",
+      "identity": "zipformer-zh-en-tiny-int8-gpu@e2382758de9a0219b4efe682b95af30b399db3b8",
+      "engine": "zipformer",
+      "purpose": "acceleration",
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "bytes": 88476270,
+          "sha256": "21b820759ba8a2792838748cdc5a14690fe2010bcb6b370f62e71c87ffeefd84"
+        },
+        {
+          "name": "decoder.onnx",
+          "bytes": 13877276,
+          "sha256": "89be509a83175261695bdef5fd1c7b9ab1129a663d1284e7ba9f8507b21e0906"
+        },
+        {
+          "name": "joiner.onnx",
+          "bytes": 12833675,
+          "sha256": "bcbcf0cc1b449bc32b7777084ab5a65d1199b822e2aae149d3a43adc9f4b5775"
+        },
+        {
+          "name": "tokens.txt",
+          "bytes": 56317,
+          "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3"
+        },
+        {
+          "name": "bpe.vocab",
+          "bytes": 12564,
+          "sha256": "d0b642f3a2eacd5fadefdeff9e0e1358cab729647cbb7fe58cf738e1f7407029"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v6-tiny-det",
+      "identity": "ocr-v6-tiny-det@2ba1506c0380b8f0b03dd142459aac66d4421f6c",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 1780590,
+          "sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 883,
+          "sha256": "3ac018be6f97499a08faa3bbdeb33640968d9307f6736d152902747a9f259593"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v6-small-det",
+      "identity": "ocr-v6-small-det@28fe5895c24fd108c19eb3e8479f4ab385fbfc62",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 9880512,
+          "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 885,
+          "sha256": "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v6-small-rec",
+      "identity": "ocr-v6-small-rec@b8f84f0b80c529de40b4fbb3544b84fa7233a513",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 21159378,
+          "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 150579,
+          "sha256": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v6-medium-det",
+      "identity": "ocr-v6-medium-det@61323801669c338b7891481ec7bac61ce31b576a",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 62032837,
+          "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 886,
+          "sha256": "7298d5ead546584af2504d03355f881ac7a7bc0eb1e282d3e159277c1d0af871"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v6-medium-rec",
+      "identity": "ocr-v6-medium-rec@50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 76554979,
+          "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 150580,
+          "sha256": "991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v5-mobile-det",
+      "identity": "ocr-v5-mobile-det@e6f4fa85f00e168c862bc462aebca69eef9b3d3d",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 4826518,
+          "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 903,
+          "sha256": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699"
+        }
+      ]
+    },
+    {
+      "id": "ocr-v5-mobile-rec",
+      "identity": "ocr-v5-mobile-rec@ed152b8b495f84de93cda5709d768548a9127622",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 16534782,
+          "sha256": "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 148345,
+          "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e"
+        }
+      ]
+    },
+    {
+      "id": "ocr-en-v5-mobile-rec",
+      "identity": "ocr-en-v5-mobile-rec@3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 7848423,
+          "sha256": "b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 3964,
+          "sha256": "27e91d0582f40168aa218303c76e184bc78fa7a5d105aad0cfbad8458b441067"
+        }
+      ]
+    },
+    {
+      "id": "ocr-korean-v5-mobile-rec",
+      "identity": "ocr-korean-v5-mobile-rec@5c6f574b8e2230adf4287b33e736d71b9fabd28e",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 13418787,
+          "sha256": "92f0b7785e64fc9090106a241cf4c1eb97472824558272751b88a2a4476d3a08"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 96039,
+          "sha256": "f757fa1c40e99edcf27e9cce879b93eb2a51fa46f5ef39095689b8c37dd75998"
+        }
+      ]
+    },
+    {
+      "id": "ocr-latin-v5-mobile-rec",
+      "identity": "ocr-latin-v5-mobile-rec@89d3a50e2c27e2e7cceeab0e944c25c807d5db4f",
+      "engine": "ppocr",
+      "purpose": "ocr",
+      "languages": [],
+      "files": [
+        {
+          "name": "inference.onnx",
+          "bytes": 8042023,
+          "sha256": "7888113072263cb471b93f66dd5e2ad70548dc526fa1ace760d0d973dd121498"
+        },
+        {
+          "name": "inference.yml",
+          "bytes": 6817,
+          "sha256": "0bbe984570f597af3638e50bdf2e8276f3ab26a61966096538b3b0d1849f5c84"
+        }
+      ]
+    },
+    {
+      "id": "ocr-legacy-chinese",
+      "identity": "ocr-legacy-chinese@7545160ad6ba2effe0428ab3cf1507a1a158c9d4879de2e4a11923c93829a7b6",
+      "engine": "ppocr-legacy",
+      "purpose": "ocr",
+      "languages": [
+        "chinese"
+      ],
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+        },
+        {
+          "name": "ch_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 10857958,
+          "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+        },
+        {
+          "name": "ppocr_keys_v1.txt",
+          "bytes": 26250,
+          "sha256": "a1c84d9bdb9ab29043c58896224d32941783eb821629618416dcb08f12886492"
+        }
+      ]
+    },
+    {
+      "id": "ocr-legacy-english",
+      "identity": "ocr-legacy-english@c91f60b0127e9eae6299357aee18647b195c5956e83491ae3b292f263b633a44",
+      "engine": "ppocr-legacy",
+      "purpose": "ocr",
+      "languages": [
+        "english"
+      ],
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+        },
+        {
+          "name": "en_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 7653044,
+          "sha256": "e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318"
+        },
+        {
+          "name": "en_dict.txt",
+          "bytes": 126,
+          "sha256": "e1f9b09d757e60b89b6c5c701b40e4da62e44f9ff556b73959c50edda12cd530"
+        }
+      ]
+    },
+    {
+      "id": "ocr-legacy-japanese",
+      "identity": "ocr-legacy-japanese@533d0e87eaf8494acc165f5aef8e8b9b8d9c1771e79e0593202b1d3b6b6299c2",
+      "engine": "ppocr-legacy",
+      "purpose": "ocr",
+      "languages": [
+        "japanese"
+      ],
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+        },
+        {
+          "name": "japan_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 9753335,
+          "sha256": "e1075a67dba758ecfc7ebc78a10ae61c95ac8fb66a9c86fab5541e33f085cb7a"
+        },
+        {
+          "name": "japan_dict.txt",
+          "bytes": 17332,
+          "sha256": "1dcfcb41eec90576a945b3084f22ade11ced506e24f14879245b071698f308e8"
+        }
+      ]
+    },
+    {
+      "id": "ocr-legacy-korean",
+      "identity": "ocr-legacy-korean@e2b5fdf329e10d61d6026f4a1027b6c3afa6b82c964e46b2f85ab8fcfff1ba2d",
+      "engine": "ppocr-legacy",
+      "purpose": "ocr",
+      "languages": [
+        "korean"
+      ],
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+        },
+        {
+          "name": "korean_PP-OCRv4_rec_mobile.onnx",
+          "bytes": 24067780,
+          "sha256": "ab151ba9065eccd98f884cf4d927db091be86137276392072edd4f9d43ad7426"
+        },
+        {
+          "name": "korean_dict.txt",
+          "bytes": 14480,
+          "sha256": "aa1fdc8ae8f7cd40a0ec4edb472eb0421e11427e6ccfee9915440742c18b0a20"
+        }
+      ]
+    },
+    {
+      "id": "ocr-legacy-latin",
+      "identity": "ocr-legacy-latin@f351c7c3ddaf948081a09c8737a99a09e16ef38c58b2df79ef7e91119a13cace",
+      "engine": "ppocr-legacy",
+      "purpose": "ocr",
+      "languages": [
+        "latin"
+      ],
+      "files": [
+        {
+          "name": "ch_PP-OCRv4_det_mobile.onnx",
+          "bytes": 4745517,
+          "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+        },
+        {
+          "name": "latin_PP-OCRv3_rec_mobile.onnx",
+          "bytes": 8978191,
+          "sha256": "e9d7a33667e8aaa702862975186adf2012e3f390cc0f9422865957125f8071cf"
+        },
+        {
+          "name": "latin_dict.txt",
+          "bytes": 468,
+          "sha256": "8e6d4e3629788c35c31f7e530287d6147b549bb7a265bd6708bb281134429e2c"
+        }
+      ]
+    }
+  ],
+  "ocrPresets": [
+    {
+      "id": "ppocr-v6-small",
+      "detection": "ocr-v6-small-det",
+      "recognition": "ocr-v6-small-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "latin",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi",
+        "ja"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v6-medium",
+      "detection": "ocr-v6-medium-det",
+      "recognition": "ocr-v6-medium-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "latin",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi",
+        "ja"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-mobile",
+      "detection": "ocr-v5-mobile-det",
+      "recognition": "ocr-v5-mobile-rec",
+      "groups": [
+        "chinese",
+        "english",
+        "japanese"
+      ],
+      "languages": [
+        "zh-Hans",
+        "zh-Hant",
+        "en",
+        "ja"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-en",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-en-v5-mobile-rec",
+      "groups": [
+        "english"
+      ],
+      "languages": [
+        "en"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-korean",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-korean-v5-mobile-rec",
+      "groups": [
+        "korean",
+        "english"
+      ],
+      "languages": [
+        "ko",
+        "en"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "ppocr-v5-latin",
+      "detection": "ocr-v6-tiny-det",
+      "recognition": "ocr-latin-v5-mobile-rec",
+      "groups": [
+        "latin"
+      ],
+      "languages": [
+        "af",
+        "az",
+        "bs",
+        "ca",
+        "cs",
+        "cy",
+        "da",
+        "de",
+        "es",
+        "et",
+        "eu",
+        "fi",
+        "fr",
+        "ga",
+        "gl",
+        "hr",
+        "hu",
+        "id",
+        "is",
+        "it",
+        "ku",
+        "la",
+        "lb",
+        "lt",
+        "lv",
+        "mi",
+        "ms",
+        "mt",
+        "nl",
+        "no",
+        "oc",
+        "pi",
+        "pl",
+        "pt",
+        "qu",
+        "rm",
+        "ro",
+        "sk",
+        "sl",
+        "sq",
+        "sv",
+        "sw",
+        "tl",
+        "tr",
+        "uz",
+        "vi"
+      ],
+      "legacy": false
+    },
+    {
+      "id": "legacy-chinese",
+      "detection": "ocr-legacy-chinese",
+      "recognition": "ocr-legacy-chinese",
+      "groups": [
+        "chinese"
+      ],
+      "languages": [
+        "chinese"
+      ],
+      "legacy": true
+    },
+    {
+      "id": "legacy-english",
+      "detection": "ocr-legacy-english",
+      "recognition": "ocr-legacy-english",
+      "groups": [
+        "english"
+      ],
+      "languages": [
+        "english"
+      ],
+      "legacy": true
+    },
+    {
+      "id": "legacy-japanese",
+      "detection": "ocr-legacy-japanese",
+      "recognition": "ocr-legacy-japanese",
+      "groups": [
+        "japanese"
+      ],
+      "languages": [
+        "japanese"
+      ],
+      "legacy": true
+    },
+    {
+      "id": "legacy-korean",
+      "detection": "ocr-legacy-korean",
+      "recognition": "ocr-legacy-korean",
+      "groups": [
+        "korean"
+      ],
+      "languages": [
+        "korean"
+      ],
+      "legacy": true
+    },
+    {
+      "id": "legacy-latin",
+      "detection": "ocr-legacy-latin",
+      "recognition": "ocr-legacy-latin",
+      "groups": [
+        "latin"
+      ],
+      "languages": [
+        "latin"
+      ],
+      "legacy": true
+    }
+  ],
+  "jobs": {
+    "sensevoice-small-int8:legacy": {
+      "json": {
+        "version": 1,
+        "profile": {
+          "id": "local:sensevoice-small-int8",
+          "name": "SenseVoice Small",
+          "kind": "local",
+          "endpoint": "",
+          "model": "sensevoice-small-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "sensevoice-small-int8@2365baeacb507f821a0c8120fcee3d484dba7a07",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1"
+      },
+      "fingerprint": "30f28265a06399998fabb31ea5ef2ee07d29a65aed92593abec099cd3145ada7",
+      "recognition": "bf80826c24f6decba4942962b6a6f4559dfe9a4462cd3d3dae3560ee1e80c304",
+      "recognitionCache": [
+        "bf80826c24f6decba4942962b6a6f4559dfe9a4462cd3d3dae3560ee1e80c304",
+        "f46a618bc6a8f9bd2b4d86854c70b25f8ee7af0ee3096000d5b4ed11fde1e843",
+        "e4d118fa23c3de453825326c0fac8271ac11648d6c8e261836dd5ec41251ff42",
+        "f17aad54ded67b4d2721145d84c14b345764bee40ac8dbfb9532714bc771ad8b",
+        "92d3b13ac248732a8c97541ca712982dd9985391d0061b439773254a3b76af8d",
+        "30f28265a06399998fabb31ea5ef2ee07d29a65aed92593abec099cd3145ada7",
+        "d47a227a350f282817cb05cc437241de3a1dd267d86dcb4a1a055468384f3326",
+        "eaafe725839bdbc97b190f2ac0df6e1621753e5c01727d4009cf5b26757d32e4",
+        "aa2a1e856bfc5475adfab19fffd34f8b26a67f3a9d6c1baed07f79dadae718be"
+      ],
+      "enhancement": "1617b1ceaff04c8fee4c8c691bc8effa512c4382c8a72cec2da694663eb25881"
+    },
+    "sensevoice-small-int8:enhanced": {
+      "json": {
+        "version": 3,
+        "profile": {
+          "id": "local:sensevoice-small-int8",
+          "name": "SenseVoice Small",
+          "kind": "local",
+          "endpoint": "",
+          "model": "sensevoice-small-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "sensevoice-small-int8@2365baeacb507f821a0c8120fcee3d484dba7a07",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1",
+        "asrCpuThreads": 0,
+        "asrAcceleration": "auto",
+        "asrAccelerationModels": {},
+        "subtitleSegmentation": {
+          "version": 2,
+          "enabled": true,
+          "maxDurationMs": 6000,
+          "maxWidth": 40,
+          "splitOnPunctuation": true,
+          "allowEstimatedTiming": false,
+          "naturalBreaks": true,
+          "maxLatinWidth": 80
+        },
+        "asrEnhancements": {
+          "version": 2,
+          "enabled": true,
+          "denoise": true,
+          "punctuation": true,
+          "alignment": true,
+          "alwaysAlign": false,
+          "trimSilence": true,
+          "review": true,
+          "paddingMs": 160,
+          "vadThreshold": 0.5,
+          "minSilenceMs": 350,
+          "minSpeechMs": 180,
+          "maxSpeechMs": 12000,
+          "channel": "mix",
+          "hotwords": ""
+        },
+        "enhancementModels": {
+          "asr-punctuation-zh-en-int8": "asr-punctuation-zh-en-int8@5cccf43af83e4fc50d1d55b8410312e87709be70",
+          "asr-gtcrn": "asr-gtcrn@080f79f8c66b07e655347137d734d5556117eda3",
+          "asr-alignment-en-int8": "asr-alignment-en-int8@729c1a6730fb549c20a1c73a3d3f96f11020225e",
+          "asr-alignment-zh-int8": "asr-alignment-zh-int8@269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b"
+        }
+      },
+      "fingerprint": "aa716ca0d9a473094143123365001a422663904e14c0e2c57f21f96736be659d",
+      "recognition": "0886957271dcd7b0736329e6645ee2b10ffc885022a34dcbed8c0baedf9772a4",
+      "recognitionCache": [
+        "0886957271dcd7b0736329e6645ee2b10ffc885022a34dcbed8c0baedf9772a4",
+        "974319abb322927abe0cf9435d627d64bff5d9719ea08e7a8b0c2a58ccd645ca",
+        "097e13e1c7b64e035bf994ac1a69e10bb63dc5a60508bea983f9c6769845ffcc",
+        "0e7c998cfbd87d3c74b71336edb4bf4cebe563a5a5fc6367a9a0a981c12ede91",
+        "df787cf426451210bf32ef073aa492705b47e36b6a13a12e7215f10f7acd982d"
+      ],
+      "enhancement": "6bfc76698b73eb65c3a64795248e2fd1b58dd4cd5173adac8fa21e5d8af7bd27"
+    },
+    "dolphin-base-int8:legacy": {
+      "json": {
+        "version": 1,
+        "profile": {
+          "id": "local:dolphin-base-int8",
+          "name": "Dolphin Base",
+          "kind": "local",
+          "endpoint": "",
+          "model": "dolphin-base-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "dolphin-base-int8@1f3a53d0ecf658f8b0974e2cfde368eee40732fa",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1"
+      },
+      "fingerprint": "cb37324d6e2c2e6e8dc4a22b42ae942f58616e654ddd6b9ed0cd5465680bb707",
+      "recognition": "74d832bc7f6e30d7c53c002093dbe2f7b4dd7fb303aed597deef78db70dbb084",
+      "recognitionCache": [
+        "74d832bc7f6e30d7c53c002093dbe2f7b4dd7fb303aed597deef78db70dbb084",
+        "a12a1ca05f9e6d2fd9b6e27b233b2c4918a6ec5e52233b8f03732c603d6d4c3c",
+        "a39070eeee5778ab719c55fca326aaec2fc0ce85aa24e24b209f51be21a70671",
+        "13484db41e18b0a8791969181bd5f3f8a184e7690fed4beac6e69db442dcda6d",
+        "e0a82b52ec8debbe69b5f846a8d74c9718ed21eb8198d1672d8f9a8c07920783",
+        "cb37324d6e2c2e6e8dc4a22b42ae942f58616e654ddd6b9ed0cd5465680bb707",
+        "3a809a11ce61b56f191d4a37eed5c3d4431699095a5bc164d035d2af83ed6e3c",
+        "fd4456a7df26b2ecae6feff1c05fbf26187eca4d0b6fe0370b9d00f78c6f7f1e",
+        "eefb5cc26e674e2574423297635e81ee780228f1e4ee87d8fc89b64cab894a74"
+      ],
+      "enhancement": "1617b1ceaff04c8fee4c8c691bc8effa512c4382c8a72cec2da694663eb25881"
+    },
+    "dolphin-base-int8:enhanced": {
+      "json": {
+        "version": 3,
+        "profile": {
+          "id": "local:dolphin-base-int8",
+          "name": "Dolphin Base",
+          "kind": "local",
+          "endpoint": "",
+          "model": "dolphin-base-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "dolphin-base-int8@1f3a53d0ecf658f8b0974e2cfde368eee40732fa",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1",
+        "asrCpuThreads": 0,
+        "asrAcceleration": "auto",
+        "asrAccelerationModels": {},
+        "subtitleSegmentation": {
+          "version": 2,
+          "enabled": true,
+          "maxDurationMs": 6000,
+          "maxWidth": 40,
+          "splitOnPunctuation": true,
+          "allowEstimatedTiming": false,
+          "naturalBreaks": true,
+          "maxLatinWidth": 80
+        },
+        "asrEnhancements": {
+          "version": 2,
+          "enabled": true,
+          "denoise": true,
+          "punctuation": true,
+          "alignment": true,
+          "alwaysAlign": false,
+          "trimSilence": true,
+          "review": true,
+          "paddingMs": 160,
+          "vadThreshold": 0.5,
+          "minSilenceMs": 350,
+          "minSpeechMs": 180,
+          "maxSpeechMs": 12000,
+          "channel": "mix",
+          "hotwords": ""
+        },
+        "enhancementModels": {
+          "asr-punctuation-zh-en-int8": "asr-punctuation-zh-en-int8@5cccf43af83e4fc50d1d55b8410312e87709be70",
+          "asr-gtcrn": "asr-gtcrn@080f79f8c66b07e655347137d734d5556117eda3",
+          "asr-alignment-en-int8": "asr-alignment-en-int8@729c1a6730fb549c20a1c73a3d3f96f11020225e",
+          "asr-alignment-zh-int8": "asr-alignment-zh-int8@269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b"
+        }
+      },
+      "fingerprint": "f50ac9f4e72544f92d7adb0905a74a8296f18f6e48194fd062c820d1939be586",
+      "recognition": "fefe1dfd36a89c18d0c078d0e8c7e454bb5a723c545ecc05574490ca5bf7203a",
+      "recognitionCache": [
+        "fefe1dfd36a89c18d0c078d0e8c7e454bb5a723c545ecc05574490ca5bf7203a",
+        "c8e2b7784be4ea1abad6bbec88ecf7441769bebabcf97c9b579078f62226edd8",
+        "fe45d88676815df5f2bbb0191b202a06c5f0fb4f286acf3c3a7f7a100f70fe26",
+        "3c51f9b941c53185443e9b3cfd8d6f06573e399aa2d359231590be721e26bb4f",
+        "ec5ebb58768bf7fd4f3c7293f8e59d0f629fc97580c7a1f5c062b17dedcb4503"
+      ],
+      "enhancement": "6bfc76698b73eb65c3a64795248e2fd1b58dd4cd5173adac8fa21e5d8af7bd27"
+    },
+    "parakeet-v3-int8:legacy": {
+      "json": {
+        "version": 1,
+        "profile": {
+          "id": "local:parakeet-v3-int8",
+          "name": "Parakeet TDT v3",
+          "kind": "local",
+          "endpoint": "",
+          "model": "parakeet-v3-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "parakeet-v3-int8@2bda32ec70b097a55adaa07d9a7173915b43cc78",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1"
+      },
+      "fingerprint": "0f7589cd564df5607a184001b0c8b9e7907ae8516c269041519e8bd9846d67fd",
+      "recognition": "4dbe1372d695e9d251bc395a77a4a66903a913c3f8bfd6073b99d9ff703d772e",
+      "recognitionCache": [
+        "4dbe1372d695e9d251bc395a77a4a66903a913c3f8bfd6073b99d9ff703d772e",
+        "9dc4edd086f96d4556cd3c976a9de642e94713e197bb1d9f4ff9f234a3f3d49d",
+        "13ab5ed4061380fbe6741a9b3f5455982aa77d59fc8812ab363c5e3f37cd2578",
+        "a5415b09311d8e8b7688aef7d05dd48b399b5d7e7eeb8fbc6fa21cd11c5371d9",
+        "877e10bb688bd0e1e007ddbbd93dfb6b7c8e0333ebe437e6c114f875eab93a57"
+      ],
+      "enhancement": "1617b1ceaff04c8fee4c8c691bc8effa512c4382c8a72cec2da694663eb25881"
+    },
+    "parakeet-v3-int8:enhanced": {
+      "json": {
+        "version": 3,
+        "profile": {
+          "id": "local:parakeet-v3-int8",
+          "name": "Parakeet TDT v3",
+          "kind": "local",
+          "endpoint": "",
+          "model": "parakeet-v3-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "parakeet-v3-int8@2bda32ec70b097a55adaa07d9a7173915b43cc78",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1",
+        "asrCpuThreads": 0,
+        "asrAcceleration": "auto",
+        "asrAccelerationModels": {},
+        "subtitleSegmentation": {
+          "version": 2,
+          "enabled": true,
+          "maxDurationMs": 6000,
+          "maxWidth": 40,
+          "splitOnPunctuation": true,
+          "allowEstimatedTiming": false,
+          "naturalBreaks": true,
+          "maxLatinWidth": 80
+        },
+        "asrEnhancements": {
+          "version": 2,
+          "enabled": true,
+          "denoise": true,
+          "punctuation": true,
+          "alignment": true,
+          "alwaysAlign": false,
+          "trimSilence": true,
+          "review": true,
+          "paddingMs": 160,
+          "vadThreshold": 0.5,
+          "minSilenceMs": 350,
+          "minSpeechMs": 180,
+          "maxSpeechMs": 12000,
+          "channel": "mix",
+          "hotwords": ""
+        },
+        "enhancementModels": {
+          "asr-punctuation-zh-en-int8": "asr-punctuation-zh-en-int8@5cccf43af83e4fc50d1d55b8410312e87709be70",
+          "asr-gtcrn": "asr-gtcrn@080f79f8c66b07e655347137d734d5556117eda3",
+          "asr-alignment-en-int8": "asr-alignment-en-int8@729c1a6730fb549c20a1c73a3d3f96f11020225e",
+          "asr-alignment-zh-int8": "asr-alignment-zh-int8@269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b"
+        }
+      },
+      "fingerprint": "faeab895b351381e15a6c2637862ff2bb2447c1f3994d9cb51053b095fbf9b49",
+      "recognition": "4419b36ad05026232926f757ec7ee998a9b0eda19de770c3282f51b2bc8f6253",
+      "recognitionCache": [
+        "4419b36ad05026232926f757ec7ee998a9b0eda19de770c3282f51b2bc8f6253",
+        "4943a66cc60d4e61d78b0cc932e5c15a378702351da94cf8673c054b39d30075",
+        "d880a0ac51fc2cc9cd39626b0d92e954f887134cbcd99e14831245ff98dbf5d9",
+        "4196502c1282596ab71a4b9c5c124be4256c9ed7816fd236315210a0cebaf9ea",
+        "fdfe587ecf8e3dfad65586528f6a490bd488f3dce5932f166e29aa98f29f32e5"
+      ],
+      "enhancement": "6bfc76698b73eb65c3a64795248e2fd1b58dd4cd5173adac8fa21e5d8af7bd27"
+    },
+    "zipformer-zh-en-tiny-int8:legacy": {
+      "json": {
+        "version": 1,
+        "profile": {
+          "id": "local:zipformer-zh-en-tiny-int8",
+          "name": "Zipformer Tiny 中英 · 热词",
+          "kind": "local",
+          "endpoint": "",
+          "model": "zipformer-zh-en-tiny-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "zipformer-zh-en-tiny-int8@e2382758de9a0219b4efe682b95af30b399db3b8",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1"
+      },
+      "fingerprint": "15d155f2f8008b03ec3f82d7fe0db93b383cc75b5af1c1c307bdc8c8c59abef0",
+      "recognition": "641a6a0db6274225d68489c18b21faae007c87657a741a10efd0c62acc1f7b5b",
+      "recognitionCache": [
+        "641a6a0db6274225d68489c18b21faae007c87657a741a10efd0c62acc1f7b5b",
+        "36f773754f7f6017160384c07b777724c73396644214adb50e4015c9eb18f4a0",
+        "7c9f981b66d956b767b7c44d9a0c03197e658779b24e7c7828a76019eea882c3",
+        "39d3f3c83f4f9e99d70a5bde0dc4314f909e1b5d23276d5a875b898f5f5c5463",
+        "3efceb149fc4f358c940acfbdd3f9f890464d9f2a6e41f53b9b0bbdaa203f9a8",
+        "15d155f2f8008b03ec3f82d7fe0db93b383cc75b5af1c1c307bdc8c8c59abef0",
+        "3a4fbc4978947e0267a8085f2eb21dd68492c5934028e4a2c5b2e3b1735f032a",
+        "2c7f80607bb1165f1c8217ecd0b83ffed6a0320e5125f78c21859f9ffa296b90",
+        "b952f1c57951db040a5eaf9a9d65acd2c87150d9ff66c882aa8b8397ba12a30b"
+      ],
+      "enhancement": "1617b1ceaff04c8fee4c8c691bc8effa512c4382c8a72cec2da694663eb25881"
+    },
+    "zipformer-zh-en-tiny-int8:enhanced": {
+      "json": {
+        "version": 3,
+        "profile": {
+          "id": "local:zipformer-zh-en-tiny-int8",
+          "name": "Zipformer Tiny 中英 · 热词",
+          "kind": "local",
+          "endpoint": "",
+          "model": "zipformer-zh-en-tiny-int8",
+          "language": "auto",
+          "appId": ""
+        },
+        "artifactIdentity": "zipformer-zh-en-tiny-int8@e2382758de9a0219b4efe682b95af30b399db3b8",
+        "threads": 2,
+        "translation": {
+          "acceleration": "auto",
+          "threads": 0,
+          "batchSize": 8
+        },
+        "segmentation": "vad-12s-overlap-v1",
+        "asrCpuThreads": 0,
+        "asrAcceleration": "auto",
+        "asrAccelerationModels": {},
+        "subtitleSegmentation": {
+          "version": 2,
+          "enabled": true,
+          "maxDurationMs": 6000,
+          "maxWidth": 40,
+          "splitOnPunctuation": true,
+          "allowEstimatedTiming": false,
+          "naturalBreaks": true,
+          "maxLatinWidth": 80
+        },
+        "asrEnhancements": {
+          "version": 2,
+          "enabled": true,
+          "denoise": true,
+          "punctuation": true,
+          "alignment": true,
+          "alwaysAlign": false,
+          "trimSilence": true,
+          "review": true,
+          "paddingMs": 160,
+          "vadThreshold": 0.5,
+          "minSilenceMs": 350,
+          "minSpeechMs": 180,
+          "maxSpeechMs": 12000,
+          "channel": "mix",
+          "hotwords": ""
+        },
+        "enhancementModels": {
+          "asr-punctuation-zh-en-int8": "asr-punctuation-zh-en-int8@5cccf43af83e4fc50d1d55b8410312e87709be70",
+          "asr-gtcrn": "asr-gtcrn@080f79f8c66b07e655347137d734d5556117eda3",
+          "asr-alignment-en-int8": "asr-alignment-en-int8@729c1a6730fb549c20a1c73a3d3f96f11020225e",
+          "asr-alignment-zh-int8": "asr-alignment-zh-int8@269b21c2b6ea9bebaa5d6b17bfeebf5a23beaa7b"
+        }
+      },
+      "fingerprint": "5115b4df73e4b7e40f8ebe1e462d0ca85a3a51b054502699fbc685c524094ad4",
+      "recognition": "d7a23616e6f94c70d94a68ca6111c08fcd411d28764ef1a8deeb073c3c190512",
+      "recognitionCache": [
+        "d7a23616e6f94c70d94a68ca6111c08fcd411d28764ef1a8deeb073c3c190512",
+        "b8d2f29ceb29b90cca116744f89ee7180389b7a4366cefd9220e40e6aaee6332",
+        "696b3cd126bfd650c1ad0c13716bd4d3075466a1b25bba26b927603917b55c06",
+        "bf679547ba187ba189484134fd2d89cbbd06ad309dee2b5ffb51ffc49f5695e6",
+        "605cf55087dedf3cb776647883f70dbc677bbad85fa99a28bba6b7d2c8a9daf6"
+      ],
+      "enhancement": "6bfc76698b73eb65c3a64795248e2fd1b58dd4cd5173adac8fa21e5d8af7bd27"
+    }
+  }
+}

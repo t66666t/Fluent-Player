@@ -1,0 +1,22 @@
+{
+  "crispasr": {
+    "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+    "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+    "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+  },
+  "ggml": {
+    "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+    "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+    "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+  },
+  "json": {
+    "revision": "v3.11.3",
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+    "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+    "license": "MIT"
+  },
+  "jsonLicense": {
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+    "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  }
+}

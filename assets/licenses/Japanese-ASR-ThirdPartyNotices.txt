@@ -1,0 +1,45 @@
+Japanese transcription components
+
+NVIDIA parakeet-tdt_ctc-0.6b-ja
+Author: NVIDIA. Japanese Hybrid FastConformer TDT/CTC model.
+Source: https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja
+Model revision: 44edb27eea9317daf89333e75eb830db4b1cc298
+License: Creative Commons Attribution 4.0 International (CC BY 4.0).
+Full text: assets/licenses/CC-BY-4.0.txt
+https://creativecommons.org/licenses/by/4.0/
+GGUF conversion and Q8 quantization: CrispStrobe (cstr).
+https://huggingface.co/cstr/parakeet-tdt-0.6b-ja-GGUF
+Export revision: d9e3ba65a6579796389ea89e5939509ed257f972
+Changes in this application: Q8 inference, CTC decoding, short audio windows,
+bounded acoustic-gap recovery, subtitle token-time conversion. No endorsement
+by NVIDIA or the conversion author is implied.
+
+Cohere Transcribe 03-2026
+Author: Cohere Labs. Model license: Apache License 2.0.
+https://huggingface.co/CohereLabs/cohere-transcribe-03-2026
+GGUF conversion: handy-computer; revision
+7353b6040bdc1be9e5a3823d99d5fe12afe88264.
+https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf
+Full Apache text: assets/licenses/Apache-2.0.txt
+This application uses a Japanese preset and short-window CPU inference.
+
+Native inference dependencies
+CrispASR 34a8e436192de19d3e5a872437edfe3fd26ce8c4 (MIT)
+ggml e2ae679a563014f46c546ce6c6448e8601e4dea6 (MIT)
+transcribe.cpp 4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b (MIT)
+nlohmann/json 3.11.3 (MIT)
+Complete upstream copyright, license and NOTICE files are preserved in each
+native component's licenses directory. Source/build identities are recorded
+in native/cohere_asr/runtime.lock.json and native/parakeet_ja/runtime.lock.json.
+The shared Japanese/Korean tokenizer and dictionaries retain the notices in
+assets/licenses/Qwen-ASR-ThirdPartyNotices.txt.
+
+Bundled Japanese speech probe
+FLEURS dataset, Google and contributing authors (CC BY 4.0).
+https://huggingface.co/datasets/google/fleurs
+Revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+Japanese dev audio: 10339149383603832153.wav
+Changes: converted to 16 kHz mono PCM16; first 7.98 seconds retained.
+Exact input/output hashes: assets/models/asr/speech_probe_ja.source.json
+Paper: https://arxiv.org/abs/2205.12446
+Full license: assets/licenses/CC-BY-4.0.txt

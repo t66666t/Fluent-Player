@@ -1,0 +1,1007 @@
+{
+  "273401": {
+    "title": "学徒 第二季",
+    "type": 3,
+    "season_id": 27300,
+    "cover": "http://i0.hdslb.com/bfs/bangumi/image/31444aa6e7b3e5d1c390753340475ab854f75f26.jpg",
+    "episodes": [
+      {
+        "id": 273401,
+        "title": "1",
+        "long_title": "玩具大赛",
+        "show_title": "第1集 玩具大赛",
+        "bvid": "BV1Z4411e7RY",
+        "aid": 51747601,
+        "cid": 90587903,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 3491000
+      },
+      {
+        "id": 273402,
+        "title": "2",
+        "long_title": "冰淇淋大战",
+        "show_title": "第2集 冰淇淋大战",
+        "bvid": "BV1d3411b725",
+        "aid": 421591091,
+        "cid": 90588152,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 4167000
+      },
+      {
+        "id": 273403,
+        "title": "3",
+        "long_title": "牙膏促销战",
+        "show_title": "第3集 牙膏促销战",
+        "bvid": "BV1jF411Y7PC",
+        "aid": 294092169,
+        "cid": 90588396,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2500000
+      },
+      {
+        "id": 273404,
+        "title": "4",
+        "long_title": "餐厅比拼",
+        "show_title": "第4集 餐厅比拼",
+        "bvid": "BV1jT4y197sg",
+        "aid": 934021745,
+        "cid": 90588607,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2512000
+      },
+      {
+        "id": 273405,
+        "title": "5",
+        "long_title": "QVC之争",
+        "show_title": "第5集 QVC之争",
+        "bvid": "BV19f4y1u77v",
+        "aid": 379038335,
+        "cid": 90588914,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2504000
+      },
+      {
+        "id": 273406,
+        "title": "6",
+        "long_title": "时尚犯罪",
+        "show_title": "第6集 时尚犯罪",
+        "bvid": "BV1tS4y1d72W",
+        "aid": 721603390,
+        "cid": 90589169,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2501000
+      },
+      {
+        "id": 273407,
+        "title": "7",
+        "long_title": "人狗大战",
+        "show_title": "第7集 人狗大战",
+        "bvid": "BV1yU4y1g7b9",
+        "aid": 676587171,
+        "cid": 90589385,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2501000
+      },
+      {
+        "id": 273408,
+        "title": "8",
+        "long_title": "警察故事",
+        "show_title": "第8集 警察故事",
+        "bvid": "BV12f4y1u7gG",
+        "aid": 379044903,
+        "cid": 90589469,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2490000
+      },
+      {
+        "id": 273409,
+        "title": "9",
+        "long_title": "旧屋大改造",
+        "show_title": "第9集 旧屋大改造",
+        "bvid": "BV1pF411Y7ys",
+        "aid": 294110261,
+        "cid": 90589590,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2501000
+      },
+      {
+        "id": 273410,
+        "title": "10",
+        "long_title": "婚纱大作战",
+        "show_title": "第10集 婚纱大作战",
+        "bvid": "BV1bQ4y1m7qf",
+        "aid": 719081690,
+        "cid": 90589705,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2501000
+      },
+      {
+        "id": 273411,
+        "title": "11",
+        "long_title": "牛仔裤的夏天",
+        "show_title": "第11集 牛仔裤的夏天",
+        "bvid": "BV1iS4y1d7JU",
+        "aid": 721594338,
+        "cid": 90589843,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2505000
+      },
+      {
+        "id": 273412,
+        "title": "12",
+        "long_title": "百事新产品比拼",
+        "show_title": "第12集 百事新产品比拼",
+        "bvid": "BV1Tv411M7Ws",
+        "aid": 251530097,
+        "cid": 90589995,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2565000
+      },
+      {
+        "id": 273413,
+        "title": "13",
+        "long_title": "玛氏新产品比拼",
+        "show_title": "第13集 玛氏新产品比拼",
+        "bvid": "BV1qU4y1g7W9",
+        "aid": 676528513,
+        "cid": 90590128,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2501000
+      },
+      {
+        "id": 273414,
+        "title": "14",
+        "long_title": "商业领袖面试",
+        "show_title": "第14集 商业领袖面试",
+        "bvid": "BV1Lv411M7Dw",
+        "aid": 251591235,
+        "cid": 90590211,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 2500000
+      },
+      {
+        "id": 273415,
+        "title": "15",
+        "long_title": "盖恩沃斯慈善赛事筹备比拼",
+        "show_title": "第15集 盖恩沃斯慈善赛事筹备比拼",
+        "bvid": "BV17T4y1974e",
+        "aid": 934025346,
+        "cid": 90590303,
+        "cover": "http://i0.hdslb.com/bfs/archive/ff9fd5a14ca34b54fb5b76ec964fe66102b03ac2.jpg",
+        "duration": 3981000
+      }
+    ]
+  },
+  "5528791": {
+    "title": "海绵宝宝：皮老板大电影",
+    "type": 2,
+    "season_id": 89307,
+    "cover": "https://i0.hdslb.com/bfs/bangumi/image/6c3304bcd3a298aa99c1423e5331cad8fc6cc6cb.png",
+    "episodes": [
+      {
+        "id": 5528791,
+        "title": "原版",
+        "long_title": "",
+        "show_title": "原版",
+        "bvid": "BV1wx8u6GEnb",
+        "aid": 117116007157351,
+        "cid": 41028159827,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/e0d66894ece14bc5c4a1b5ef33bf0e39394cfa15.png",
+        "duration": 5035000
+      },
+      {
+        "id": 5543003,
+        "title": "中文版",
+        "long_title": "",
+        "show_title": "中文版",
+        "bvid": "BV1wx8u6GEoS",
+        "aid": 117116007155301,
+        "cid": 41088714609,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/a184d6ddff0074630b272aaedd79a05388f0f758.png",
+        "duration": 5035000
+      }
+    ]
+  },
+  "341309": {
+    "title": "咒术回战",
+    "type": 1,
+    "season_id": 34430,
+    "cover": "http://i0.hdslb.com/bfs/bangumi/image/91e9534cc55aa1a6dc959e7d6d33bde970208232.png",
+    "episodes": [
+      {
+        "id": 341309,
+        "title": "1",
+        "long_title": "两面宿傩",
+        "show_title": "第1话 两面宿傩",
+        "bvid": "BV1E5411j75F",
+        "aid": 457273039,
+        "cid": 326840841,
+        "cover": "http://i0.hdslb.com/bfs/archive/0f3918589130fe7e88f75a5fdabb6e8b86c41de5.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341310,
+        "title": "2",
+        "long_title": "为了自己",
+        "show_title": "第2话 为了自己",
+        "bvid": "BV19p4y1r7sr",
+        "aid": 969983283,
+        "cid": 327083613,
+        "cover": "http://i0.hdslb.com/bfs/archive/d32f1353c9a5d4e6103950c2a9a52650cea13883.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341311,
+        "title": "3",
+        "long_title": "铁娘子",
+        "show_title": "第3话 铁娘子",
+        "bvid": "BV1zi4y1j7o9",
+        "aid": 542467017,
+        "cid": 327091833,
+        "cover": "http://i0.hdslb.com/bfs/archive/a45627c2626c8a42ec5b1a62568d05bea601cf8a.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341312,
+        "title": "4",
+        "long_title": "咒胎戴天",
+        "show_title": "第4话 咒胎戴天",
+        "bvid": "BV1VA411j7pK",
+        "aid": 330120797,
+        "cid": 327220577,
+        "cover": "http://i0.hdslb.com/bfs/archive/eb882dd632785046dbad6fd72513878e44d82f49.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341313,
+        "title": "5",
+        "long_title": "咒胎戴天 二",
+        "show_title": "第5话 咒胎戴天 二",
+        "bvid": "BV1Tt4y1i7EU",
+        "aid": 627505948,
+        "cid": 327229471,
+        "cover": "http://i0.hdslb.com/bfs/archive/ce4062fbaa74ea89a6a559e4c7e2d94eb5748eb1.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341314,
+        "title": "6",
+        "long_title": "雨后",
+        "show_title": "第6话 雨后",
+        "bvid": "BV1m5411L7Vb",
+        "aid": 457694053,
+        "cid": 327236063,
+        "cover": "http://i0.hdslb.com/bfs/archive/ab983a6787c73b135bfa6faec6a498cacd132b14.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341315,
+        "title": "7",
+        "long_title": "急袭",
+        "show_title": "第7话 急袭",
+        "bvid": "BV1KK411V7FK",
+        "aid": 500328093,
+        "cid": 327244730,
+        "cover": "http://i0.hdslb.com/bfs/archive/c4be00898ba2673e0f4620335cac2f5da46f6208.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341316,
+        "title": "8",
+        "long_title": "无聊",
+        "show_title": "第8话 无聊",
+        "bvid": "BV13D4y1X7zQ",
+        "aid": 712850969,
+        "cid": 257690537,
+        "cover": "http://i0.hdslb.com/bfs/archive/9300c29cc6467e0e6d6075b69b911eb733034fa9.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341317,
+        "title": "9",
+        "long_title": "幼鱼与逆罚",
+        "show_title": "第9话 幼鱼与逆罚",
+        "bvid": "BV1Ct4y1a7vV",
+        "aid": 627888714,
+        "cid": 260164050,
+        "cover": "http://i0.hdslb.com/bfs/archive/8a4d66e50fed8e227b7edad31f57c7f343fe2b6b.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341318,
+        "title": "10",
+        "long_title": "无为转变",
+        "show_title": "第10话 无为转变",
+        "bvid": "BV1av411b7c8",
+        "aid": 245581288,
+        "cid": 262672245,
+        "cover": "http://i0.hdslb.com/bfs/archive/876c2a152bea7ac6244fb545308fcbdd6936cc1f.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341319,
+        "title": "11",
+        "long_title": "守旧愚蠢",
+        "show_title": "第11话 守旧愚蠢",
+        "bvid": "BV1Wv411b73o",
+        "aid": 245558954,
+        "cid": 265260888,
+        "cover": "http://i0.hdslb.com/bfs/archive/ce128e0de1572a83b97e47372367cd27400ccf2a.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341320,
+        "title": "12",
+        "long_title": "致曾几何时的你",
+        "show_title": "第12话 致曾几何时的你",
+        "bvid": "BV1Dy4y1m7z7",
+        "aid": 798242826,
+        "cid": 268143397,
+        "cover": "http://i0.hdslb.com/bfs/archive/3a78f28cbc09eb25c5fb432ab8801277b41485d1.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 341321,
+        "title": "13",
+        "long_title": "明天见",
+        "show_title": "第13话 明天见",
+        "bvid": "BV1vA411p7oy",
+        "aid": 330835922,
+        "cid": 327628238,
+        "cover": "http://i0.hdslb.com/bfs/archive/3187fdd0c8688d7f6b9a9730800188e280b35e68.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375395,
+        "title": "14",
+        "long_title": "京都姐妹校交流会-团体战0-",
+        "show_title": "第14话 京都姐妹校交流会-团体战0-",
+        "bvid": "BV1bV411t765",
+        "aid": 416149767,
+        "cid": 282714775,
+        "cover": "http://i0.hdslb.com/bfs/archive/5cd918384eb0a8dbbe485e9a81e5d23c03ca67cd.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375396,
+        "title": "15",
+        "long_title": "京都姐妹校交流会-团体战①-",
+        "show_title": "第15话 京都姐妹校交流会-团体战①-",
+        "bvid": "BV1wy4y1p719",
+        "aid": 801297455,
+        "cid": 285822261,
+        "cover": "http://i0.hdslb.com/bfs/archive/04a310930fc6dfe1739b76ae6029a19886f02006.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375397,
+        "title": "16",
+        "long_title": "京都姐妹校交流会-团体战②-",
+        "show_title": "第16话 京都姐妹校交流会-团体战②-",
+        "bvid": "BV1Nh41117j8",
+        "aid": 203876842,
+        "cid": 289388461,
+        "cover": "http://i0.hdslb.com/bfs/archive/849a7c8cc59a2709239e02bb63ab352e8c1083ee.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375398,
+        "title": "17",
+        "long_title": "京都姐妹校交流会-团体战③-",
+        "show_title": "第17话 京都姐妹校交流会-团体战③-",
+        "bvid": "BV1AV411i7Qx",
+        "aid": 416548346,
+        "cid": 292530631,
+        "cover": "http://i0.hdslb.com/bfs/archive/faa5b6abc7816a52e51d6e72b4b8c634ec3f2016.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375399,
+        "title": "18",
+        "long_title": "贤者",
+        "show_title": "第18话 贤者",
+        "bvid": "BV1YU4y1W72V",
+        "aid": 671718780,
+        "cid": 296706499,
+        "cover": "http://i0.hdslb.com/bfs/archive/64aa237f75e72dcd4393e599e7409a775251f87b.jpg",
+        "duration": 1436000
+      },
+      {
+        "id": 375400,
+        "title": "19",
+        "long_title": "黑闪",
+        "show_title": "第19话 黑闪",
+        "bvid": "BV1wv411Y7Hz",
+        "aid": 246756747,
+        "cid": 327655154,
+        "cover": "http://i0.hdslb.com/bfs/archive/7926efa5e05c0a42494ce67c49ae54e1119145d3.jpg",
+        "duration": 1421000
+      },
+      {
+        "id": 375401,
+        "title": "20",
+        "long_title": "超规格",
+        "show_title": "第20话 超规格",
+        "bvid": "BV1VX4y1V73K",
+        "aid": 714469931,
+        "cid": 327672662,
+        "cover": "http://i0.hdslb.com/bfs/archive/0fba55ff2a6b2a95c3735eb0736d3f67fa56aaad.jpg",
+        "duration": 1421000
+      },
+      {
+        "id": 375402,
+        "title": "21",
+        "long_title": "咒术甲子园",
+        "show_title": "第21话 咒术甲子园",
+        "bvid": "BV1A5411K7NH",
+        "aid": 459463080,
+        "cid": 327910052,
+        "cover": "http://i0.hdslb.com/bfs/archive/0f900084bf48778f16120eeb6763e11c2dd1da63.jpg",
+        "duration": 1421000
+      },
+      {
+        "id": 375403,
+        "title": "22",
+        "long_title": "起始雷同",
+        "show_title": "第22话 起始雷同",
+        "bvid": "BV1eV411Y7fK",
+        "aid": 417114815,
+        "cid": 327919043,
+        "cover": "http://i0.hdslb.com/bfs/archive/c376bd6b7e87eb8c2bce5201cc604ecb66f61fc4.jpg",
+        "duration": 1421000
+      },
+      {
+        "id": 391795,
+        "title": "23",
+        "long_title": "起始雷同 二",
+        "show_title": "第23话 起始雷同 二",
+        "bvid": "BV1kp4y1h7u6",
+        "aid": 972192958,
+        "cid": 327919285,
+        "cover": "http://i0.hdslb.com/bfs/archive/4c06d1947721b5d1e690803c7b1c012008ef2237.jpg",
+        "duration": 1421000
+      },
+      {
+        "id": 395180,
+        "title": "24",
+        "long_title": "共犯",
+        "show_title": "第24话 共犯",
+        "bvid": "BV1Uh411S7dB",
+        "aid": 204796550,
+        "cid": 315604809,
+        "cover": "http://i0.hdslb.com/bfs/archive/3dc584653544d580b95dc4e99c95595eda0348a8.jpg",
+        "duration": 1421000
+      }
+    ]
+  },
+  "4280680": {
+    "title": "天赐的声音7",
+    "type": 7,
+    "season_id": 239101,
+    "cover": "https://i0.hdslb.com/bfs/bangumi/image/821de6f234f7d44487284eea96bb7a4c8bd93b13.jpg",
+    "episodes": [
+      {
+        "id": 4280680,
+        "title": "第1期",
+        "long_title": "实力歌手组队竞演",
+        "show_title": "第1期 实力歌手组队竞演",
+        "bvid": "BV1bKE268ELY",
+        "aid": 116736372247973,
+        "cid": 39180764643,
+        "cover": "http://i0.hdslb.com/bfs/archive/459090f4efa60da1b567f512a26eb6c6499d1c3d.jpg",
+        "duration": 5112000
+      },
+      {
+        "id": 4280713,
+        "title": "第1期舞台纯享",
+        "long_title": "张靓颖陈楚生神级合作",
+        "show_title": "第1期舞台纯享 张靓颖陈楚生神级合作",
+        "bvid": "BV1rVJ56bEGZ",
+        "aid": 116737563495195,
+        "cid": 39496778854,
+        "cover": "http://i0.hdslb.com/bfs/archive/d2dd69cdbafde1133aa68745ef7eee86225f3715.png",
+        "duration": 1553373
+      },
+      {
+        "id": 4322900,
+        "title": "第1期加更",
+        "long_title": "黄子弘凡杨丞琳唱街角的晚风",
+        "show_title": "第1期加更 黄子弘凡杨丞琳唱街角的晚风",
+        "bvid": "BV1eTJP6XE6a",
+        "aid": 116748485462042,
+        "cid": 39362890432,
+        "cover": "http://i0.hdslb.com/bfs/archive/240a72bac26b60717e5c284572500a57bc5b45f2.png",
+        "duration": 1206472
+      },
+      {
+        "id": 4390853,
+        "title": "第2期",
+        "long_title": "热歌改编！男女对唱争最佳金曲",
+        "show_title": "第2期 热歌改编！男女对唱争最佳金曲",
+        "bvid": "BV1ksji6SE4W",
+        "aid": 116775647775428,
+        "cid": 39358958687,
+        "cover": "http://i0.hdslb.com/bfs/archive/c280fa8cee8cfda83c7858889b403ae1b7723228.png",
+        "duration": 5516000
+      },
+      {
+        "id": 4390854,
+        "title": "第2期纯享版",
+        "long_title": "情歌PK！王栎鑫谭松韵老友相聚",
+        "show_title": "第2期纯享版 情歌PK！王栎鑫谭松韵老友相聚",
+        "bvid": "BV1ssjB6tE8c",
+        "aid": 116776419459472,
+        "cid": 39496778923,
+        "cover": "http://i0.hdslb.com/bfs/archive/ee1ed4cee37b0808b86ab2e78ad501e767e580c1.png",
+        "duration": 1663940
+      },
+      {
+        "id": 4419547,
+        "title": "第2期加更",
+        "long_title": "王栎鑫方言民歌版《小半》",
+        "show_title": "第2期加更 王栎鑫方言民歌版《小半》",
+        "bvid": "BV1p9j86iExd",
+        "aid": 116788130023563,
+        "cid": 39366558111,
+        "cover": "http://i0.hdslb.com/bfs/archive/29d98eb45fbf3af0ee77411c115fb010aab07050.jpg",
+        "duration": 1303140
+      },
+      {
+        "id": 4505219,
+        "title": "第3期",
+        "long_title": "情歌回忆杀！那些记忆中的经典",
+        "show_title": "第3期 情歌回忆杀！那些记忆中的经典",
+        "bvid": "BV1kS736JEsi",
+        "aid": 116815543929652,
+        "cid": 39579880563,
+        "cover": "http://i0.hdslb.com/bfs/archive/54636d105c8afff13edf9d501696ba65b0c05ade.png",
+        "duration": 5898000
+      },
+      {
+        "id": 4505917,
+        "title": "第3期纯享版",
+        "long_title": "孙楠黄子弘凡合唱《坠落》",
+        "show_title": "第3期纯享版 孙楠黄子弘凡合唱《坠落》",
+        "bvid": "BV1xt756wE3j",
+        "aid": 116816030468169,
+        "cid": 39585842636,
+        "cover": "http://i0.hdslb.com/bfs/archive/524d8a7d3eac6c481a8494356ad713f47386f340.png",
+        "duration": 1850609
+      },
+      {
+        "id": 4526497,
+        "title": "第3期加更",
+        "long_title": "岳云鹏放狠话要怼梁源",
+        "show_title": "第3期加更 岳云鹏放狠话要怼梁源",
+        "bvid": "BV1BSTu6LEbq",
+        "aid": 116827975847219,
+        "cid": 39579880780,
+        "cover": "http://i0.hdslb.com/bfs/archive/11a6b23285ff1beeb2bc36b25ed8a6831f21110e.jpg",
+        "duration": 1234906
+      },
+      {
+        "id": 4600634,
+        "title": "第4期",
+        "long_title": "回忆杀就位！缱绻同唱共叙情意百态",
+        "show_title": "第4期 回忆杀就位！缱绻同唱共叙情意百态",
+        "bvid": "BV11cTs6PES1",
+        "aid": 116855171714551,
+        "cid": 39787824287,
+        "cover": "http://i0.hdslb.com/bfs/archive/d3fc067766f0a9c0bf4680947e60868ff936f0db.png",
+        "duration": 6547000
+      },
+      {
+        "id": 4600635,
+        "title": "第4期纯享版",
+        "long_title": "杨丞琳黄子弘凡同台竞技",
+        "show_title": "第4期纯享版 杨丞琳黄子弘凡同台竞技",
+        "bvid": "BV1U6T46LERX",
+        "aid": 116855842867650,
+        "cid": 39702694151,
+        "cover": "http://i0.hdslb.com/bfs/archive/a35d0ec7476e60b43ddc26c693c1423b670153df.png",
+        "duration": 2061911
+      },
+      {
+        "id": 4638920,
+        "title": "第4期加更",
+        "long_title": "杨丞琳爆料舅妈是罗云熙铁粉",
+        "show_title": "第4期加更 杨丞琳爆料舅妈是罗云熙铁粉",
+        "bvid": "BV1SaT16YEuq",
+        "aid": 116867402304837,
+        "cid": 39729562022,
+        "cover": "http://i0.hdslb.com/bfs/archive/eff14a47e7c2c5aae5338ac4febdb20b451c6cf4.jpg",
+        "duration": 1206506
+      },
+      {
+        "id": 4712063,
+        "title": "第5期",
+        "long_title": "高燃唱跳！双舞台美学碰撞",
+        "show_title": "第5期 高燃唱跳！双舞台美学碰撞",
+        "bvid": "BV1oXN76tEME",
+        "aid": 116894732388285,
+        "cid": 39994066549,
+        "cover": "http://i0.hdslb.com/bfs/archive/f489d30da37f80ba4c80dbb374d939ad60e0e923.png",
+        "duration": 5773000
+      },
+      {
+        "id": 4712064,
+        "title": "第5期纯享完整版",
+        "long_title": "质感唱将同台竞技",
+        "show_title": "第5期纯享完整版 质感唱将同台竞技",
+        "bvid": "BV1ggNn6RE5W",
+        "aid": 116895168659976,
+        "cid": 39899893411,
+        "cover": "http://i0.hdslb.com/bfs/archive/e2550a9fa552fb49bd18bfef93e50fd20e93f3e6.png",
+        "duration": 1890512
+      },
+      {
+        "id": 4751407,
+        "title": "第5期加更",
+        "long_title": "黄子弘凡清唱《无人之岛》",
+        "show_title": "第5期加更 黄子弘凡清唱《无人之岛》",
+        "bvid": "BV1RkNu6AEVJ",
+        "aid": 116906543546938,
+        "cid": 39881869138,
+        "cover": "http://i0.hdslb.com/bfs/archive/c718931f2afba2ce8ea27a7c38be7e1ae8dfae83.jpg",
+        "duration": 1205000
+      },
+      {
+        "id": 4828594,
+        "title": "第6期",
+        "long_title": "古韵惊艳，抒情入心！双舞台尽显魅力",
+        "show_title": "第6期 古韵惊艳，抒情入心！双舞台尽显魅力",
+        "bvid": "BV1LbKn6iEG6",
+        "aid": 116934477743720,
+        "cid": 40215643386,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/4f65f150dc0863f4e8431db3f503fe586acc7cd7.png",
+        "duration": 5775000
+      },
+      {
+        "id": 4835087,
+        "title": "第6期纯享完整版",
+        "long_title": "声线即演技！他们把遗憾唱成了诗",
+        "show_title": "第6期纯享完整版 声线即演技！他们把遗憾唱成了诗",
+        "bvid": "BV1TBNd6pEQV",
+        "aid": 116934829934662,
+        "cid": 40101875146,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/c3d581a1a905a047b19f1b38c4d18ece2c9b7e52.png",
+        "duration": 1869000
+      },
+      {
+        "id": 4853794,
+        "title": "第6期加更",
+        "long_title": "杨丞琳清唱《我不难过》",
+        "show_title": "第6期加更 杨丞琳清唱《我不难过》",
+        "bvid": "BV1HXKr66Eiu",
+        "aid": 116946792220904,
+        "cid": 40642087552,
+        "cover": "http://i0.hdslb.com/bfs/archive/dc89d93beed2816146a4823ff4eff8e1b36fda72.jpg",
+        "duration": 1248172
+      },
+      {
+        "id": 4935546,
+        "title": "第7期",
+        "long_title": "深情派 vs 旷野派，谁更打动你？",
+        "show_title": "第7期 深情派 vs 旷野派，谁更打动你？",
+        "bvid": "BV1hGgY66EQQ",
+        "aid": 116974223032397,
+        "cid": 40408255840,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/00c4539992eb543b7f91f3b435af7ee21cf5a69d.png",
+        "duration": 6179000
+      },
+      {
+        "id": 4935629,
+        "title": "第7期纯享版",
+        "long_title": "风格交织，谁将点亮舞台高光？",
+        "show_title": "第7期纯享版 风格交织，谁将点亮舞台高光？",
+        "bvid": "BV1yyga6ZEGW",
+        "aid": 116974457718384,
+        "cid": 40305231045,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/fe1e5315d1a7346ff454a420e022cfd9a549be85.png",
+        "duration": 1777140
+      },
+      {
+        "id": 4968481,
+        "title": "第7期加更",
+        "long_title": "周笔畅清唱《言不由衷》",
+        "show_title": "第7期加更 周笔畅清唱《言不由衷》",
+        "bvid": "BV1At3j6EEcd",
+        "aid": 116985144804679,
+        "cid": 40617247402,
+        "cover": "http://i0.hdslb.com/bfs/archive/47ea82732539cf4336082967f1cae102ee57c9ec.jpg",
+        "duration": 1224505
+      },
+      {
+        "id": 5030390,
+        "title": "第8期",
+        "long_title": "经典再唱，唱尽岁月温柔",
+        "show_title": "第8期 经典再唱，唱尽岁月温柔",
+        "bvid": "BV1jWGA6qELN",
+        "aid": 117013565410240,
+        "cid": 40642152434,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/a2992b32cd3d6b6663d2622252ca9214c027b341.png",
+        "duration": 6364000
+      },
+      {
+        "id": 5030477,
+        "title": "第8期纯享",
+        "long_title": "当跨越时代的经典遇见新声",
+        "show_title": "第8期纯享 当跨越时代的经典遇见新声",
+        "bvid": "BV1nvGw63E6Y",
+        "aid": 117014102409605,
+        "cid": 40547517660,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/df82eb2791ff21f45ad5ea9a48cc298b591ef368.png",
+        "duration": 1795075
+      },
+      {
+        "id": 5075492,
+        "title": "第8期加更",
+        "long_title": "黄子弘凡张子墨清唱《trust me》",
+        "show_title": "第8期加更 黄子弘凡张子墨清唱《trust me》",
+        "bvid": "BV1et3Q6NECL",
+        "aid": 117024772588788,
+        "cid": 40588872650,
+        "cover": "http://i0.hdslb.com/bfs/archive/afaa7d3cb59db2cbbb7c0a9b543c5f114d939500.jpg",
+        "duration": 1191573
+      },
+      {
+        "id": 5158091,
+        "title": "第9期",
+        "long_title": "金曲之争：谁才是今晚最佳答案？",
+        "show_title": "第9期 金曲之争：谁才是今晚最佳答案？",
+        "bvid": "BV1eQub6YEwU",
+        "aid": 117053142927740,
+        "cid": 40863993430,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/56368f604d7ca0f35b18196b0f40f3c42592b83d.png",
+        "duration": 5590000
+      },
+      {
+        "id": 5158203,
+        "title": "第9期纯享",
+        "long_title": "岳云鹏张予曦强势加盟开启挑战",
+        "show_title": "第9期纯享 岳云鹏张予曦强势加盟开启挑战",
+        "bvid": "BV1RTub6YEoV",
+        "aid": 117053562358396,
+        "cid": 40716602881,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/5d6f5b1510b097cf843abb87491205e229ef8923.png",
+        "duration": 1514107
+      },
+      {
+        "id": 5312118,
+        "title": "第9期加更",
+        "long_title": "侯明昊清唱《笼》",
+        "show_title": "第9期加更 侯明昊清唱《笼》",
+        "bvid": "BV1FduU6aEGg",
+        "aid": 117066061318081,
+        "cid": 40778466098,
+        "cover": "http://i0.hdslb.com/bfs/archive/fc98e47cb7a5b3388ae15febe58e941a05571751.png",
+        "duration": 1217773
+      },
+      {
+        "id": 5448397,
+        "title": "第10期",
+        "long_title": "唱功情绪双双在线，遗憾感直接拉满",
+        "show_title": "第10期 唱功情绪双双在线，遗憾感直接拉满",
+        "bvid": "BV1iggN6TEsu",
+        "aid": 117092837756390,
+        "cid": 41063285333,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/f07a0b7bb676f34ae646523e7c7c9c78980708a0.png",
+        "duration": 6038000
+      },
+      {
+        "id": 5448475,
+        "title": "第10期纯享",
+        "long_title": "黄晓明深情演绎《空白格》，自带故事感",
+        "show_title": "第10期纯享 黄晓明深情演绎《空白格》，自带故事感",
+        "bvid": "BV1P5gP61ENA",
+        "aid": 117093173298990,
+        "cid": 40983269205,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/a607f5e1945acf587153177a92afc1442882a19d.png",
+        "duration": 1852741
+      },
+      {
+        "id": 5491016,
+        "title": "第10期加更",
+        "long_title": "王铮亮清唱《天后》",
+        "show_title": "第10期加更 王铮亮清唱《天后》",
+        "bvid": "BV1jUbX6HEKg",
+        "aid": 117104716023013,
+        "cid": 41058829149,
+        "cover": "http://i0.hdslb.com/bfs/archive/e91171b4fff2e05b47d6433065d61c80a33c0308.png",
+        "duration": 1207506
+      },
+      {
+        "id": 5571049,
+        "title": "第11期",
+        "long_title": "杨丞琳音综首跳！合作舞台给到夯！",
+        "show_title": "第11期 杨丞琳音综首跳！合作舞台给到夯！",
+        "bvid": "BV18k8q6PEcL",
+        "aid": 117132465538070,
+        "cid": 41279687890,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/c6adf4136f69c695760a3551706da25d119bd8ef.png",
+        "duration": 6244000
+      },
+      {
+        "id": 5571050,
+        "title": "第11期纯享",
+        "long_title": "实力女声遇上新搭档有多绝",
+        "show_title": "第11期纯享 实力女声遇上新搭档有多绝",
+        "bvid": "BV1KK8q6fEfh",
+        "aid": 117133119915187,
+        "cid": 41166638347,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/aab32c07e5684e35e35ee1e4d2490cf862295593.png",
+        "duration": 1801009
+      },
+      {
+        "id": 5631089,
+        "title": "第11期",
+        "long_title": "杨丞琳清唱《甲乙丙丁》",
+        "show_title": "第11期 杨丞琳清唱《甲乙丙丁》",
+        "bvid": "BV1Eu8b6REN8",
+        "aid": 117144444602116,
+        "cid": 41219132741,
+        "cover": "http://i0.hdslb.com/bfs/archive/49a01e457767b7de2fd6ab39c1e5fbd7871bd9de.jpg",
+        "duration": 1210706
+      },
+      {
+        "id": 5876769,
+        "title": "第12期",
+        "long_title": "没有输赢，只有震撼|天赐收官巅峰对决",
+        "show_title": "第12期 没有输赢，只有震撼|天赐收官巅峰对决",
+        "bvid": "BV1pdti6UE9f",
+        "aid": 117211519846442,
+        "cid": 41758165746,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/5c17d3afe8e9645826e08895507e6774e338284c.png",
+        "duration": 8282000
+      },
+      {
+        "id": 5876795,
+        "title": "第12期纯享",
+        "long_title": "20+舞台一次性爽看！天赐巅峰纯享盛宴",
+        "show_title": "第12期纯享 20+舞台一次性爽看！天赐巅峰纯享盛宴",
+        "bvid": "BV1TXtB6bEcj",
+        "aid": 117212123761645,
+        "cid": 41683781608,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/c184bdbd1f3c7a5c67d69160d165049eb02252c5.png",
+        "duration": 5058754
+      },
+      {
+        "id": 5940859,
+        "title": "第12期加更",
+        "long_title": "曾舜晞曾比特清唱《半点心》",
+        "show_title": "第12期加更 曾舜晞曾比特清唱《半点心》",
+        "bvid": "BV1mGt66eEUF",
+        "aid": 117213667331709,
+        "cid": 41689809784,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/aa5e9194ba296ca6ad91594d08cb0d50165b6bb7.png",
+        "duration": 1232373
+      },
+      {
+        "id": 6054999,
+        "title": "第13期精编版",
+        "long_title": "黄子弘凡舞台合集",
+        "show_title": "第13期精编版 黄子弘凡舞台合集",
+        "bvid": "BV1KfYT6QEQ1",
+        "aid": 117245409756483,
+        "cid": 41752923892,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/077d7dad9c78592a0eaed8d807116b0a3187064f.png",
+        "duration": 3340000
+      },
+      {
+        "id": 6055039,
+        "title": "第13期精编版",
+        "long_title": "杨丞琳舞台合集",
+        "show_title": "第13期精编版 杨丞琳舞台合集",
+        "bvid": "BV1KfYT6QEdU",
+        "aid": 117245409756760,
+        "cid": 41752985905,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/5ce17718c7abd7aeb7bb724b149f7490c468ad49.png",
+        "duration": 3131000
+      },
+      {
+        "id": 6055042,
+        "title": "第13期精编版",
+        "long_title": "黄霄雲舞台合集",
+        "show_title": "第13期精编版 黄霄雲舞台合集",
+        "bvid": "BV1KfYT6QEby",
+        "aid": 117245409757248,
+        "cid": 41752923810,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/bff7bdd3b2f816f55d53ee30d3e4bb7d56f69d2c.png",
+        "duration": 2567000
+      },
+      {
+        "id": 6055121,
+        "title": "第13期精编版",
+        "long_title": "本季金曲合集",
+        "show_title": "第13期精编版 本季金曲合集",
+        "bvid": "BV1KfYT6QEJQ",
+        "aid": 117245409758787,
+        "cid": 41752923899,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/ea21e3437cd1bcddfc96f591a3cd70f94426f7c2.png",
+        "duration": 3261000
+      },
+      {
+        "id": 6055196,
+        "title": "第13期精编版",
+        "long_title": "跨界演员舞台合集",
+        "show_title": "第13期精编版 跨界演员舞台合集",
+        "bvid": "BV1KfYT6QEBq",
+        "aid": 117245409757765,
+        "cid": 41752923788,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/1307c6631fe39f9f3d486049949a3874868bd988.png",
+        "duration": 4521000
+      },
+      {
+        "id": 6055206,
+        "title": "第13期精编版",
+        "long_title": "青春养眼舞台合集",
+        "show_title": "第13期精编版 青春养眼舞台合集",
+        "bvid": "BV1KfYT6QEQH",
+        "aid": 117245409756506,
+        "cid": 41752985797,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/5f8f0850775b9c72ae8d567d16680ce1025d6da5.png",
+        "duration": 3102000
+      },
+      {
+        "id": 6055241,
+        "title": "第13期精编版",
+        "long_title": "实力唱将舞台合集",
+        "show_title": "第13期精编版 实力唱将舞台合集",
+        "bvid": "BV14fYT6QEH7",
+        "aid": 117245409822048,
+        "cid": 41752985788,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/64d29515c1162262febb27ef86cf6bf4029c5075.png",
+        "duration": 5131000
+      }
+    ]
+  },
+  "6084344": {
+    "title": "年会不能停！2",
+    "type": 2,
+    "season_id": 307572,
+    "cover": "https://i0.hdslb.com/bfs/bangumi/image/7faa77eb26dadb9ba42e48269a24e244502c6f9e.png",
+    "episodes": [
+      {
+        "id": 6084344,
+        "title": "正片",
+        "long_title": "",
+        "show_title": "正片",
+        "bvid": "BV1fxen6yEf3",
+        "aid": 117274602111834,
+        "cid": 41917548898,
+        "cover": "https://i0.hdslb.com/bfs/bangumi/image/0ae40515a2ed3b00e3f6a97633054ee4bb146155.png",
+        "duration": 7559000
+      }
+    ]
+  },
+  "673044": {
+    "title": "坏蛋联盟",
+    "type": 2,
+    "season_id": 42715,
+    "cover": "http://i0.hdslb.com/bfs/bangumi/image/7d63615d0749d8fe2ce161d155ac1c8198869591.png",
+    "episodes": [
+      {
+        "id": 673044,
+        "title": "原版",
+        "long_title": "",
+        "show_title": "原版",
+        "bvid": "BV1fa411d7tQ",
+        "aid": 259754351,
+        "cid": 814062539,
+        "cover": "http://i0.hdslb.com/bfs/archive/1d9b5ead0eaf7c145d39be0877ee6b677c0a54a8.png",
+        "duration": 6012000
+      },
+      {
+        "id": 673045,
+        "title": "中文",
+        "long_title": "",
+        "show_title": "中文",
+        "bvid": "BV1D14y1x7Ca",
+        "aid": 772460884,
+        "cid": 815312142,
+        "cover": "http://i0.hdslb.com/bfs/archive/17db53b66b2cb074c04fbc551a4007db2e85a1b9.png",
+        "duration": 6009000
+      }
+    ]
+  }
+}

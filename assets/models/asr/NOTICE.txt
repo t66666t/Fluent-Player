@@ -1,0 +1,57 @@
+Silero VAD
+https://github.com/snakers4/silero-vad
+Shared ONNX dependency downloaded through the sherpa-onnx Silero VAD release.
+Pinned download metadata: assets/models/asr_dependencies.json.
+SHA-256: 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
+
+MIT License
+
+Copyright (c) 2020-present Silero Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Speech probes
+
+speech_probe.wav: JFK public address excerpt, distributed by whisper.cpp.
+Source: https://github.com/ggml-org/whisper.cpp/blob/b0a11594aec50892a02cd8d129eee2dfe93a8bb8/samples/jfk.wav
+Source repository: MIT License, see https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE
+The original US federal government speech is a public-domain recording.
+
+speech_probe_zh.wav: Application-authored test sentence, synthesized using the
+Windows Microsoft Huihui Desktop system voice (16 kHz mono PCM).
+Text: 欢迎使用本地语音识别，这是一段用于检查模型的测试语音。
+
+Downloaded ASR and translation weights are not part of these bundled samples.
+Their individual licenses and primary model pages are listed in catalog.json.
+
+Optional ASR enhancement downloads (not bundled weights)
+
+GTCRN: MIT, https://github.com/Xiaobin-Rong/gtcrn
+CT-Transformer: Apache-2.0 (original model),
+https://github.com/modelscope/FunASR
+English alignment: Apache-2.0,
+https://huggingface.co/facebook/wav2vec2-base-960h
+Mandarin alignment: Apache-2.0,
+https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn
+Zipformer bilingual Tiny: Apache-2.0,
+https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t
+
+ONNX conversions and mirrors are pinned by revision, byte length and SHA-256 in
+catalog.json. Original model licenses apply to the downloaded weights; a mirror
+is not the original model author. Details: docs/local-asr-quality.md.

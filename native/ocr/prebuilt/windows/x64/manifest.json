@@ -1,0 +1,26 @@
+{
+  "platform": "windows",
+  "arch": "x64",
+  "mnn": "3.6.1",
+  "mnnCommit": "d407447ed56c4121a11ccbd266dc184ca1ead0c2",
+  "ortQnn": null,
+  "qnn": null,
+  "sourceHashes": {
+    "native/ocr/CMakeLists.txt": "9a7ada3f0bd986ac84f41d6f31d9dede6bc3c4d6aee898ea94c94a2ad3b51d46",
+    "native/ocr/ocr_accelerator.h": "b5336c93b56559cdec4044b09ac7926bb3c2ca97e23e094cfcb43022f9b1528b",
+    "native/ocr/ocr_accelerator.cpp": "cabe7eecd57e52e9c7aafd62ef0123ea56e1e5268fa1b3b26584063cb136110c",
+    "native/ocr/ocr_qnn.cpp": "c06d87ede3fb04856a89e5adb403f5ba1f0a43c39f9389700d6c8d9ca3ca392f",
+    "native/ocr/ocr_gpu_device.cpp": "55539a7855d8566d9ae3511a7a3c257d0138a36635b01a83448a9f1a243e9d4f",
+    "tool/build_ocr_acceleration.py": "7b1f80054de8cb02363eb4853c09596b59591916b35cddab6b1ac732d6a41b4d"
+  },
+  "files": {
+    "Flatbuffers-LICENSE": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",
+    "fluent_ocr_accel.dll": "693df47e4b179397ab861c0e65f1d50abd19d6daee99cbd421c3f2a3d941cc15",
+    "MNN-LICENSE": "a830d59c4f98d110e0540d0581efada06192ba6e798434307d1794b07a290302",
+    "Protobuf-LICENSE": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+    "ThirdPartyLicenses/flatbuffers/LICENSE.txt": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",
+    "ThirdPartyLicenses/half/LICENSE.txt": "1269110471a5506d5cc9c115c57b855206f69a90cc57bbbf27860907067ed946",
+    "ThirdPartyLicenses/protobuf/LICENSE": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+    "ThirdPartyLicenses/rapidjson/license.txt": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32"
+  }
+}

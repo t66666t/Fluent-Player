@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "platform": "android",
+  "arch": "arm64",
+  "backend": "cpu",
+  "build": "f7a15895cabd746049f2bb6133b68442ac17d9a9f48a4ebb942510addd73493b",
+  "sources": {
+    "native/parakeet_ja/CMakeLists.txt": "b5efb7791c8903e85cd93dc4ff84d3651ccd63fb4abfb262a8526b9506cfda28",
+    "native/parakeet_ja/LICENSE": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "native/parakeet_ja/parakeet_ja_jni.cpp": "813ad2cf5d7fe8c48b23048797e029994293b5d708e7750c4f97760005175df9",
+    "native/parakeet_ja/parakeet_ja_worker.cpp": "217d3c957737a3d87d49096d955c0cd1f7bc97dd076124575ab3997a012b4f1f",
+    "native/parakeet_ja/parakeet_ja_worker.h": "0f5e146a25261c7f37ff477a0f3dae6bd8e6ed42dc0c8c92090a4d3b9bb4beef",
+    "native/parakeet_ja/runtime.lock.json": "c752e21c036841312f22db1b39da4bcd37da6abb9a282ca05dd088fb3fd65301",
+    "tool/build_cohere_asr.py": "e90f20cde4285d44e109c0dac47e976895bebb482b5267aa3701a9e9043833e0",
+    "tool/build_parakeet_ja.py": "a01e093cb4f3f03507da788470d84e92e81a825f77b1998dba772fcef17390e8",
+    "tool/build_qwen_asr.py": "8081b8711f913b3e5e44cff43bcf99d20c9462f9e8a8b8ec8f76efd63401d171",
+    "tool/prepare_qwen_native.py": "9e0c870afbe2402b46cad894713fc3c1e4b545dd4f8ffce215f7652abc045484"
+  },
+  "pins": {
+    "crispasr": {
+      "revision": "34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "url": "https://codeload.github.com/CrispStrobe/CrispASR/zip/34a8e436192de19d3e5a872437edfe3fd26ce8c4",
+      "sha256": "c8c5e4131ad90d12386fdd257264dfad7f3b9b58fd76d0174b2d820cc463f729"
+    },
+    "ggml": {
+      "revision": "e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "url": "https://codeload.github.com/CrispStrobe/ggml/zip/e2ae679a563014f46c546ce6c6448e8601e4dea6",
+      "sha256": "c5cd3aa47db4a5d26907af9884e386e0168c6cdd99129d9a8f8096b720aebe04"
+    },
+    "json": {
+      "revision": "v3.11.3",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "license": "MIT"
+    },
+    "jsonLicense": {
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+    }
+  },
+  "files": {
+    "libfluent_parakeet_ja.so": "425bbf54f09ab6b363d74366924abbc033f3d2551ea9249b9624801b42e67ef9",
+    "licenses/Fluent-Player-MIT.txt": "169c5b072e8f950c834b4a36f19c77647cfa39b17f0074a1034c3b2465fe10f6",
+    "licenses/CrispASR-MIT.txt": "aa918fb53ff1948e12cdae8136e045210fb6db222a1f6f0c14bad48e6de2100e",
+    "licenses/ggml-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "licenses/nlohmann-json-MIT.txt": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  "batchSize": 1,
+  "maxSpeechSeconds": 8
+}

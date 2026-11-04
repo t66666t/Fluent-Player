@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.fluent_qwen_probe">
+  <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+  <application android:label="Qwen native test" android:testOnly="true" android:debuggable="true" />
+  <instrumentation android:name="com.example.fluent_qwen_probe.NativeProbe"
+    android:targetPackage="com.example.video_player_app.sidebar_profile" android:functionalTest="true" />
+</manifest>

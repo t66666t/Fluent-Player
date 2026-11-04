@@ -1,0 +1,33 @@
+Fluent Player Community
+Copyright (C) 2025-2026 Fluent Player contributors
+
+The application source is licensed under GNU GPL version 3 or, at your option,
+any later version. See LICENSE. This grant covers the contributors' own code;
+third-party components retain their original copyright notices and licenses.
+The application-owned ASR and subtitle extraction helpers in native/asr/ and
+native/subtitle_archive/ use MIT; see the LICENSE in each directory.
+DirectML and UnRAR are separately licensed components, not GPL-licensed code.
+
+The community edition bundles Noto Sans CJK, Inter, Roboto Condensed,
+Brawler and Comic Relief under SIL OFL 1.1; see assets/fonts/licenses/.
+MiSans is not bundled. Legacy MiSans/large CJK typeface choices fall back to
+Noto Sans CJK in this small source distribution.
+
+ASR adapter reference: SocialSisterYi/bcut-asr (MIT); historical downloader
+reference: jiji262/douyin-downloader (MIT). Full notices are included under
+assets/licenses/ and described in THIRD_PARTY_NOTICES.md.
+
+For the other components and the source needed to rebuild a release, see
+THIRD_PARTY_NOTICES.md and docs/releasing.md. Downloaded model weights have
+their own licenses, listed in the model catalog and model center.
+
+Qwen audio runtime: pinned CrispASR / ggml (MIT), nlohmann/json (MIT),
+Lindera 6.2.0 (MIT), IPADIC (NAIST / ICOT), ko-dic (Apache-2.0).
+Qwen3-ASR, Qwen3-ForcedAligner and ECAPA VoxLingua107 weights: Apache-2.0.
+Complete additional notices: assets/licenses/Qwen-ASR-ThirdPartyNotices.txt.
+Dictionary sources and artifact receipts: native/qwen_asr/runtime.lock.json.
+
+Japanese ASR: NVIDIA Parakeet Japanese / cstr GGUF (CC BY 4.0),
+Cohere Transcribe (Apache-2.0), CrispASR / transcribe.cpp / ggml / json (MIT).
+FLEURS Japanese speech probe: Google and contributing authors (CC BY 4.0).
+Attribution, changes and licenses: assets/licenses/Japanese-ASR-ThirdPartyNotices.txt.

@@ -1,0 +1,98 @@
+platform :ios, '16.4'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+runtime_prepare = File.expand_path('../tool/prepare_ios_runtime.py', __dir__)
+unless system('python3', runtime_prepare)
+  raise 'Preparing the checksummed embedded YTDLP runtime failed.'
+end
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  { 'cohere_asr' => 'FluentCohereAsr', 'parakeet_ja' => 'FluentParakeetJa' }.each do |component, framework|
+    base = File.expand_path("../native/#{component}/prebuilt", __dir__)
+    if File.directory?(File.join(base, "#{framework}.xcframework"))
+      unless system('python3', File.expand_path('../tool/package_japanese_asr_ios.py', __dir__),
+                    '--component', component, '--verify-only')
+        raise "Rebuild and repackage the checksummed #{component} XCFramework."
+      end
+      pod "fluent_#{component}", :path => '../native'
+    end
+  end
+  qwen_base = File.expand_path('../native/qwen_asr/prebuilt', __dir__)
+  if File.directory?(File.join(qwen_base, 'FluentQwenAsr.xcframework'))
+    unless system('python3', File.expand_path('../tool/verify_qwen_ios.py', __dir__))
+      raise 'Repackage the checksummed Qwen XCFramework before building.'
+    end
+    ['ios-arm64', 'ios-arm64-sim'].each do |slice|
+      unless system('python3', File.expand_path('../tool/verify_qwen_artifact.py', __dir__),
+                    File.join(qwen_base, slice), '--platform', 'ios', '--arch', 'arm64')
+        raise 'The private Qwen audio component must match its pinned sources.'
+      end
+    end
+    pod 'fluent_qwen_asr', :path => '../native/qwen_asr'
+  end
+  ocr_acceleration = File.expand_path('../native/ocr/prebuilt/ios/arm64', __dir__)
+  if File.exist?(File.join(ocr_acceleration, 'manifest.json'))
+    unless system('python3', File.expand_path('../tool/verify_ocr_artifact.py', __dir__),
+                  ocr_acceleration, '--platform', 'ios', '--arch', 'arm64')
+      raise 'The private OCR Metal component must match its pinned sources.'
+    end
+    pod 'fluent_ocr_acceleration', :path => '../native/ocr'
+  end
+  # Override only Flutter's generated symlink when a checksummed unified archive
+  # is present. The Pub cache and CPU-only installations remain untouched.
+  unless system('python3', File.expand_path('../tool/stage_ios_asr_pod.py', __dir__))
+    raise 'Staging the unified ASR plugin failed.'
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
+    end
+    flutter_additional_ios_build_settings(target)
+  end
+  installer.aggregate_targets.map(&:user_project).uniq.each do |project|
+    project.targets.select { |target| target.name == 'Runner' }.each do |target|
+      phase = target.shell_script_build_phases.find { |item| item.name == 'Bundle embedded YTDLP runtime' }
+      phase ||= target.new_shell_script_build_phase('Bundle embedded YTDLP runtime')
+      phase.shell_path = '/bin/bash'
+      phase.shell_script = 'set -e; python3 "$SRCROOT/../tool/install_ios_runtime.py"'
+      phase.always_out_of_date = '1'
+      target.build_phases.delete(phase)
+      embed = target.build_phases.find { |item| item.display_name == '[CP] Embed Pods Frameworks' }
+      target.build_phases.insert(embed ? target.build_phases.index(embed) : target.build_phases.length, phase)
+      target.build_configurations.each { |config| config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO' }
+    end
+    project.save
+  end
+end

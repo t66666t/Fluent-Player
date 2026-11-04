@@ -1,0 +1,36 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.fluentplayer.audit.documents">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+    <application android:label="Fluent Storage Audit" android:debuggable="true"
+        android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider android:name=".FixtureDocumentsProvider"
+            android:authorities="com.fluentplayer.audit.documents"
+            android:exported="true" android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        <activity android:name=".AuditShareActivity" android:exported="true" />
+        <activity android:name=".AuditReceiveActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- Only isolated audit-app/fixture content is offered in Open With;
+                 the original application's authorities never match this filter. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*"
+                    android:host="com.example.video_player_app.sidebar_profile.fileProvider.com.crazecoder.openfile" />
+                <data android:scheme="content" android:mimeType="*/*"
+                    android:host="com.example.video_player_app.sidebar_profile.fileprovider" />
+                <data android:scheme="content" android:mimeType="*/*"
+                    android:host="com.fluentplayer.audit.documents" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

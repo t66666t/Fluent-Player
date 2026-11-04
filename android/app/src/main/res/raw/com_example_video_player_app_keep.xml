@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AudioService resolves this icon by name from Dart's AudioServiceConfig.
+     Android resource shrinking cannot see that reference in Flutter AOT code. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_notification_icon" />
