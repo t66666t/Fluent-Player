@@ -41,6 +41,7 @@ void validateModelIntegration(
         required = const [];
       case ModelPurpose.enhancement:
         required = switch (model.engine) {
+          'silero-vad' => const [asrVadFileName],
           'denoiser' => const ['model.onnx'],
           'punctuation' => const ['model.int8.onnx'],
           'ctc-alignment-en' || 'ctc-alignment-zh' => const [

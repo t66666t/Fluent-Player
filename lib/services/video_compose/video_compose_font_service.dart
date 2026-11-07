@@ -13,11 +13,11 @@ import '../subtitle_font_service.dart';
 class VideoComposeFontService {
   static const Set<String> bundledFontFamilies = <String>{
     'Noto Sans SC',
-    'MiSans',
-    'Noto Serif CJK SC',
     'Swei Gothic CJK SC',
     'Comic Relief',
     'Roboto',
+    'Inter',
+    'Brawler',
   };
 
   static const List<String> _bundledFontAssetPaths = <String>[
@@ -37,6 +37,8 @@ class VideoComposeFontService {
     'assets/fonts/Inter-SemiBold.otf',
     'assets/fonts/Inter-Thin.otf',
     'assets/fonts/NotoSansCJKsc-Regular.otf',
+    'assets/fonts/NotoSansSC-Variable.ttf',
+    'assets/fonts/SweiGothicCJKsc-Bold.ttf',
     'assets/fonts/Roboto_Condensed-Black.ttf',
     'assets/fonts/Roboto_Condensed-Bold.ttf',
     'assets/fonts/Roboto_Condensed-ExtraBold.ttf',
@@ -106,13 +108,9 @@ class VideoComposeFontService {
       case 'Swei Gothic CJK SC':
         return '獅尾圓體SC-Bold';
       case 'Noto Sans SC':
-        return 'Noto Sans CJK SC';
-      case 'Noto Serif CJK SC':
-        return 'Noto Serif CJK SC';
+        return 'Noto Sans SC';
       case 'Comic Relief':
         return 'Comic Relief';
-      case 'MiSans':
-        return 'MiSans';
       case 'Roboto':
         return 'Roboto Condensed Condensed';
     }
@@ -151,20 +149,10 @@ class VideoComposeFontService {
   Map<String, String> mobileFontNameMap() {
     return <String, String>{
       'NotoSansCJKsc-Regular.otf': 'Noto Sans CJK SC',
-      'NotoSerifCJKsc-Bold.otf': 'Noto Serif CJK SC',
+      'NotoSansSC-Variable.ttf': 'Noto Sans SC',
       'SweiGothicCJKsc-Bold.ttf': '獅尾圓體SC-Bold',
       'ComicRelief-Regular.ttf': 'Comic Relief',
       'ComicRelief-Bold.ttf': 'Comic Relief',
-      'MiSans-Thin.otf': 'MiSans',
-      'MiSans-ExtraLight.otf': 'MiSans',
-      'MiSans-Light.otf': 'MiSans',
-      'MiSans-Regular.otf': 'MiSans',
-      'MiSans-Normal.otf': 'MiSans',
-      'MiSans-Medium.otf': 'MiSans',
-      'MiSans-Semibold.otf': 'MiSans',
-      'MiSans-Demibold.otf': 'MiSans',
-      'MiSans-Bold.otf': 'MiSans',
-      'MiSans-Heavy.otf': 'MiSans',
       'Roboto_Condensed-Thin.ttf': 'Roboto Condensed Condensed',
       'Roboto_Condensed-ExtraLight.ttf': 'Roboto Condensed Condensed',
       'Roboto_Condensed-Light.ttf': 'Roboto Condensed Condensed',
@@ -218,7 +206,11 @@ class VideoComposeFontService {
           jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
       for (final node in manifest) {
         final family = node['family'];
-        if (!families.contains(family) && family != 'Noto Sans SC') continue;
+        if (!families.contains(family) &&
+            family != 'Noto Sans SC' &&
+            family != 'Noto Sans CJK Fallback') {
+          continue;
+        }
         final faces = node['fonts'] as List;
         if (faces.isEmpty) continue;
         final wanted = choices
@@ -276,6 +268,18 @@ class VideoComposeFontService {
         '方正黑体 简体中文.TTF',
         '方正楷体 简体中文.ttf',
         'OPPO Sans 4.0.ttf',
+        'NotoSerifCJKsc-Bold.otf',
+        'NotoSerifCJKsc-Regular.otf',
+        'MiSans-Thin.otf',
+        'MiSans-ExtraLight.otf',
+        'MiSans-Light.otf',
+        'MiSans-Regular.otf',
+        'MiSans-Normal.otf',
+        'MiSans-Medium.otf',
+        'MiSans-Semibold.otf',
+        'MiSans-Demibold.otf',
+        'MiSans-Bold.otf',
+        'MiSans-Heavy.otf',
       ]) {
         final retiredFont = File(p.join(fontsDir.path, name));
         if (await retiredFont.exists()) await retiredFont.delete();

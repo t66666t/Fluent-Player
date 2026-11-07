@@ -196,6 +196,7 @@ class LocalAsrWorker {
         'type': 'permit',
         'id': id,
         'threads': permit.threads,
+        'protective': permit.decision.level == InferencePressureLevel.protective,
         'retainModels': permit.decision.retainModels,
         'availableMemoryBytes':
             resources.governor.snapshot.availableMemoryBytes,
@@ -327,8 +328,9 @@ class LocalAsrWorker {
         case 'acceleration':
           final state = Map<String, dynamic>.from(value['state'] as Map);
           _onAccelerationState?.call(state);
+          // A finished choice is recognition, not another device-selection wait.
           _onPhase?.call(
-            'acceleration',
+            state['selecting'] == true ? 'acceleration' : 'acceleration-ready',
             _lastProgress,
             '${state['backend']} · ${state['reason']}',
           );
@@ -569,6 +571,9 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
           for (final raw in acceleration?['profiles'] as List? ?? const [])
             ?AsrPerformanceProfile.fromJson(raw),
         ],
+        conservativeGpu: acceleration?['conservativeGpu'] == true,
+        accelerationEnvironment: acceleration?['accelerationEnvironment'],
+        runtimeStamp: acceleration?['runtimeStamp'],
         onLoad: () {
           asrLoads++;
           events.send({
@@ -689,8 +694,62 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
       }
     }
 
-    Future<void> cpuThreads(int threads) async {
-      if (options['threads'] == threads) return;
+    var lowThreadGrants = 0;
+    DateTime? lowThreadSince;
+    Future<void> cpuThreads(int threads, {bool protective = false}) async {
+      final loaded = options['threads'] as int?;
+      // Tuning uses a non-positive sentinel to force a cold load. That is not
+      // a playback thread change, so it bypasses the hysteresis below.
+      if (threads <= 0) {
+        lowThreadGrants = 0;
+        lowThreadSince = null;
+        if (loaded == threads) return;
+        await accelerated?.releaseForEnhancement();
+        await nativeCpu?.release();
+        await qwen?.release();
+        await cohere?.release();
+        recognizer?.free();
+        recognizer = null;
+        streamingRecognizer?.free();
+        streamingRecognizer = null;
+        options['threads'] = threads;
+        accelerated?.configuration['threads'] = threads;
+        nativeCpu?.configuration['threads'] = threads;
+        if (qwen != null) qwen.threads = threads;
+        if (cohere != null) cohere.threads = threads;
+        return;
+      }
+      if (loaded == threads) {
+        lowThreadGrants = 0;
+        lowThreadSince = null;
+        return;
+      }
+      // GPU sessions do not use the CPU pool. Reloading them to match a
+      // playback thread change throws away an already selected device.
+      if (accelerated?.hasLoadedModel == true || qwen?.usingGpu == true) {
+        return;
+      }
+      final halved = loaded != null && threads < loaded && threads <= loaded / 2;
+      if (halved && !protective) {
+        lowThreadGrants++;
+        lowThreadSince ??= DateTime.now();
+      } else if (!halved) {
+        lowThreadGrants = 0;
+        lowThreadSince = null;
+      }
+      final next = asrReloadThreads(
+        loaded: loaded,
+        granted: threads,
+        protective: protective,
+        heavy: qwen != null || cohere != null,
+        lowGrants: lowThreadGrants,
+        lowFor: lowThreadSince == null
+            ? Duration.zero
+            : DateTime.now().difference(lowThreadSince!),
+      );
+      if (next == null) return;
+      lowThreadGrants = 0;
+      lowThreadSince = null;
       await accelerated?.releaseForEnhancement();
       await nativeCpu?.release();
       await qwen?.release();
@@ -699,11 +758,11 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
       recognizer = null;
       streamingRecognizer?.free();
       streamingRecognizer = null;
-      options['threads'] = threads;
-      accelerated?.configuration['threads'] = threads;
-      nativeCpu?.configuration['threads'] = threads;
-      if (qwen != null) qwen.threads = threads;
-      if (cohere != null) cohere.threads = threads;
+      options['threads'] = next;
+      accelerated?.configuration['threads'] = next;
+      nativeCpu?.configuration['threads'] = next;
+      if (qwen != null) qwen.threads = next;
+      if (cohere != null) cohere.threads = next;
     }
 
     Future<void> trim() async {
@@ -895,7 +954,10 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
                 ? bytes
                 : math.min(old, bytes);
           }
-          await cpuThreads(grant['threads'] as int);
+          await cpuThreads(
+            grant['threads'] as int,
+            protective: grant['protective'] == true,
+          );
           retainModels =
               options['retainModels'] == true && grant['retainModels'] != false;
           if (qwen != null) return qwen.decode(audio, check);
@@ -1047,6 +1109,12 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
           textProcessingVersion: options['textProcessingVersion'] as int?,
           qwenWorkerExecutable: options['qwenWorkerExecutable'] as String?,
           qwenAcceleration: options['qwenAcceleration'] as String? ?? 'cpu',
+          conservativeGpu:
+              (options['acceleration'] as Map?)?['conservativeGpu'] == true,
+          accelerationEnvironment:
+              (options['acceleration'] as Map?)?['accelerationEnvironment'],
+          onAcceleration: (state) =>
+              events.send({'type': 'acceleration', 'state': state}),
           retainModels: retainModels,
           beforeAlignment: stage == 'complete'
               ? () async {
@@ -1450,7 +1518,10 @@ Future<void> _asrEntry(Map<String, dynamic> options) async {
           Future<List<SubtitleItem>> refine({bool alignment = true}) => compute(
             alignment && heavyAlignment ? 'alignment' : 'auxiliary',
             (grant) {
-              enhancer.qwenThreads = grant['threads'] as int;
+              enhancer.applyAlignmentThreads(
+                grant['threads'] as int,
+                protective: grant['protective'] == true,
+              );
               enhancer.retainModels =
                   options['retainModels'] == true &&
                   grant['retainModels'] != false;

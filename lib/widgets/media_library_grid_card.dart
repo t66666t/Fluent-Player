@@ -6,11 +6,8 @@ import '../services/settings_service.dart';
 
 import '../theme/app_tokens.dart';
 import '../models/video_item.dart';
-import '../features/media_cache/media_cache_models.dart';
-import '../features/media_cache/media_cache_widgets.dart';
-import '../features/media_cache/media_cache_actions.dart';
-import '../features/media_cache/media_cache_badge.dart';
 import 'media_card_preparation.dart';
+import 'media_library_keyboard_navigation.dart';
 
 /// Shared chrome for media-library grid cards.
 ///
@@ -27,6 +24,7 @@ class MediaLibraryGridCard extends StatelessWidget {
     this.onSecondaryTap,
     this.elevation,
     this.cacheItem,
+    this.keyboardItemId,
     this.isSelectionMode = false,
   });
 
@@ -39,6 +37,7 @@ class MediaLibraryGridCard extends StatelessWidget {
   final Widget child;
   final double? elevation;
   final VideoItem? cacheItem;
+  final String? keyboardItemId;
   final bool isSelectionMode;
 
   static const WidgetStateProperty<Color?> _noOverlay =
@@ -46,81 +45,40 @@ class MediaLibraryGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cacheSource = cacheItem == null
-        ? null
-        : CacheSource.fromItem(cacheItem!);
     return CardContextMenu(
       onFallback: onSecondaryTap,
-      builder: (context, openMenu) => MediaCardPreparationHost(
-        radius: radius,
-        child: Card(
-          margin: EdgeInsets.zero,
-          elevation: elevation ?? 0,
-          color: isSelected ? AppTokens.accentSoft : AppTokens.bgCard,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
-          ),
-          child: InkWell(
-            onTap: () {
-              unawaited(AppHaptics.cardTap(SettingsService()));
-              onTap();
-            },
-            onSecondaryTap: openMenu,
-            splashFactory: NoSplash.splashFactory,
-            overlayColor: _noOverlay,
-            splashColor: Colors.transparent,
-            highlightColor: Colors.transparent,
-            hoverColor: Colors.transparent,
-            focusColor: Colors.transparent,
-            child: cacheSource == null
-                ? child
-                : Stack(
-                    fit: StackFit.passthrough,
-                    children: [
-                      child,
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: CacheCardBadge(
-                            source: cacheSource,
-                            alignment: isSelectionMode
-                                ? Alignment.topLeft
-                                : Alignment.topRight,
-                            onOpen: isSelectionMode
-                                ? null
-                                : () {
-                                    unawaited(
-                                      cacheUiAction(
-                                        () => showCacheQualities(
-                                          context,
-                                          cacheSource,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: CacheCardProgress(
-                          source: cacheSource,
-                          onOpen: () => openMediaCache(
-                            context,
-                            focusMediaKey: cacheSource.key,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+      builder: (context, openMenu) => MediaLibraryKeyboardItem(
+        itemId: MediaLibraryKeyboardIdentity.of(context) ?? keyboardItemId ?? cacheItem?.id ?? '',
+        selected: isSelected,
+        selectionMode: isSelectionMode,
+        onActivate: onTap,
+        child: MediaCardPreparationHost(
+          radius: radius,
+          child: Card(
+            margin: EdgeInsets.zero,
+            elevation: elevation ?? 0,
+            color: isSelected ? AppTokens.accentSoft : AppTokens.bgCard,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(radius),
+            ),
+            child: InkWell(
+              canRequestFocus: !MediaLibraryKeyboardRegion.enabledOf(context),
+              onTap: () {
+                unawaited(AppHaptics.cardTap(SettingsService()));
+                onTap();
+              },
+              onSecondaryTap: openMenu,
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: _noOverlay,
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              hoverColor: Colors.transparent,
+              focusColor: Colors.transparent,
+              child: child,
+            ),
           ),
         ),
       ),

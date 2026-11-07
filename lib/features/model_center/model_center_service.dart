@@ -53,6 +53,13 @@ class ModelCenterService extends ChangeNotifier {
     name: '公益接口',
     kind: TranscriptionServiceKind.gongyi,
   );
+  /// Local fallback for unavailable saved profiles; new installs use gongyi.
+  static const communityDefaultProfile = ModelServiceProfile(
+    id: 'local:sensevoice-small-int8',
+    name: 'SenseVoice Small（本地）',
+    kind: TranscriptionServiceKind.local,
+    model: 'sensevoice-small-int8',
+  );
   final AppStorageService storage;
   final Future<List<ModelArtifact>> Function() _catalogLoader;
   final ModelDioFactory _createDio;
@@ -69,6 +76,7 @@ class ModelCenterService extends ChangeNotifier {
   final Map<String, ModelDownload> downloads = {};
   final Map<String, ModelServiceProfile> profiles = {
     legacyProfile.id: legacyProfile,
+    communityDefaultProfile.id: communityDefaultProfile,
   };
   final Map<String, int> _leases = {};
   final Map<String, String> diagnostics = {};
@@ -94,7 +102,9 @@ class ModelCenterService extends ChangeNotifier {
   String languageForProfile(ModelServiceProfile profile) =>
       languageOptionsFor(profile).resolve(
         asrLanguagePreferences[asrLanguagePreferenceKey(profile)] ??
-            (profile.cloudProvider != null ? profile.language : selectedLanguage),
+            (profile.cloudProvider != null
+                ? profile.language
+                : selectedLanguage),
       );
   String languageForModel(ModelArtifact model) {
     final profile = ModelServiceProfile(
@@ -172,9 +182,17 @@ class ModelCenterService extends ChangeNotifier {
     Map<String, dynamic> state,
   ) async {
     asrBackendStatus[modelId] = '${state['backend']} · ${state['reason']}';
-    final cleared = state['clearProfileSignature'];
-    final removed =
-        cleared is String && asrPerformance.remove('$modelId:$cleared') != null;
+    final signatures = <String>{
+      if (state['clearProfileSignature'] is String)
+        state['clearProfileSignature'] as String,
+      if (state['clearProfileSignatures'] is List)
+        for (final item in state['clearProfileSignatures'] as List)
+          if (item is String) item,
+    };
+    var removed = false;
+    for (final signature in signatures) {
+      removed = asrPerformance.remove('$modelId:$signature') != null || removed;
+    }
     final profile = AsrPerformanceProfile.fromJson(state['profile']);
     if (profile != null) {
       asrPerformance['$modelId:${profile.signature}'] = profile;
@@ -247,6 +265,7 @@ class ModelCenterService extends ChangeNotifier {
   String? _backupExcludedPath;
   Future<void> _writes = Future<void>.value();
   Future<void>? _pumpFuture;
+  Future<void>? _legacyVadMigration;
   static const maxConcurrentDownloads = 3;
   final _transfers = <String, CancelToken>{};
   Completer<void>? _pumpWake;
@@ -264,7 +283,8 @@ class ModelCenterService extends ChangeNotifier {
         ].contains(d.phase),
       )
       .length;
-  ModelServiceProfile get asrProfile => profiles[asrProfileId] ?? legacyProfile;
+  ModelServiceProfile get asrProfile =>
+      profiles[asrProfileId] ?? communityDefaultProfile;
   String get summary => '转录：${asrProfile.name} · $activeDownloads 个下载';
   ModelArtifact? artifact(String id) =>
       catalog.where((m) => m.id == id).firstOrNull ?? _retiredCatalog[id];
@@ -479,7 +499,8 @@ class ModelCenterService extends ChangeNotifier {
         }
       }
       if (!profiles.containsKey(asrProfileId)) {
-        asrProfileId = legacyProfile.id;
+        // Preserve saved task specs; only the default for new jobs changes.
+        asrProfileId = communityDefaultProfile.id;
       }
       final retiredDefault =
           asrProfile.local && artifact(asrProfile.model)?.retired == true;
@@ -727,20 +748,27 @@ class ModelCenterService extends ChangeNotifier {
     final profile = asrProfile;
     final model = profile.local ? artifact(profile.model) : null;
     if (model?.retired == true) throw StateError('此模型已下架，请重新选择转录模型');
-    if (profile.local && (model == null || !installed(model.id))) {
-      throw StateError('请先在模型中心下载转录模型');
+    if (profile.local && model?.purpose != ModelPurpose.transcription) {
+      throw StateError('转录模型清单缺失，请重新选择转录模型');
     }
     return transcriptionConfiguration;
   }
 
   /// Current settings without loading models or validating an installation.
   /// Used to explain how a saved task differs from the next new task.
-  ModelJobSpec get transcriptionConfiguration {
-    final profile = asrProfile;
+  ModelJobSpec get transcriptionConfiguration =>
+      _configurationForProfile(asrProfile);
+
+  ModelJobSpec _configurationForProfile(
+    ModelServiceProfile profile, {
+    String? languageOverride,
+    bool allowModelDownload = true,
+  }) {
     final model = profile.local ? artifact(profile.model) : null;
     final enhancements = asrEnhancementsFor(model);
-    final language = languageForProfile(profile);
+    final language = languageOverride ?? languageForProfile(profile);
     return ModelJobSpec(
+      allowModelDownload: allowModelDownload,
       profile: ModelServiceProfile(
         id: profile.id,
         name: profile.name,
@@ -749,11 +777,21 @@ class ModelCenterService extends ChangeNotifier {
         model: profile.model,
         appId: profile.appId,
         language: language,
-        cloudOptions: profile.cloudProvider == null ? null :
-            CloudAsrOptions.fromJson((profile.cloudOptions ?? const CloudAsrOptions()).toJson()),
-        cloudCapabilities: profile.cloudProvider == null ? null :
-            CloudAsrCapabilities.fromJson((profile.cloudCapabilities ??
-              cloudAsrCapabilities(profile.cloudProvider!, profile.model)).toJson()),
+        cloudOptions: profile.cloudProvider == null
+            ? null
+            : CloudAsrOptions.fromJson(
+                (profile.cloudOptions ?? const CloudAsrOptions()).toJson(),
+              ),
+        cloudCapabilities: profile.cloudProvider == null
+            ? null
+            : CloudAsrCapabilities.fromJson(
+                (profile.cloudCapabilities ??
+                        cloudAsrCapabilities(
+                          profile.cloudProvider!,
+                          profile.model,
+                        ))
+                    .toJson(),
+              ),
       ),
       artifactIdentity: model?.identity ?? '',
       asrTokenTiming: model == null
@@ -790,12 +828,103 @@ class ModelCenterService extends ChangeNotifier {
     );
   }
 
+  /// Captures a local task without changing the user's selected model/language.
+  /// No download, model load or benchmark is performed here.
+  Future<ModelJobSpec> capturePreparedLocalTranscription(
+    String modelId,
+    String language,
+  ) async {
+    await initialize();
+    final model = artifact(modelId);
+    if (model == null ||
+        model.retired ||
+        model.purpose != ModelPurpose.transcription ||
+        !installed(modelId)) {
+      throw StateError('请先在模型中心准备可用的本地转录模型');
+    }
+    final profile = ModelServiceProfile(
+      id: 'local:${model.id}',
+      name: model.name,
+      kind: TranscriptionServiceKind.local,
+      model: model.id,
+      language: language,
+    );
+    final languages = asrLanguageOptions(profile, model: model);
+    final normalized = languages.normalize(language);
+    if (language != 'auto' && !languages.codes.contains(normalized)) {
+      throw ArgumentError('所选模型不支持该识别语言');
+    }
+    final spec = _configurationForProfile(
+      profile,
+      languageOverride: languages.resolve(normalized),
+      allowModelDownload: false,
+    );
+    requirePreparedModels(spec);
+    return spec;
+  }
+
+  /// Freeze an existing service or catalog model for an Agent plan. This only
+  /// describes preparation; downloads remain a separate user-authorized action.
+  Future<ModelJobSpec> captureExternalTranscription(
+    String id,
+    String language,
+  ) async {
+    await initialize();
+    final model = artifact(id.startsWith('local:') ? id.substring(6) : id);
+    final profile = id == 'current'
+        ? asrProfile
+        : model != null
+        ? ModelServiceProfile(
+            id: 'local:${model.id}',
+            name: model.name,
+            kind: TranscriptionServiceKind.local,
+            model: model.id,
+          )
+        : profiles[id];
+    if (profile == null ||
+        (profile.local &&
+            (artifact(profile.model)?.retired != false ||
+                artifact(profile.model)?.purpose !=
+                    ModelPurpose.transcription))) {
+      throw StateError('请选择模型清单中的转录模型或已配置服务');
+    }
+    final options = languageOptionsFor(profile);
+    final normalized = options.normalize(language);
+    if (language != 'auto' && !options.codes.contains(normalized)) {
+      throw ArgumentError('当前转录模型不支持此语言');
+    }
+    return _configurationForProfile(
+      profile,
+      languageOverride: options.resolve(normalized),
+      allowModelDownload: false,
+    );
+  }
+
+  void requirePreparedModels(ModelJobSpec spec) {
+    final ids = [
+      spec.profile.model,
+      ...spec.enhancementModels.keys,
+      if (artifact(spec.profile.model)?.purpose == ModelPurpose.transcription)
+        asrVadModelId,
+    ];
+    if (!spec.profile.local ||
+        ids.any((id) => !installed(id)) ||
+        artifact(spec.profile.model)?.identity != spec.artifactIdentity) {
+      throw StateError('任务所需本地模型或组件尚未准备好，请在模型中心处理');
+    }
+    for (final e in spec.enhancementModels.entries) {
+      if (artifact(e.key)?.identity != e.value) {
+        throw StateError('任务模型组件已变化，请重新配置');
+      }
+    }
+  }
+
   Future<void> selectAsr(ModelArtifact model) async {
     if (model.retired) throw StateError('此模型已下架，请选择其他转录模型');
     if (model.purpose != ModelPurpose.transcription) {
       throw ArgumentError.value(model.id, 'model', '请选择转录模型');
     }
-    // Binding may precede installation; captureTranscription guards execution.
+    // Freeze the binding before installation; execution prepares this version.
     final profile = ModelServiceProfile(
       id: 'local:${model.id}',
       name: model.name,
@@ -823,8 +952,163 @@ class ModelCenterService extends ChangeNotifier {
 
   List<ModelArtifact> asrDownloadComponents(ModelArtifact model) => [
     model,
+    if (model.purpose == ModelPurpose.transcription) ?artifact(asrVadModelId),
     ...asrEnhancementArtifacts(model),
   ];
+
+  /// Freeze first, download later, without occupying an inference slot. A retry
+  /// always prepares the saved identity, never the current default selection.
+  Future<void> prepareModel(
+    ModelJobSpec spec, {
+    Future<void>? cancelSignal,
+    void Function(String)? onProgress,
+  }) async {
+    await initialize();
+    if (!spec.allowModelDownload) requirePreparedModels(spec);
+    final model = artifact(spec.profile.model);
+    if (model == null || model.identity != spec.artifactIdentity) {
+      throw StateError('任务要求的模型版本已变更或清单缺失，请重新创建任务');
+    }
+    await _prepareModels(
+      [model],
+      allowModelDownload: spec.allowModelDownload,
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<void> _prepareModels(
+    List<ModelArtifact> models, {
+    bool allowModelDownload = true,
+    Future<void>? cancelSignal,
+    void Function(String)? onProgress,
+  }) async {
+    var cancelled = false, finished = false;
+    cancelSignal?.then((_) {
+      if (!finished) cancelled = true;
+    });
+    void check() {
+      if (cancelled) throw StateError('模型准备已取消');
+    }
+
+    try {
+      // Observe an already completed cancellation before starting any transfer.
+      await Future<void>.value();
+      check();
+      for (final model in models) {
+        check();
+        if (model.retired && !installed(model.id)) {
+          throw StateError('任务使用的模型已下架且未安装，断点已保留；请用其他模型重新创建任务');
+        }
+      }
+      for (final model in models) {
+        check();
+        if (!installed(model.id) &&
+            !const [
+              ModelDownloadPhase.queued,
+              ModelDownloadPhase.downloading,
+              ModelDownloadPhase.verifying,
+            ].contains(downloads[model.id]?.phase)) {
+          if (!allowModelDownload) {
+            throw StateError(
+              'Local models are not prepared; automatic download is not authorized',
+            );
+          }
+          await enqueue(model.id);
+        }
+      }
+      while (true) {
+        check();
+        final missing = models.where((m) => !installed(m.id)).toList();
+        if (missing.isEmpty) return;
+        for (final model in missing) {
+          final state = downloads[model.id];
+          if (state == null ||
+              state.phase == ModelDownloadPhase.failed ||
+              state.phase == ModelDownloadPhase.paused) {
+            throw StateError(
+              '${model.name}：${state?.message.isNotEmpty == true ? state!.message : '下载已暂停'}；重试转录可继续下载',
+            );
+          }
+        }
+        final waiting = missing.first;
+        final state = downloads[waiting.id]!;
+        final speed = state.bytesPerSecond > 0
+            ? ' · ${modelBytes(state.bytesPerSecond.round())}/s'
+            : '';
+        onProgress?.call(
+          '正在准备模型 · ${waiting.name} · ${state.label} · '
+          '${(state.received / waiting.bytes * 100).clamp(0, 100).floor()}% · '
+          '${modelBytes(state.received)} / ${modelBytes(waiting.bytes)}$speed',
+        );
+        await Future.any<void>([
+          Future<void>.delayed(const Duration(milliseconds: 200)),
+          ?cancelSignal,
+        ]);
+      }
+    } finally {
+      finished = true;
+    }
+  }
+
+  /// On-demand migration of the old bundled/cache file. Never scans weights at
+  /// startup, and never reads another edition's data directory.
+  Future<File> prepareAsrVad({
+    bool allowModelDownload = true,
+    Future<void>? cancelSignal,
+    void Function(String)? onProgress,
+  }) async {
+    await initialize();
+    final model = artifact(asrVadModelId);
+    if (model == null) throw StateError('语音检测组件清单缺失，请更新安装包');
+    final migration = _legacyVadMigration ??= _migrateLegacyVad(model);
+    try {
+      await migration;
+    } catch (_) {
+      if (identical(_legacyVadMigration, migration)) _legacyVadMigration = null;
+      rethrow;
+    }
+    await _prepareModels(
+      [model],
+      allowModelDownload: allowModelDownload,
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+    return File(p.join((await modelDirectory(model)).path, asrVadFileName));
+  }
+
+  Future<void> _migrateLegacyVad(ModelArtifact model) async {
+    if (!installed(model.id) && !downloads.containsKey(model.id)) {
+      final legacy = File(p.join((await modelRoot()).path, asrVadFileName));
+      if (await legacy.exists() &&
+          await legacy.length() == model.files.single.bytes &&
+          await modelFileHash(legacy.path) == model.files.single.sha256) {
+        await importFiles(model.id, legacy.parent);
+      }
+    }
+  }
+
+  Future<File> prepareAsrModels(
+    ModelJobSpec spec, {
+    Future<void>? cancelSignal,
+    void Function(String)? onProgress,
+  }) async {
+    await prepareModel(
+      spec,
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+    await prepareAsrEnhancements(
+      spec,
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+    return prepareAsrVad(
+      allowModelDownload: spec.allowModelDownload,
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+  }
 
   /// An explicit download action queues the disclosed combination together.
   /// Shared installed/active components keep their existing files and progress.
@@ -879,7 +1163,14 @@ class ModelCenterService extends ChangeNotifier {
             artifact(id)!.identity != spec.enhancementModels[id]) {
           throw StateError('增强模型 $id 的版本已变更或清单缺失，请重新创建任务');
         }
-        if (!installed(id)) await enqueue(id);
+        if (!installed(id)) {
+          if (!spec.allowModelDownload) {
+            throw StateError(
+              'Local model components are not prepared; automatic download is not authorized',
+            );
+          }
+          await enqueue(id);
+        }
       }
       while (expected.any((id) => !installed(id))) {
         if (cancelled) throw StateError('转录已取消');
@@ -918,6 +1209,7 @@ class ModelCenterService extends ChangeNotifier {
               .where((id) => !retiredAsrModelIds.contains(id))
               .toList()
         : <String>[];
+    if (installed(asrVadModelId)) ids.add(asrVadModelId);
     for (final entry in spec.asrAccelerationModels.entries) {
       if (spec.asrAcceleration != null &&
           spec.asrAcceleration != AsrAcceleration.cpu &&
@@ -931,7 +1223,9 @@ class ModelCenterService extends ChangeNotifier {
       final id = ids[index];
       return usingModel(id, (model, dependencyDir) async {
         final expected =
-            spec.enhancementModels[id] ?? spec.asrAccelerationModels[id];
+            spec.enhancementModels[id] ??
+            spec.asrAccelerationModels[id] ??
+            (id == asrVadModelId ? artifact(asrVadModelId)?.identity : null);
         if (model.identity != expected) {
           throw StateError('任务所需模型组件版本已变更：${model.name}');
         }

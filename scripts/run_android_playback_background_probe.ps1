@@ -1,6 +1,6 @@
 param(
   [string]$Adb = "$env:LOCALAPPDATA/Android/sdk/platform-tools/adb.exe",
-  [string]$Serial = '983d4e11',
+  [string]$Serial = $env:ANDROID_SERIAL,
   [string]$Package = 'com.example.video_player_app.power_audit',
   [string]$BaseUrl = 'http://127.0.0.1:8768',
   [Parameter(Mandatory = $true)][string]$Output

@@ -19,7 +19,7 @@ void main() {
 
     expect(dir.path, p.join(root.path, kAppDataFolderName));
     expect(await dir.exists(), isTrue);
-    expect(kAppDataFolderName, 'io.github.t66666t.FluentPlayer');
+    expect(kAppDataFolderName, 'cn.teezy.fluentplayer.standard');
   });
 
   test('HOME fallback uses the formal Linux application ID', () async {

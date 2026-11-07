@@ -99,11 +99,13 @@ class AnchoredMenuLayout extends StatefulWidget {
     this.alignLeft = false,
     this.margin = 8,
     this.gap = 6,
+    this.focusContainer = true,
   });
 
   final AnchoredMenuPosition position;
   final double width, maxHeight, margin, gap;
   final bool preferAbove, alignLeft;
+  final bool focusContainer;
   final Widget child;
 
   @override
@@ -126,7 +128,9 @@ class _AnchoredMenuLayoutState extends State<AnchoredMenuLayout> {
             Navigator.of(context).pop(),
       },
       child: Focus(
-        autofocus: true,
+        autofocus: widget.focusContainer,
+        canRequestFocus: widget.focusContainer,
+        skipTraversal: !widget.focusContainer,
         child: LayoutBuilder(
           builder: (context, constraints) => CustomSingleChildLayout(
             delegate: _AnchoredMenuDelegate(

@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'package:video_player_app/widgets/dialog_keyboard_viewport.dart';
 import 'dart:async';
 import 'dart:io';
@@ -26,7 +27,10 @@ import '../utils/hardware_keyboard_shortcuts.dart';
 import '../utils/media_folder_scanner.dart';
 import '../utils/page_shortcut_keys.dart';
 import '../widgets/internal_video_picker_dialog.dart';
+import '../widgets/confirmation_dialog_shortcuts.dart';
 import '../widgets/task_queue_table.dart';
+import '../widgets/media_library_safe_area.dart';
+import '../widgets/media_library_selection_bottom_bar.dart';
 import '../widgets/batch_subtitle_configuration_bar.dart';
 import '../widgets/model_center_button.dart';
 import '../widgets/operation_status.dart';
@@ -57,6 +61,8 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
   String? _noticePath;
   bool _importing = false;
   bool _scanning = false;
+  final Set<String> _selectedTaskKeys = {};
+  bool _updatingSelectedTasks = false;
   TranscriptionMediaResolver? _selectionResolver;
   final FocusNode _shortcutFocusNode = FocusNode();
   final AndroidHardwareKeyDeduplicator _androidKeyDeduplicator =
@@ -322,8 +328,18 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) {
     final metrics = _BatchLayoutMetrics.fromSize(MediaQuery.sizeOf(context));
+    final queue = context.watch<TranscriptionManager>();
+    final selectableKeys = {
+      for (final task in queue.getQueueSnapshot())
+        if (!queue.pendingCompletedRemovals.containsKey(task.mediaKey))
+          task.mediaKey,
+    };
+    _selectedTaskKeys.retainWhere(selectableKeys.contains);
     // 页面级主题：批量字幕页所有文本（含弹窗/菜单/底部面板，经由
     // capturedThemes 一并继承）统一使用思源黑体。
     return Theme(
@@ -332,32 +348,43 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
         focusNode: _shortcutFocusNode,
         autofocus: supportsNativeHardwareKeyboardShortcuts,
         onKeyEvent: (node, event) => _handleShortcutKeyEvent(event),
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('语音转录队列'),
-            centerTitle: metrics.isCompact,
-            toolbarHeight: metrics.isCompact ? 44 : 56,
-            actions: [
-              ModelCenterButton(
-                compact: metrics.isCompact,
-                service: context.read<TranscriptionManager>().modelCenter,
-              ),
-            ],
-          ),
-          body: SafeArea(
-            top: false,
-            child: Consumer<TranscriptionManager>(
-              builder: (context, manager, _) {
-                final library = context.read<LibraryService>();
-                final tasks = manager.getQueueSnapshot().map((task) {
-                  if (task.isExternal || task.videoId == null) return task;
-                  final item = library.getVideo(task.videoId!);
-                  if (item == null || item.title.trim().isEmpty) return task;
-                  return task.copyWith(videoName: item.title.trim());
-                }).toList();
-                final settings = context.watch<SettingsService>();
-                return Column(
-                  children: [
+        child: PopScope(
+          canPop: _selectedTaskKeys.isEmpty,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _selectedTaskKeys.isNotEmpty) {
+              setState(_selectedTaskKeys.clear);
+            }
+          },
+          child: Scaffold(
+            extendBody: true,
+            appBar: AppBar(
+              title: const Text('语音转录队列'),
+              centerTitle: false,
+              toolbarHeight: metrics.isCompact ? 44 : 56,
+              actions: [
+                ModelCenterButton(
+                  compact: metrics.isCompact,
+                  service: context.read<TranscriptionManager>().modelCenter,
+                ),
+              ],
+            ),
+            bottomNavigationBar: MediaLibrarySelectionBarTransition(
+              child: _selectedTaskKeys.isEmpty
+                  ? null
+                  : _buildSelectionBar(queue),
+            ),
+            body: MediaLibrarySafeArea(
+              child: Consumer<TranscriptionManager>(
+                builder: (context, manager, _) {
+                  final library = context.read<LibraryService>();
+                  final tasks = manager.getQueueSnapshot().map((task) {
+                    if (task.isExternal || task.videoId == null) return task;
+                    final item = library.getVideo(task.videoId!);
+                    if (item == null || item.title.trim().isEmpty) return task;
+                    return task.copyWith(videoName: item.title.trim());
+                  }).toList();
+                  final settings = context.watch<SettingsService>();
+                  final controls = <Widget>[
                     _buildTopBar(context, metrics, manager),
                     BatchSubtitleConfigurationBar(
                       settings: settings,
@@ -376,35 +403,192 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
                         manager.queuedCount,
                         manager.pendingCount,
                       ),
-                    Expanded(
-                      child: TaskQueueTable(
-                        tasks: tasks,
-                        autoDeletedKeys: manager.pendingCompletedRemovals,
-                        onStart: (mediaKey) =>
-                            unawaited(_startTask(manager, mediaKey)),
-                        onPause: (mediaKey) {
-                          manager.pauseTask(mediaKey);
-                        },
-                        onRetry: (mediaKey) =>
-                            unawaited(_retryTask(manager, mediaKey)),
-                        onRestart: (mediaKey) =>
-                            unawaited(_restartTask(manager, mediaKey)),
-                        onDelete: (mediaKey) => _deleteTask(manager, mediaKey),
-                        onReorder: (mediaKey, newIndex) =>
-                            manager.reorderTask(mediaKey, newIndex),
-                        onTapCompleted: (task) =>
-                            _onTapCompletedTask(context, task),
-                        onConfigure: () => _showBatchSettingsSheet(context),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                  ];
+                  Widget buildTable({
+                    Widget? header,
+                    bool scrollHeader = false,
+                  }) => TaskQueueTable(
+                    header: header,
+                    scrollHeader: scrollHeader,
+                    tasks: tasks,
+                    selectedKeys: Set.of(_selectedTaskKeys),
+                    onSelectionChanged: (selected) => setState(() {
+                      _selectedTaskKeys
+                        ..clear()
+                        ..addAll(selected);
+                    }),
+                    autoDeletedKeys: manager.pendingCompletedRemovals,
+                    onStart: (mediaKey) =>
+                        unawaited(_startTask(manager, mediaKey)),
+                    onPause: (mediaKey) {
+                      manager.pauseTask(mediaKey);
+                    },
+                    onRetry: (mediaKey) =>
+                        unawaited(_retryTask(manager, mediaKey)),
+                    onRestart: (mediaKey) =>
+                        unawaited(_restartTask(manager, mediaKey)),
+                    onDelete: (mediaKey) => _deleteTask(manager, mediaKey),
+                    onReorder: (mediaKey, newIndex) =>
+                        manager.reorderTask(mediaKey, newIndex),
+                    onTapCompleted: (task) =>
+                        _onTapCompletedTask(context, task),
+                    onConfigure: () => _showBatchSettingsSheet(context),
+                  );
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      return buildTable(
+                        scrollHeader: constraints.maxHeight < 360,
+                        header: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: controls,
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildSelectionBar(TranscriptionManager manager) {
+    final selected = manager
+        .getQueueSnapshot()
+        .where((task) => _selectedTaskKeys.contains(task.mediaKey))
+        .toList();
+    final scheme = Theme.of(context).colorScheme;
+    return MediaLibrarySelectionBottomBar.custom(
+      showAddToQueue: false,
+      onAddToQueue: null,
+      actions: [
+        MediaLibrarySelectionBarAction(
+          label: '开始',
+          icon: Icons.play_arrow_rounded,
+          color: scheme.primary,
+          onPressed:
+              !_updatingSelectedTasks &&
+                  selected.any(
+                    (task) =>
+                        task.status == TranscriptionStatus.idle &&
+                        !task.isStarted,
+                  )
+              ? () => unawaited(_startSelectedTasks(manager))
+              : null,
+        ),
+        MediaLibrarySelectionBarAction(
+          label: '暂停',
+          icon: Icons.pause_rounded,
+          color: scheme.primary,
+          onPressed:
+              !_updatingSelectedTasks &&
+                  selected.any(
+                    (task) =>
+                        task.isRunning ||
+                        (task.status == TranscriptionStatus.idle &&
+                            task.isStarted),
+                  )
+              ? () {
+                  for (final task in selected) {
+                    if (task.isRunning ||
+                        (task.status == TranscriptionStatus.idle &&
+                            task.isStarted)) {
+                      manager.pauseTask(task.mediaKey);
+                    }
+                  }
+                }
+              : null,
+        ),
+        MediaLibrarySelectionBarAction(
+          label: '重试',
+          icon: Icons.refresh_rounded,
+          color: scheme.primary,
+          onPressed:
+              !_updatingSelectedTasks &&
+                  selected.any(
+                    (task) => task.status == TranscriptionStatus.error,
+                  )
+              ? () => unawaited(_startSelectedTasks(manager, retry: true))
+              : null,
+        ),
+        MediaLibrarySelectionBarAction(
+          label: '移除',
+          icon: Icons.playlist_remove_rounded,
+          color: scheme.error,
+          onPressed: _updatingSelectedTasks
+              ? null
+              : () => unawaited(_removeSelectedTasks(manager)),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _startSelectedTasks(
+    TranscriptionManager manager, {
+    bool retry = false,
+  }) async {
+    if (_updatingSelectedTasks) return;
+    final keys = Set<String>.of(_selectedTaskKeys);
+    setState(() => _updatingSelectedTasks = true);
+    try {
+      final choice = await _batchTranslateChoice();
+      if (!mounted) return;
+      // Re-read after the await: tasks can finish or be removed meanwhile.
+      for (final task in manager.getQueueSnapshot()) {
+        if (!keys.contains(task.mediaKey)) continue;
+        if (retry && task.status == TranscriptionStatus.error) {
+          manager.retryTask(task.mediaKey, translate: choice);
+        } else if (!retry &&
+            task.status == TranscriptionStatus.idle &&
+            !task.isStarted) {
+          manager.startTask(task.mediaKey, translateIfUnfrozen: choice);
+        }
+      }
+    } catch (error) {
+      _showImportNotice(
+        operationErrorSummary(error, fallback: '无法开始所选任务，请检查设置后重试。'),
+        details: safeOperationDiagnostic(error),
+        retry: () => unawaited(_startSelectedTasks(manager, retry: retry)),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingSelectedTasks = false);
+    }
+  }
+
+  Future<void> _removeSelectedTasks(TranscriptionManager manager) async {
+    final keys = Set<String>.of(_selectedTaskKeys);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => ConfirmationDialogShortcuts(
+        onCancel: () => Navigator.of(context).pop(false),
+        confirmKey: LogicalKeyboardKey.keyR,
+        onConfirm: () => Navigator.of(context).pop(true),
+        child: AlertDialog(
+          title: Text('移除 ${keys.length} 个任务？'),
+          content: const Text('正在处理的所选任务会被取消。已生成的字幕和媒体文件会保留。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const ConfirmationShortcutLabel('取消', 'Esc'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const ConfirmationShortcutLabel('移除', 'Enter / R'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    for (final key in keys) {
+      manager.removeFromQueue(key);
+    }
+    setState(() => _selectedTaskKeys.removeAll(keys));
   }
 
   /// 思源黑体主题：在应用主题基础上将全部文本字体统一替换为思源黑体
@@ -509,6 +693,7 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
   ) {
     final theme = Theme.of(context);
     return PopupMenuButton<_BatchOverflowAction>(
+      useRootNavigator: true,
       key: const ValueKey('batch-toolbar-more'),
       padding: EdgeInsets.zero,
       menuPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -678,8 +863,6 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
     final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final useSingleRow =
-            constraints.maxWidth >= 1440 && metrics.isDesktopPlatform;
         final actions = <Widget>[
           _buildActionButton(
             context: context,
@@ -725,68 +908,24 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
           ),
         ];
 
-        if (useSingleRow) {
-          return Row(
-            children: [
-              ..._withSpacing(actions, metrics.gap),
-              const Spacer(),
-              _buildSettingsRow(
-                context,
-                settings,
-                metrics,
-                showExternalSettings: true,
-                onClearCompleted: () => _clearCompleted(manager),
-                onClearAll: () => _showClearAllConfirm(context, manager),
-              ),
-            ],
-          );
-        }
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
+        return Wrap(
+          spacing: metrics.gap,
+          runSpacing: 7,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Row(
-              children: [
-                ..._withSpacing(actions, metrics.gap),
-                const Spacer(),
-                if (!metrics.isDesktopPlatform)
-                  _buildSettingsRow(
-                    context,
-                    settings,
-                    metrics,
-                    showExternalSettings: false,
-                    onClearCompleted: () => _clearCompleted(manager),
-                    onClearAll: () => _showClearAllConfirm(context, manager),
-                  ),
-              ],
+            ...actions,
+            _buildSettingsRow(
+              context,
+              settings,
+              metrics,
+              showExternalSettings: metrics.isDesktopPlatform,
+              onClearCompleted: () => _clearCompleted(manager),
+              onClearAll: () => _showClearAllConfirm(context, manager),
             ),
-            if (metrics.isDesktopPlatform) ...[
-              const SizedBox(height: 7),
-              Align(
-                alignment: Alignment.centerRight,
-                child: _buildSettingsRow(
-                  context,
-                  settings,
-                  metrics,
-                  showExternalSettings: true,
-                  onClearCompleted: () => _clearCompleted(manager),
-                  onClearAll: () => _showClearAllConfirm(context, manager),
-                ),
-              ),
-            ],
           ],
         );
       },
     );
-  }
-
-  List<Widget> _withSpacing(List<Widget> children, double spacing) {
-    return [
-      for (var index = 0; index < children.length; index++) ...[
-        if (index > 0) SizedBox(width: spacing),
-        children[index],
-      ],
-    ];
   }
 
   /// 自定义输出目录提示条（仅当输出策略为「指定目录」且有路径时显示）
@@ -1309,6 +1448,7 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
         : '视频同目录';
 
     return CapsulePopupMenuButton<SubtitleOutputPathStrategy>(
+      useRootNavigator: true,
       tooltip: _bsTooltip(
         '选择外部视频字幕输出位置',
         BatchSubtitleShortcutAction.openSettings,
@@ -1420,6 +1560,7 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
   }) {
     final theme = Theme.of(context);
     return CapsulePopupMenuButton<_BatchOverflowAction>(
+      useRootNavigator: true,
       tooltip: '清理任务队列',
       position: PopupMenuPosition.under,
       onSelected: (action) {
@@ -1481,6 +1622,11 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
     bool active = false,
   }) {
     final theme = Theme.of(context);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final contentHeight =
+        textScaler.scale(metrics.fontSize - 1.1) * 1.05 +
+        textScaler.scale(metrics.fontSize - 3.2) * 1.2 +
+        15;
     final card = Material(
       color: active
           ? accent.withValues(alpha: 0.1)
@@ -1499,7 +1645,7 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
         onTap: onTap,
         child: SizedBox(
           width: width,
-          height: metrics.buttonHeight,
+          height: contentHeight.clamp(metrics.buttonHeight, double.infinity),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 9),
             child: Row(
@@ -1621,6 +1767,7 @@ class _BatchSubtitleScreenState extends State<BatchSubtitleScreen> {
     final metrics = _BatchLayoutMetrics.fromSize(MediaQuery.sizeOf(context));
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(

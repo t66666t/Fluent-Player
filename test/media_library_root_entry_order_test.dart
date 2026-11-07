@@ -3,7 +3,7 @@ import 'package:video_player_app/models/media_library_root_entry.dart';
 import 'package:video_player_app/models/media_library_root_entry_order.dart';
 
 void main() {
-  test('empty storage uses folders in the middle', () {
+  test('empty storage includes local pages and podcasts with recent last', () {
     expect(
       MediaLibraryRootEntryOrder.parse(''),
       MediaLibraryRootEntryOrder.defaults,
@@ -11,72 +11,84 @@ void main() {
     expect(MediaLibraryRootEntryOrder.defaults, [
       MediaLibraryRootEntry.continueLearning,
       MediaLibraryRootEntry.folders,
-      MediaLibraryRootEntry.recent,
-      MediaLibraryRootEntry.bilibili,
       MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
+      MediaLibraryRootEntry.recent,
     ]);
   });
 
-  test('saved three-page order keeps its order and appends bilibili', () {
-    expect(
-      MediaLibraryRootEntryOrder.parse('recent,folders,continueLearning'),
-      [
+  test(
+    'saved order is preserved and retired video/cloud entries are discarded',
+    () {
+      expect(
+        MediaLibraryRootEntryOrder.parse('recent,folders,continueLearning'),
+        [
+          MediaLibraryRootEntry.recent,
+          MediaLibraryRootEntry.folders,
+          MediaLibraryRootEntry.continueLearning,
+          MediaLibraryRootEntry.podcasts,
+        ],
+      );
+      expect(MediaLibraryRootEntryOrder.parse('bilibili,recent'), [
         MediaLibraryRootEntry.recent,
-        MediaLibraryRootEntry.folders,
         MediaLibraryRootEntry.continueLearning,
-        MediaLibraryRootEntry.bilibili,
+        MediaLibraryRootEntry.folders,
         MediaLibraryRootEntry.podcasts,
-        MediaLibraryRootEntry.cloudDrive,
-      ],
-    );
-    expect(MediaLibraryRootEntryOrder.parse('bilibili,recent'), [
-      MediaLibraryRootEntry.bilibili,
-      MediaLibraryRootEntry.recent,
-      MediaLibraryRootEntry.continueLearning,
-      MediaLibraryRootEntry.folders,
-      MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
-    ]);
-    expect(
-      MediaLibraryRootEntryOrder.encode(MediaLibraryRootEntryOrder.defaults),
-      'continueLearning,folders,recent,bilibili,podcasts,cloudDrive',
-    );
-    expect(MediaLibraryRootEntry.bilibili.label, '哔哩哔哩');
-    expect(
-      MediaLibraryRootEntryX.tryParse('bilibili'),
-      MediaLibraryRootEntry.bilibili,
-    );
-  });
+      ]);
+      expect(
+        MediaLibraryRootEntryOrder.encode(MediaLibraryRootEntryOrder.defaults),
+        'continueLearning,folders,podcasts,recent',
+      );
+      expect(MediaLibraryRootEntry.bilibili.label, '哔哩哔哩');
+      expect(
+        MediaLibraryRootEntryX.tryParse('bilibili'),
+        MediaLibraryRootEntry.bilibili,
+      );
+    },
+  );
 
   test('parse fills missing pages and drops unknown tokens', () {
     expect(MediaLibraryRootEntryOrder.parse('recent,nope'), [
       MediaLibraryRootEntry.recent,
       MediaLibraryRootEntry.continueLearning,
       MediaLibraryRootEntry.folders,
-      MediaLibraryRootEntry.bilibili,
       MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
     ]);
   });
+
+  test(
+    'saved podcast order survives while cloud and website pages stay retired',
+    () {
+      expect(
+        MediaLibraryRootEntryOrder.parse(
+          'cloudDrive,podcasts,bilibili,folders',
+        ),
+        [
+          MediaLibraryRootEntry.podcasts,
+          MediaLibraryRootEntry.folders,
+          MediaLibraryRootEntry.continueLearning,
+          MediaLibraryRootEntry.recent,
+        ],
+      );
+      expect(MediaLibraryRootEntry.podcasts.isAvailable, isTrue);
+      expect(MediaLibraryRootEntry.podcasts.isLocal, isFalse);
+      expect(MediaLibraryRootEntry.cloudDrive.isAvailable, isFalse);
+      expect(MediaLibraryRootEntry.bilibili.isAvailable, isFalse);
+    },
+  );
 
   test('moved uses Flutter onReorder indices', () {
     final order = MediaLibraryRootEntryOrder.defaults;
     expect(MediaLibraryRootEntryOrder.moved(order, oldIndex: 1, newIndex: 0), [
       MediaLibraryRootEntry.folders,
       MediaLibraryRootEntry.continueLearning,
-      MediaLibraryRootEntry.recent,
-      MediaLibraryRootEntry.bilibili,
       MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
+      MediaLibraryRootEntry.recent,
     ]);
     expect(MediaLibraryRootEntryOrder.moved(order, oldIndex: 0, newIndex: 2), [
       MediaLibraryRootEntry.folders,
-      MediaLibraryRootEntry.recent,
-      MediaLibraryRootEntry.continueLearning,
-      MediaLibraryRootEntry.bilibili,
       MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
+      MediaLibraryRootEntry.continueLearning,
+      MediaLibraryRootEntry.recent,
     ]);
   });
 }

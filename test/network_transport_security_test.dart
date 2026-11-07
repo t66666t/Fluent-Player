@@ -10,6 +10,7 @@ import 'package:video_player_app/services/network/network_proxy_bridge.dart';
 import 'network_proxy_bridge_test.dart' show FakeProxyResolver;
 import 'network_settings_service_test.dart'
     show MemoryNetworkStore, MemoryCredentials;
+import 'support/temporary_tls_fixture.dart';
 
 class Bytes {
   final StreamIterator<Uint8List> iterator;
@@ -42,15 +43,19 @@ NetworkSettingsService settings() => NetworkSettingsService(
   migrateLegacy: false,
 );
 
+late TemporaryTlsFixture tlsFixture;
+
 SecurityContext serverTls() => SecurityContext()
-  ..useCertificateChain('test/fixtures/network/test-ca.pem')
-  ..usePrivateKey('test/fixtures/network/test-key.pem');
+  ..useCertificateChain(tlsFixture.certificate)
+  ..usePrivateKey(tlsFixture.privateKey);
 SecurityContext trustedTls() =>
     SecurityContext(withTrustedRoots: false)
-      ..setTrustedCertificates('test/fixtures/network/test-ca.pem');
+      ..setTrustedCertificates(tlsFixture.certificate);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async => tlsFixture = await TemporaryTlsFixture.create());
+  tearDownAll(() async => tlsFixture.dispose());
   setUp(() => HttpOverrides.global = null);
 
   for (final secureProxy in [false, true]) {

@@ -8,6 +8,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:video_player_app/features/podcasts/podcast_client.dart';
+import 'package:video_player_app/features/model_center/model_center_service.dart';
 import 'package:video_player_app/features/podcasts/podcast_controller.dart';
 import 'package:video_player_app/features/podcasts/podcast_media_store.dart';
 import 'package:video_player_app/features/podcasts/podcast_models.dart';
@@ -97,6 +98,7 @@ void main() {
         length: payload.length,
       );
       final episode = PodcastEpisode(
+        sourceFeedUrl: 'https://publisher.test/rss',
         id: 'two-hours',
         channelId: 'channel',
         title: '两小时播客',
@@ -225,8 +227,10 @@ void main() {
             },
           ),
         );
+      final center = ModelCenterService();
       final manager = TranscriptionManager(
         settings: settings,
+        modelCenter: center,
         asrService: GongyiAsrService(dio: dio, resultQueryDelay: (_) async {}),
       );
       final restrictionStatuses = <TranscriptionStatus>[];
@@ -240,6 +244,10 @@ void main() {
         await settings.setLargeDataRootPath(directory.path);
         await library.init();
         library.seedVideoForTesting(item);
+        await center.initialize();
+        // This fixture supplies a mocked public ASR service. Select it explicitly
+        // rather than replacing the community edition's local model default.
+        center.asrProfileId = ModelCenterService.legacyProfile.id;
         await manager.initialize();
         await manager.startTranscription(
           item.path,
@@ -286,6 +294,7 @@ void main() {
         await library.saveLibraryForTesting();
         await manager.shutdown();
         manager.dispose();
+        center.dispose();
         dio.close(force: true);
         PodcastPlaybackHooks.materialize = null;
         PodcastPlaybackHooks.releaseMaterialized = null;

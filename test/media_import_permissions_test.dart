@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:video_player_app/utils/app_toast.dart';
 import 'package:video_player_app/widgets/video_action_buttons.dart';
+import 'package:video_player_app/services/settings_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,7 @@ void main() {
   }
 
   setUp(() {
+    SettingsService().resetForTest();
     permissionCalls.clear();
     fileCalls.clear();
     photoCalls.clear();
@@ -94,6 +96,12 @@ void main() {
         await AppToast.dismiss(immediate: true);
         await tester.pump();
         expect(fileCalls.map((call) => call.method), [entry.value]);
+        if (entry.value == 'pickFiles') {
+          expect(
+            (fileCalls.single.arguments as Map)['filterMediaExtensions'],
+            isTrue,
+          );
+        }
         expect(permissionCalls, isEmpty);
         expect(photoCalls, isEmpty);
         expect(tester.takeException(), isNull);
@@ -101,6 +109,30 @@ void main() {
       variant: TargetPlatformVariant.only(TargetPlatform.android),
     );
   }
+
+  testWidgets(
+    'disabled suffix filter opens Android picker for all document types',
+    (tester) async {
+      SettingsService().localImportFilterMediaExtensions = false;
+      await openMenu(tester);
+      await tester.scrollUntilVisible(
+        find.widgetWithIcon(ListTile, Icons.folder_open),
+        160,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.widgetWithIcon(ListTile, Icons.folder_open));
+      await tester.pumpAndSettle();
+      expect(fileCalls.single.method, 'pickFiles');
+      expect((fileCalls.single.arguments as Map)['mimeTypes'], ['*/*']);
+      expect(
+        (fileCalls.single.arguments as Map)['filterMediaExtensions'],
+        isFalse,
+      );
+      expect(permissionCalls, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   testWidgets(
     'gallery requests videos and audio without requiring photos',

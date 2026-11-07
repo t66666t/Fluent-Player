@@ -98,7 +98,7 @@ Math isolateAiMathTree(Math parsed) {
   }
 }
 
-/// KaTeX fonts contain no CJK glyphs. Use the app's bundled MiSans face for
+/// KaTeX fonts contain no CJK glyphs. Use the app's bundled Noto face for
 /// these leaves only, preserving all mathematical layout and TeX script sizes.
 Math withAiMathFonts(Math parsed, String source) {
   if (!_cjk.hasMatch(source)) return parsed;
@@ -182,8 +182,8 @@ class _CjkSymbol extends SymbolNode {
       text: TextSpan(
         text: symbol,
         style: TextStyle(
-          fontFamily: 'MiSans',
-          fontFamilyFallback: const ['Noto Sans SC'],
+          fontFamily: 'Noto Sans SC',
+          fontFamilyFallback: const ['Noto Sans CJK Fallback'],
           fontSize: options.fontSize * options.sizeMultiplier,
           color: options.color,
           fontWeight: options.textFontOptions?.fontWeight ?? FontWeight.normal,

@@ -1,15 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/app_haptics.dart';
 import '../models/batch_subtitle_task_view.dart';
 import '../models/transcription_status.dart';
 import '../models/transcription_progress.dart';
 import '../models/local_asr_progress.dart';
 import 'local_asr_progress_view.dart';
+import 'subtitle_optimization_progress_view.dart';
 import 'operation_status.dart';
 import 'visibility_input_gate.dart';
 import '../utils/transcription_failure_summary.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 import 'task_reorder_listener.dart';
+import 'task_range_selection_gesture.dart';
+import '../utils/media_library_range_selection.dart';
 
 /// Converts Flutter's final displayed-list index into the task's final
 /// position in the pending queue.
@@ -79,6 +83,13 @@ class TaskQueueTable extends StatefulWidget {
   final void Function(String mediaKey, int newIndex) onReorder;
   final void Function(BatchSubtitleTaskView task)? onTapCompleted;
   final VoidCallback? onConfigure;
+  final Set<String> selectedKeys;
+  final ValueChanged<Set<String>>? onSelectionChanged;
+
+  /// On short windows, page controls scroll with the queue rather than
+  /// consuming all the space left above the player and selection actions.
+  final Widget? header;
+  final bool scrollHeader;
 
   const TaskQueueTable({
     super.key,
@@ -92,19 +103,218 @@ class TaskQueueTable extends StatefulWidget {
     required this.onReorder,
     this.onTapCompleted,
     this.onConfigure,
+    this.selectedKeys = const {},
+    this.onSelectionChanged,
+    this.header,
+    this.scrollHeader = false,
   });
 
   @override
   State<TaskQueueTable> createState() => _TaskQueueTableState();
 }
 
-class _TaskQueueTableState extends State<TaskQueueTable> {
+class _TaskQueueTableState extends State<TaskQueueTable>
+    with WidgetsBindingObserver {
   bool _isDescending = false;
   int? _dragIndex;
   int? _hoverIndex;
   final _scrollController = ScrollController();
+  final _viewportKey = GlobalKey();
+  final _rowKeys = <String, GlobalKey>{};
+  late final _rangeAutoScroller = MediaLibrarySelectionAutoScroller(
+    scrollController: _scrollController,
+    onScrolled: _scheduleRangeUpdate,
+  );
+  List<String>? _rangeOrder;
+  Set<String> _rangeSnapshot = {};
+  Set<String> _lastRangeSelection = {};
+  int? _rangeAnchor;
+  bool _rangeSelecting = true;
+  Offset? _rangeStartPosition, _rangePosition;
+  bool _rangeMoved = false;
+  bool _rangeUpdateScheduled = false;
+  TaskRangeSelectionGestureRecognizer? _rangeRecognizer;
+
+  bool get _isSelecting =>
+      widget.selectedKeys.isNotEmpty || _rangeAnchor != null;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _endRangeSelection();
+  }
+
+  @override
+  void didUpdateWidget(TaskQueueTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final order = _sortedTasks.map((task) => task.mediaKey).toList();
+    final keys = order.toSet();
+    _rowKeys.removeWhere((key, _) => !keys.contains(key));
+    // A running task can finish and move between groups during a held drag.
+    // End that gesture rather than interpreting its anchor in another order.
+    if (_rangeOrder != null &&
+        (!listEquals(_rangeOrder, order) ||
+            widget.onSelectionChanged == null ||
+            !setEquals(widget.selectedKeys, _lastRangeSelection) ||
+            widget.autoDeletedKeys.containsKey(_rangeOrder![_rangeAnchor!]))) {
+      _endRangeSelection(rebuild: false);
+    }
+    if (_rangeAnchor != null && _rangeMoved) _scheduleRangeUpdate();
+  }
+
+  Rect? _boxRect(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  String? _checkboxAt(Offset position) {
+    final viewport = _boxRect(_viewportKey);
+    if (viewport == null || !viewport.contains(position)) return null;
+    for (final entry in _rowKeys.entries) {
+      if (widget.autoDeletedKeys.containsKey(entry.key)) continue;
+      final row = _boxRect(entry.value);
+      if (row == null || !row.contains(position)) continue;
+      // A full-height, 40px-wide target around the unchanged 24px ordinal.
+      // The rest of the row keeps its normal scrolling/reordering gestures.
+      final rtl = Directionality.of(context) == TextDirection.rtl;
+      if (rtl ? position.dx >= row.right - 40 : position.dx < row.left + 40) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  void _startRangeSelection(Offset position) {
+    final key = _checkboxAt(position);
+    if (key == null) return;
+    _rangeOrder = _sortedTasks.map((task) => task.mediaKey).toList();
+    _rangeAnchor = _rangeOrder!.indexOf(key);
+    _rangeSnapshot = Set.of(widget.selectedKeys);
+    _lastRangeSelection = Set.of(widget.selectedKeys);
+    _rangeSelecting = !_rangeSnapshot.contains(key);
+    _rangeStartPosition = _rangePosition = position;
+    _rangeMoved = false;
+    Tooltip.dismissAllToolTips();
+    AppHaptics.pulse();
+    _applyRangeAt(_rangeAnchor!);
+  }
+
+  void _updateRangeSelection(Offset position) {
+    if (_rangeAnchor == null) return;
+    _rangePosition = position;
+    _rangeMoved |= (position - _rangeStartPosition!).distance > 4;
+    if (!_rangeMoved) return;
+    _applyRangeAtPointer();
+    final viewport = _boxRect(_viewportKey);
+    if (viewport == null || viewport.isEmpty) return;
+    _rangeAutoScroller.update(
+      pointerY: position.dy,
+      viewportTop: viewport.top,
+      viewportBottom: viewport.bottom,
+    );
+  }
+
+  void _scheduleRangeUpdate() {
+    if (_rangeAnchor == null || _rangeUpdateScheduled) return;
+    _rangeUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rangeUpdateScheduled = false;
+      if (!mounted || _rangeAnchor == null) return;
+      // Variable-height rows have their new positions only after scroll layout.
+      final position = _rangePosition;
+      if (position != null) _updateRangeSelection(position);
+    });
+  }
+
+  void _applyRangeAtPointer() {
+    final position = _rangePosition;
+    final viewport = _boxRect(_viewportKey);
+    final order = _rangeOrder;
+    if (position == null ||
+        viewport == null ||
+        viewport.isEmpty ||
+        order == null) {
+      return;
+    }
+    final y = position.dy.clamp(viewport.top + .01, viewport.bottom - .01);
+    int? nearest;
+    var distance = double.infinity;
+    for (final entry in _rowKeys.entries) {
+      final row = _boxRect(entry.value);
+      if (row == null ||
+          row.bottom <= viewport.top ||
+          row.top >= viewport.bottom) {
+        continue;
+      }
+      final delta = y < row.top
+          ? row.top - y
+          : y > row.bottom
+          ? y - row.bottom
+          : 0.0;
+      if (delta >= distance) continue;
+      final index = order.indexOf(entry.key);
+      if (index < 0) continue;
+      nearest = index;
+      distance = delta;
+    }
+    if (nearest != null) _applyRangeAt(nearest);
+  }
+
+  void _applyRangeAt(int index) {
+    final anchor = _rangeAnchor;
+    final order = _rangeOrder;
+    if (anchor == null || order == null) return;
+    final selection = Set<String>.of(_rangeSnapshot);
+    final from = anchor < index ? anchor : index;
+    final to = anchor > index ? anchor : index;
+    for (var i = from; i <= to; i++) {
+      final key = order[i];
+      if (widget.autoDeletedKeys.containsKey(key)) continue;
+      if (_rangeSelecting) {
+        selection.add(key);
+      } else {
+        selection.remove(key);
+      }
+    }
+    selection.removeAll(widget.autoDeletedKeys.keys);
+    if (setEquals(selection, _lastRangeSelection)) return;
+    _lastRangeSelection = selection;
+    widget.onSelectionChanged?.call(selection);
+  }
+
+  void _endRangeSelection({bool rebuild = true}) {
+    final wasActive = _rangeAnchor != null;
+    _rangeRecognizer?.cancelTracking();
+    _rangeAutoScroller.stop();
+    _rangeAnchor = null;
+    _rangeOrder = null;
+    _rangePosition = _rangeStartPosition = null;
+    _rangeSnapshot = {};
+    _lastRangeSelection = {};
+    _rangeMoved = false;
+    if (wasActive && rebuild && mounted) setState(() {});
+  }
+
+  void _select(BatchSubtitleTaskView task, {bool toggle = false}) {
+    final selected = Set<String>.of(widget.selectedKeys);
+    if (toggle && selected.contains(task.mediaKey)) {
+      selected.remove(task.mediaKey);
+    } else {
+      selected.add(task.mediaKey);
+    }
+    widget.onSelectionChanged?.call(selected);
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _rangeAutoScroller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -122,15 +332,19 @@ class _TaskQueueTableState extends State<TaskQueueTable> {
     };
 
     if (tasks.isEmpty) {
-      return LayoutBuilder(
+      final empty = LayoutBuilder(
         builder: (context, constraints) => Center(
           child: SingleChildScrollView(
             controller: _scrollController,
             primary: false,
-            padding: const EdgeInsets.all(24),
+            padding: widget.scrollHeader
+                ? EdgeInsets.zero
+                : const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.scrollHeader && widget.header != null)
+                  widget.header!,
                 Container(
                   width: 54,
                   height: 54,
@@ -168,6 +382,12 @@ class _TaskQueueTableState extends State<TaskQueueTable> {
           ),
         ),
       );
+      return Column(
+        children: [
+          if (!widget.scrollHeader && widget.header != null) widget.header!,
+          Expanded(child: empty),
+        ],
+      );
     }
 
     final mediaSize = MediaQuery.sizeOf(context);
@@ -182,138 +402,228 @@ class _TaskQueueTableState extends State<TaskQueueTable> {
             ? (mediaSize.shortestSide * 0.09).clamp(31.0, 36.0)
             : (mediaSize.shortestSide * 0.04).clamp(30.0, 38.0);
 
-        return Column(
+        final header = Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: isCompact ? 0 : 8,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _isDescending ? '进行中置顶 · 等待任务从下到上' : '进行中置顶 · 等待任务从上到下',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  DesktopButtonClickRegion(
-                    child: TextButton.icon(
-                      key: const ValueKey('task-queue-display-order'),
-                      onPressed: () =>
-                          setState(() => _isDescending = !_isDescending),
-                      icon: Icon(
-                        _isDescending
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 18,
+            if (widget.header != null) widget.header!,
+            if (isCompact || _isSelecting)
+              Padding(
+                key: const ValueKey('task-queue-order-row'),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    if (_isSelecting)
+                      Expanded(
+                        child: Text(
+                          '已选 ${widget.selectedKeys.length} 项',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    if (_isSelecting) ...[
+                      TextButton(
+                        key: const ValueKey('task-queue-select-all'),
+                        onPressed: () => widget.onSelectionChanged?.call({
+                          for (final task in tasks)
+                            if (!widget.autoDeletedKeys.containsKey(
+                              task.mediaKey,
+                            ))
+                              task.mediaKey,
+                        }),
+                        child: const Text('全选'),
                       ),
-                      label: Text(_isDescending ? '正序显示' : '倒序显示'),
-                    ),
-                  ),
-                ],
+                      TextButton(
+                        key: const ValueKey('task-queue-cancel-selection'),
+                        onPressed: () => widget.onSelectionChanged?.call({}),
+                        child: const Text('取消'),
+                      ),
+                    ],
+                    if (!_isSelecting)
+                      DesktopButtonClickRegion(
+                        child: TextButton.icon(
+                          key: const ValueKey('task-queue-display-order'),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 32),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.standard,
+                            textStyle: Theme.of(
+                              context,
+                            ).textTheme.labelLarge?.copyWith(fontSize: 12),
+                          ),
+                          onPressed: () =>
+                              setState(() => _isDescending = !_isDescending),
+                          icon: Icon(
+                            _isDescending
+                                ? Icons.arrow_upward
+                                : Icons.arrow_downward,
+                            size: 18,
+                          ),
+                          label: Text(_isDescending ? '正序显示' : '倒序显示'),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
             if (!isCompact) _buildHeader(isWide, false, btnSize, tasks.length),
             const Divider(height: 1),
+          ],
+        );
+        return Column(
+          children: [
+            if (!widget.scrollHeader) header,
             Expanded(
-              child: ReorderableListView.builder(
-                scrollController: _scrollController,
-                primary: false,
-                padding: isCompact
-                    ? const EdgeInsets.only(bottom: 8)
-                    : EdgeInsets.zero,
-                buildDefaultDragHandles: false,
-                itemCount: tasks.length,
-                onReorderStart: (index) {
-                  Tooltip.dismissAllToolTips();
-                  HapticFeedback.selectionClick();
-                  setState(() => _dragIndex = index);
+              child: RawGestureDetector(
+                key: _viewportKey,
+                behavior: HitTestBehavior.opaque,
+                gestures: {
+                  TaskRangeSelectionGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        TaskRangeSelectionGestureRecognizer
+                      >(TaskRangeSelectionGestureRecognizer.new, (recognizer) {
+                        _rangeRecognizer = recognizer;
+                        recognizer.canStart = (position) =>
+                            widget.onSelectionChanged != null &&
+                            _checkboxAt(position) != null;
+                        recognizer
+                          ..onStart = _startRangeSelection
+                          ..onUpdate = _updateRangeSelection
+                          ..onEnd = _endRangeSelection;
+                      }),
                 },
-                onReorderEnd: (_) {
-                  setState(() {
-                    _dragIndex = null;
-                    _hoverIndex = null;
-                  });
-                },
-                onReorderItem: (oldIndex, newIndex) {
-                  final task = tasks[oldIndex];
-                  if (task.status != TranscriptionStatus.idle) return;
-                  final queueIndex = calculateBatchSubtitleQueueIndex(
-                    displayedTasks: tasks,
-                    oldIndex: oldIndex,
-                    newIndex: newIndex,
-                    isDescending: _isDescending,
-                  );
-                  if (queueIndex < 0) return;
-                  widget.onReorder(task.mediaKey, queueIndex);
-                },
-                proxyDecorator: (child, index, animation) {
-                  return AnimatedBuilder(
-                    animation: animation,
-                    builder: (context, _) {
-                      final t = Curves.easeOutCubic.transform(animation.value);
-                      return Transform.scale(
-                        scale: 1.0 + t * 0.018,
-                        child: Material(
-                          color: Theme.of(context).colorScheme.surface,
-                          elevation: 6 * t,
-                          child: TooltipVisibility(
-                            visible: false,
-                            child: child,
+                child: ReorderableListView.builder(
+                  header: widget.scrollHeader ? header : null,
+                  scrollController: _scrollController,
+                  primary: false,
+                  padding: isCompact
+                      ? const EdgeInsets.only(bottom: 8)
+                      : EdgeInsets.zero,
+                  buildDefaultDragHandles: false,
+                  itemCount: tasks.length,
+                  onReorderStart: (index) {
+                    Tooltip.dismissAllToolTips();
+                    AppHaptics.pulse();
+                    setState(() => _dragIndex = index);
+                  },
+                  onReorderEnd: (_) {
+                    setState(() {
+                      _dragIndex = null;
+                      _hoverIndex = null;
+                    });
+                  },
+                  onReorderItem: (oldIndex, newIndex) {
+                    final task = tasks[oldIndex];
+                    if (task.status != TranscriptionStatus.idle) return;
+                    final queueIndex = calculateBatchSubtitleQueueIndex(
+                      displayedTasks: tasks,
+                      oldIndex: oldIndex,
+                      newIndex: newIndex,
+                      isDescending: _isDescending,
+                    );
+                    if (queueIndex < 0) return;
+                    widget.onReorder(task.mediaKey, queueIndex);
+                  },
+                  proxyDecorator: (child, index, animation) {
+                    return AnimatedBuilder(
+                      animation: animation,
+                      builder: (context, _) {
+                        final t = Curves.easeOutCubic.transform(
+                          animation.value,
+                        );
+                        return Transform.scale(
+                          scale: 1.0 + t * 0.018,
+                          child: Material(
+                            color: Theme.of(context).colorScheme.surface,
+                            elevation: 6 * t,
+                            child: TooltipVisibility(
+                              visible: false,
+                              child: child,
+                            ),
                           ),
+                        );
+                      },
+                    );
+                  },
+                  itemBuilder: (context, index) {
+                    final task = tasks[index];
+                    final isAutoDeleting = widget.autoDeletedKeys.containsKey(
+                      task.mediaKey,
+                    );
+                    final isSelected = widget.selectedKeys.contains(
+                      task.mediaKey,
+                    );
+                    final canDrag =
+                        isSelected && task.status == TranscriptionStatus.idle;
+
+                    final row = _TaskRow(
+                      key: _rowKeys.putIfAbsent(task.mediaKey, GlobalKey.new),
+                      index: taskNumbers[task.mediaKey]!,
+                      task: task,
+                      isWide: isWide,
+                      isCompact: isCompact,
+                      isAutoDeleting: isAutoDeleting,
+                      onConfigure: widget.onConfigure,
+                      isDragging: _dragIndex == index,
+                      isHoverTarget: _hoverIndex == index,
+                      isSelecting: _isSelecting,
+                      isSelected: isSelected,
+                      btnSize: btnSize,
+                      onStart: () => widget.onStart(task.mediaKey),
+                      onPause: widget.onPause == null
+                          ? null
+                          : () => widget.onPause!(task.mediaKey),
+                      onRetry: () => widget.onRetry(task.mediaKey),
+                      onRestart: widget.onRestart == null
+                          ? null
+                          : () => widget.onRestart!(task.mediaKey),
+                      onDelete: () => widget.onDelete(task.mediaKey),
+                      onTapCompleted: widget.onTapCompleted != null
+                          ? () => widget.onTapCompleted!(task)
+                          : null,
+                    );
+
+                    final selectableRow = Semantics(
+                      selected: _isSelecting ? isSelected : null,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress:
+                            canDrag || widget.onSelectionChanged == null
+                            ? null
+                            : () {
+                                AppHaptics.pulse();
+                                _select(task);
+                              },
+                        onTap: _isSelecting
+                            ? () => _select(task, toggle: true)
+                            : null,
+                        child: IgnorePointer(
+                          ignoring: _isSelecting,
+                          child: row,
                         ),
-                      );
-                    },
-                  );
-                },
-                itemBuilder: (context, index) {
-                  final task = tasks[index];
-                  final isAutoDeleting = widget.autoDeletedKeys.containsKey(
-                    task.mediaKey,
-                  );
-                  final canDrag = task.status == TranscriptionStatus.idle;
+                      ),
+                    );
 
-                  final row = _TaskRow(
-                    index: taskNumbers[task.mediaKey]!,
-                    task: task,
-                    isWide: isWide,
-                    isCompact: isCompact,
-                    isAutoDeleting: isAutoDeleting,
-                    onConfigure: widget.onConfigure,
-                    isDragging: _dragIndex == index,
-                    isHoverTarget: _hoverIndex == index,
-                    btnSize: btnSize,
-                    onStart: () => widget.onStart(task.mediaKey),
-                    onPause: widget.onPause == null
-                        ? null
-                        : () => widget.onPause!(task.mediaKey),
-                    onRetry: () => widget.onRetry(task.mediaKey),
-                    onRestart: widget.onRestart == null
-                        ? null
-                        : () => widget.onRestart!(task.mediaKey),
-                    onDelete: () => widget.onDelete(task.mediaKey),
-                    onTapCompleted: widget.onTapCompleted != null
-                        ? () => widget.onTapCompleted!(task)
-                        : null,
-                  );
-
-                  return VisibilityInputGate(
-                    key: ValueKey(task.mediaKey),
-                    enabled: !isAutoDeleting,
-                    child: canDrag
-                        ? TaskReorderListener(
-                            key: ValueKey('task-drag-${task.mediaKey}'),
-                            index: index,
-                            onCancel: () {
-                              if (_dragIndex == null) return;
-                              setState(() => _dragIndex = null);
-                            },
-                            child: row,
-                          )
-                        : row,
-                  );
-                },
+                    return VisibilityInputGate(
+                      key: ValueKey(task.mediaKey),
+                      enabled: !isAutoDeleting,
+                      child: canDrag
+                          ? TaskReorderListener(
+                              key: ValueKey('task-drag-${task.mediaKey}'),
+                              index: index,
+                              onCancel: () {
+                                if (_dragIndex == null) return;
+                                setState(() => _dragIndex = null);
+                              },
+                              child: selectableRow,
+                            )
+                          : selectableRow,
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -404,6 +714,7 @@ class _TaskQueueTableState extends State<TaskQueueTable> {
       child: Row(
         children: [
           GestureDetector(
+            key: const ValueKey('task-queue-display-order'),
             onTap: () => setState(() => _isDescending = !_isDescending),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -455,6 +766,8 @@ class _TaskRow extends StatelessWidget {
   final VoidCallback? onConfigure;
   final bool isDragging;
   final bool isHoverTarget;
+  final bool isSelecting;
+  final bool isSelected;
   final double btnSize;
   final VoidCallback onStart;
   final VoidCallback? onPause;
@@ -464,6 +777,7 @@ class _TaskRow extends StatelessWidget {
   final VoidCallback? onTapCompleted;
 
   const _TaskRow({
+    super.key,
     required this.index,
     required this.task,
     required this.isWide,
@@ -472,6 +786,8 @@ class _TaskRow extends StatelessWidget {
     this.onConfigure,
     required this.isDragging,
     required this.isHoverTarget,
+    required this.isSelecting,
+    required this.isSelected,
     required this.btnSize,
     required this.onStart,
     this.onPause,
@@ -490,6 +806,8 @@ class _TaskRow extends StatelessWidget {
         isAutoDeleting: isAutoDeleting,
         isDragging: isDragging,
         isHoverTarget: isHoverTarget,
+        isSelecting: isSelecting,
+        isSelected: isSelected,
         onConfigure: onConfigure,
         btnSize: btnSize,
         onStart: onStart,
@@ -529,6 +847,8 @@ class _TaskRow extends StatelessWidget {
                 ? Theme.of(context).colorScheme.surfaceContainerHighest
                 : isHoverTarget
                 ? Theme.of(context).hoverColor
+                : isSelected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: .08)
                 : null,
             borderRadius: BorderRadius.circular(isDragging ? 8 : 0),
             boxShadow: isDragging
@@ -545,13 +865,12 @@ class _TaskRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(
               children: [
-                Text(
-                  '$index',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(context).hintColor,
-                    fontSize: 13,
-                  ),
+                _TaskNumber(
+                  key: ValueKey('task-select-${task.mediaKey}'),
+                  index: index,
+                  isSelecting: isSelecting,
+                  isSelected: isSelected,
+                  compact: false,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -597,9 +916,9 @@ class _TaskRow extends StatelessWidget {
                         ],
                       ),
                       Text(
-                        task.videoDuration.isEmpty
-                            ? '时长待获取'
-                            : task.videoDuration,
+                        '${task.videoDuration.isEmpty ? '时长待获取' : task.videoDuration}${task.processingStages.isEmpty ? '' : ' · ${task.processingStages}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,
                           color: Theme.of(context).hintColor,
@@ -637,6 +956,7 @@ class _TaskRow extends StatelessWidget {
                           status: task.status,
                           progress: task.progress,
                           translationProgress: task.translationProgress,
+                          optimizationProgress: task.optimizationProgress,
                           localAsrProgress: task.localAsrProgress,
                           audioProgress: task.audioProgress,
                           statusMessage: task.statusMessage,
@@ -733,6 +1053,7 @@ class _CompactTaskTableRow extends StatelessWidget {
   final int index;
   final BatchSubtitleTaskView task;
   final bool isAutoDeleting, isDragging, isHoverTarget;
+  final bool isSelecting, isSelected;
   final double btnSize;
   final VoidCallback onStart, onRetry, onDelete;
   final VoidCallback? onPause, onRestart, onTapCompleted, onConfigure;
@@ -743,6 +1064,8 @@ class _CompactTaskTableRow extends StatelessWidget {
     required this.isAutoDeleting,
     required this.isDragging,
     required this.isHoverTarget,
+    required this.isSelecting,
+    required this.isSelected,
     required this.btnSize,
     required this.onStart,
     required this.onRetry,
@@ -767,6 +1090,21 @@ class _CompactTaskTableRow extends StatelessWidget {
         : isIdle
         ? (task.isStarted ? '排队中' : '待开始')
         : TranscriptionProgress.stage(task.status, task.statusMessage);
+    final statusStyle = DefaultTextStyle.of(
+      context,
+    ).style.merge(const TextStyle(fontSize: 13));
+    // Reserve four characters with the actual font and system text scale.
+    final labelMeasure = TextPainter(
+      text: TextSpan(text: '识别语音', style: statusStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final statusWidth = (labelMeasure.width.ceilToDouble() + 8).clamp(
+      60.0,
+      120.0,
+    );
+    labelMeasure.dispose();
     void details() => _showTaskDetails(
       context,
       task,
@@ -786,7 +1124,11 @@ class _CompactTaskTableRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: isDragging ? theme.colorScheme.surfaceContainerHighest : null,
+          color: isDragging
+              ? theme.colorScheme.surfaceContainerHighest
+              : isSelected
+              ? theme.colorScheme.primary.withValues(alpha: .08)
+              : null,
           border: Border(
             bottom: BorderSide(
               color: theme.colorScheme.onSurface.withValues(alpha: .10),
@@ -795,16 +1137,14 @@ class _CompactTaskTableRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            SizedBox(
-              width: 18,
-              child: Text(
-                '$index',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurface.withValues(alpha: .45),
-                ),
-              ),
+            _TaskNumber(
+              key: ValueKey('task-select-${task.mediaKey}'),
+              index: index,
+              isSelecting: isSelecting,
+              isSelected: isSelected,
+              compact: true,
             ),
+            const SizedBox(width: 5),
             Expanded(
               child: Tooltip(
                 triggerMode: TooltipTriggerMode.manual,
@@ -844,7 +1184,7 @@ class _CompactTaskTableRow extends StatelessWidget {
                           ),
                         ),
                       Text(
-                        '${task.videoDuration.isEmpty ? "时长待获取" : task.videoDuration} · ${task.isExternal ? "外部媒体" : "媒体库"}',
+                        '${task.videoDuration.isEmpty ? "时长待获取" : task.videoDuration} · ${task.isExternal ? "外部媒体" : "媒体库"}${task.processingStages.isEmpty ? '' : ' · ${task.processingStages}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -855,6 +1195,14 @@ class _CompactTaskTableRow extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (isProcessing &&
+                          task.optimizationProgress != null) ...[
+                        const SizedBox(height: 4),
+                        SubtitleOptimizationProgressView(
+                          progress: task.optimizationProgress!,
+                          foregroundColor: color,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -862,7 +1210,7 @@ class _CompactTaskTableRow extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             SizedBox(
-              width: 52,
+              width: statusWidth,
               child: InkWell(
                 onTap: isError ? details : null,
                 child: Tooltip(
@@ -877,23 +1225,31 @@ class _CompactTaskTableRow extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        status,
-                        maxLines: 2,
+                        task.translationProgress != null ? '翻译' : status,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 13, color: color),
                       ),
                       if (isProcessing) ...[
                         const SizedBox(height: 4),
                         LinearProgressIndicator(
-                          value: task.progress.clamp(0, 1),
+                          value: (task.translationProgress ?? task.progress)
+                              .clamp(0, 1),
                           minHeight: 2,
                           backgroundColor: theme.colorScheme.onSurface
                               .withValues(alpha: .1),
                         ),
                         Text(
-                          '${(task.progress * 100).round()}%',
+                          '${((task.translationProgress ?? task.progress) * 100).round()}%',
                           style: TextStyle(fontSize: 13, color: color),
                         ),
+                        if (task.translationProgress != null)
+                          Text(
+                            '总进度 ${(task.progress * 100).round()}%',
+                            style: TextStyle(fontSize: 10, color: color),
+                          ),
                       ],
                     ],
                   ),
@@ -947,6 +1303,65 @@ class _CompactTaskTableRow extends StatelessWidget {
               onPressed: onDelete,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The ordinal keeps its size and position when it becomes a selection box.
+class _TaskNumber extends StatelessWidget {
+  const _TaskNumber({
+    super.key,
+    required this.index,
+    required this.isSelecting,
+    required this.isSelected,
+    required this.compact,
+  });
+
+  final int index;
+  final bool isSelecting, isSelected, compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: '任务 $index',
+      checked: isSelecting ? isSelected : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeInOutCubic,
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelecting && isSelected
+              ? scheme.primary
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: !isSelecting
+                ? Colors.transparent
+                : isSelected
+                ? scheme.primary
+                : scheme.outlineVariant,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '$index',
+              style: TextStyle(
+                fontSize: compact ? 11 : 13,
+                fontWeight: FontWeight.w500,
+                color: isSelecting && isSelected
+                    ? scheme.onPrimary
+                    : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1183,6 +1598,7 @@ class _ProgressIndicator extends StatelessWidget {
   final TranscriptionStatus status;
   final double progress;
   final double? translationProgress;
+  final SubtitleOptimizationProgress? optimizationProgress;
   final LocalAsrProgress? localAsrProgress;
   final TranscriptionAudioProgress? audioProgress;
   final String statusMessage;
@@ -1192,6 +1608,7 @@ class _ProgressIndicator extends StatelessWidget {
     required this.status,
     required this.progress,
     this.translationProgress,
+    this.optimizationProgress,
     this.localAsrProgress,
     this.audioProgress,
     this.statusMessage = '',
@@ -1308,11 +1725,21 @@ class _ProgressIndicator extends StatelessWidget {
 
     // Processing states: extracting / uploading / transcribing
     if (audioProgress != null || localAsrProgress != null) {
-      return _LocalProcessingProgress(
-        progress: progress,
-        audio: audioProgress,
-        local: localAsrProgress,
-        fontSize: 13,
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _LocalProcessingProgress(
+            progress: progress,
+            audio: audioProgress,
+            local: localAsrProgress,
+            fontSize: 13,
+          ),
+          if (optimizationProgress != null) ...[
+            const SizedBox(height: 5),
+            SubtitleOptimizationProgressView(progress: optimizationProgress!),
+          ],
+        ],
       );
     }
     final statusText = TranscriptionProgress.stage(status, statusMessage);
@@ -1354,6 +1781,10 @@ class _ProgressIndicator extends StatelessWidget {
           width: 100,
           child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
         ),
+        if (optimizationProgress != null) ...[
+          const SizedBox(height: 5),
+          SubtitleOptimizationProgressView(progress: optimizationProgress!),
+        ],
         if (hasDetailMessage) ...[
           const SizedBox(height: 3),
           Text(

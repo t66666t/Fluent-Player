@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'dart:async';
 import '../services/subtitle_font_service.dart';
 import '../models/subtitle_font.dart';
@@ -5,6 +6,7 @@ import '../services/video_compose/video_compose_subtitle_service.dart';
 import 'subtitle_font_license_dialog.dart';
 import '../services/subtitle_debug_session.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player_app/theme/app_page_transitions.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +25,7 @@ import '../services/settings_service.dart';
 import '../services/video_compose_manager.dart';
 import '../services/video_compose/video_compose_preview_controller.dart';
 import '../services/video_compose/android_compose_storage_access.dart';
+import '../services/video_compose/video_compose_save_service.dart';
 import '../utils/app_toast.dart';
 import '../utils/open_with_other_apps.dart';
 import 'media_materialization_progress_card.dart';
@@ -394,12 +397,11 @@ class _ComposeSelectState<T> extends State<_ComposeSelect<T>>
   Widget build(BuildContext context) {
     final bool highlighted = _isOpen || _isFocused;
     final Color borderColor = highlighted
-        ? const Color(0xFF639FFF)
-        : (_isHovered ? const Color(0xFF4A5361) : const Color(0xFF383E48));
+        ? AppSettingsTheme.accent
+        : (_isHovered ? AppSettingsTheme.secondary : AppSettingsTheme.divider);
     final Color fillColor = highlighted
-        ? const Color(0xFF27364B)
-        : (_isHovered ? const Color(0xFF292F38) : const Color(0xFF242930));
-    final double controlHeight = (widget.fontSize * 3.9).clamp(48.0, 56.0);
+        ? AppSettingsTheme.accent.withValues(alpha: .10)
+        : (_isHovered ? const Color(0xFF292B2E) : AppSettingsTheme.surface);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -434,49 +436,39 @@ class _ComposeSelectState<T> extends State<_ComposeSelect<T>>
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
                   curve: Curves.easeOutCubic,
-                  height: controlHeight,
+                  constraints: const BoxConstraints(minHeight: 44),
                   padding: const EdgeInsets.fromLTRB(9, 7, 10, 7),
                   decoration: BoxDecoration(
                     color: fillColor,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: borderColor,
                       width: highlighted ? 1.35 : 1,
                     ),
-                    boxShadow: highlighted
-                        ? [
-                            BoxShadow(
-                              color: const Color(
-                                0xFF2979FF,
-                              ).withValues(alpha: 0.12),
-                              blurRadius: 12,
-                              spreadRadius: 1,
-                            ),
-                          ]
-                        : const <BoxShadow>[],
                   ),
                   child: Row(
                     children: [
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 120),
                         curve: Curves.easeOutCubic,
-                        width: 34,
-                        height: 34,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
-                          color: highlighted
-                              ? const Color(0xFF4D91FF)
-                              : const Color(0xFF343B46),
+                          color: Colors.transparent,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
                           _fieldIcon,
                           size: widget.fontSize + 3,
-                          color: highlighted ? Colors.white : Colors.white60,
+                          color: highlighted
+                              ? AppSettingsTheme.accent
+                              : AppSettingsTheme.secondary,
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -492,8 +484,9 @@ class _ComposeSelectState<T> extends State<_ComposeSelect<T>>
                                   9.0,
                                   11.0,
                                 ),
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                                 letterSpacing: 0.15,
+                                height: 1.25,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -527,6 +520,7 @@ class _ComposeSelectState<T> extends State<_ComposeSelect<T>>
                                         ? Colors.white
                                         : Colors.white38,
                                     fontSize: widget.fontSize,
+                                    height: 1.25,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -686,6 +680,9 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
   bool _softSubtitleUseSourceQuality = true;
   bool _animateVisibility = false;
   bool get _showCustomOutputDirectory => !Platform.isIOS;
+  bool get _mobileOutput =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   String get _openOutputLabel {
     if (Platform.isWindows) return '用文件资源管理器打开';
@@ -698,17 +695,17 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
     if (Platform.isWindows) return '已保存，可在文件资源管理器中定位该文件';
     if (Platform.isMacOS) return '已保存，可在“访达”中定位该文件';
     if (Platform.isLinux) return '已保存，可在文件管理器中定位该文件';
-    return '已保存，可使用其他应用打开该视频';
+    return '成片已生成，可保存到设备或使用其他应用打开';
   }
 
   String get _defaultOutputDirectoryLabel {
     if (Platform.isAndroid) {
-      return '/storage/emulated/0/Download/ComposedVideos';
+      return '应用数据目录（合成后可保存到设备）';
     }
     if (Platform.isWindows || Platform.isMacOS) {
-      return '默认目录（程序所在目录/ComposedVideos）';
+      return '默认目录（应用数据目录/exports/composed）';
     }
-    return '默认目录（应用文档/ComposedVideos）';
+    return '默认目录（应用数据目录/exports/composed）';
   }
 
   @override
@@ -880,10 +877,6 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
       _customOutputPath = _showCustomOutputDirectory
           ? settings.videoComposeCustomOutputPath
           : null;
-      if (Platform.isAndroid &&
-          (_customOutputPath == null || _customOutputPath!.isEmpty)) {
-        _customOutputPath = '/storage/emulated/0/Download/ComposedVideos';
-      }
       _resolution = _resolutionFromHeight(
         settings.videoComposeResolutionHeight,
       );
@@ -985,33 +978,44 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
     if (effectiveOutputPath != null && effectiveOutputPath.isEmpty) {
       effectiveOutputPath = null;
     }
-    if (Platform.isAndroid && effectiveOutputPath == null) {
-      effectiveOutputPath = '/storage/emulated/0/Download/ComposedVideos';
-      _customOutputPath = effectiveOutputPath;
-      settings.updateSetting(
-        'videoComposeCustomOutputPath',
-        effectiveOutputPath,
+    final selectedOutputPath = effectiveOutputPath;
+    if (Platform.isAndroid) {
+      effectiveOutputPath = await resolveAndroidComposeOutputDirectory(
+        selectedDirectory: effectiveOutputPath,
+        requiresPermission: _androidOutputNeedsStoragePermission,
+        requestPermission: () => _ensureAndroidExternalStoragePermission(
+          requestFromUser: true,
+          showDeniedDialog: false,
+        ),
+        useAppDirectory: () async => mounted && await _offerAppDirectoryForCompose(),
+        appDirectory: androidPrivateComposeOutputDirectory,
       );
-    }
-    if (Platform.isAndroid &&
-        effectiveOutputPath != null &&
-        await _androidOutputNeedsStoragePermission(effectiveOutputPath)) {
-      final granted = await _ensureAndroidExternalStoragePermission(
-        requestFromUser: true,
-      );
-      if (!granted) return;
+      if (effectiveOutputPath == null) return;
     }
     if (effectiveOutputPath != null) {
       try {
-        final dir = Directory(effectiveOutputPath);
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
-        }
+        await prepareComposeOutputDirectory(effectiveOutputPath);
       } catch (_) {
-        if (mounted) {
-          AppToast.show('输出目录不可用，请重新选择', type: AppToastType.error);
+        if (Platform.isAndroid &&
+            selectedOutputPath != null &&
+            effectiveOutputPath == selectedOutputPath &&
+            mounted &&
+            await _offerAppDirectoryForCompose()) {
+          effectiveOutputPath = await androidPrivateComposeOutputDirectory();
+          try {
+            await prepareComposeOutputDirectory(effectiveOutputPath);
+          } catch (_) {
+            if (mounted) {
+              AppToast.show('应用输出目录不可用，请检查存储空间', type: AppToastType.error);
+            }
+            return;
+          }
+        } else {
+          if (mounted) {
+            AppToast.show('输出目录不可用，请重新选择', type: AppToastType.error);
+          }
+          return;
         }
-        return;
       }
     }
     if (!await _confirmOnlineMaterializationIfNeeded()) return;
@@ -1163,6 +1167,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
 
   Future<bool> _ensureAndroidExternalStoragePermission({
     required bool requestFromUser,
+    bool showDeniedDialog = true,
   }) async {
     if (!Platform.isAndroid) return true;
     final allFilesStatus = await Permission.manageExternalStorage.status;
@@ -1170,6 +1175,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
     if (await permission.isGranted) return true;
     if (!requestFromUser) return false;
     if ((await permission.request()).isGranted) return true;
+    if (!showDeniedDialog) return false;
     if (!mounted) return false;
     await showDialog<void>(
       context: context,
@@ -1204,6 +1210,36 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
       },
     );
     return await permission.isGranted;
+  }
+
+  Future<bool> _offerAppDirectoryForCompose() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('无法写入所选目录'),
+            content: const Text(
+              '可以先将成片保存在应用目录，完成后通过“保存到设备”选择位置。原有目录设置不会更改。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext, false);
+                  unawaited(openAppSettings());
+                },
+                child: const Text('去设置'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('使用应用目录'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<bool> _androidOutputNeedsStoragePermission(String outputPath) async {
@@ -1268,6 +1304,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
             _openOutputPreview(task.request.outputPath, task.request.title),
         onOpenOutput: _openOutput,
         openOutputLabel: _openOutputLabel,
+        onSaveOutput: _mobileOutput ? _saveOutput : null,
         requestDeleteOutputPermission: (tasks) async {
           if (!Platform.isAndroid) return true;
           for (final task in tasks) {
@@ -1317,8 +1354,10 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
           minimumSize: Size.fromHeight(buttonHeight),
           padding: const EdgeInsets.symmetric(horizontal: 4),
           foregroundColor: Colors.white,
-          side: const BorderSide(color: Colors.white30),
-          textStyle: TextStyle(fontSize: textSize),
+          side: const BorderSide(color: AppSettingsTheme.divider),
+          textStyle: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(fontSize: textSize),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1326,7 +1365,12 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
             Icon(icon, size: textSize + 2),
             const SizedBox(width: 4),
             Flexible(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),
@@ -1357,9 +1401,9 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
           );
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white24),
+        border: Border.all(color: AppSettingsTheme.divider),
         borderRadius: BorderRadius.circular(8),
-        color: Colors.white.withValues(alpha: 0.03),
+        color: AppSettingsTheme.surface,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(
@@ -1445,6 +1489,37 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
     if (!mounted) return;
     if (!opened) {
       AppToast.show('无法打开输出文件', type: AppToastType.error);
+    }
+  }
+
+  bool _savingOutput = false;
+
+  Future<void> _saveOutput(String path) async {
+    if (_savingOutput || !mounted) return;
+    setState(() => _savingOutput = true);
+    try {
+      final size = MediaQuery.sizeOf(context);
+      final result = await const VideoComposeSaveService().save(
+        path,
+        origin: Rect.fromLTWH(size.width / 2, size.height / 2, 1, 1),
+      );
+      if (!mounted) return;
+      switch (result) {
+        case VideoComposeSaveResult.saved:
+          AppToast.show('视频已保存到所选位置', type: AppToastType.success);
+        case VideoComposeSaveResult.cancelled:
+          AppToast.show('已取消保存，合成视频仍保留');
+        case VideoComposeSaveResult.sharePresented:
+          AppToast.show('可在分享菜单中选择“存储到文件”');
+        case VideoComposeSaveResult.unavailable:
+          AppToast.show('无法打开系统保存窗口', type: AppToastType.error);
+      }
+    } catch (error) {
+      if (mounted) {
+        AppToast.show('保存失败，合成视频仍保留。请检查所选位置后重试', type: AppToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _savingOutput = false);
     }
   }
 
@@ -1539,7 +1614,10 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) {
     final screenH = MediaQuery.sizeOf(context).height;
     final manager = context.read<VideoComposeManager>();
     final settings = context.read<SettingsService>();
@@ -1552,11 +1630,11 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
 
         final pad = (h * 0.012).clamp(6.0, 10.0);
         final titleSize = (h * 0.018).clamp(12.0, 15.0);
-        final textSize = (h * 0.0158).clamp(10.0, 13.0);
-        final smallSize = (h * 0.0135).clamp(9.0, 11.0);
-        final buttonHeight = (h * 0.045).clamp(30.0, 38.0);
+        final textSize = (h * 0.0158).clamp(12.0, 13.0);
+        final smallSize = (h * 0.0135).clamp(11.0, 12.0);
+        const buttonHeight = AppSettingsTheme.controlHeight;
         final spacing = (h * 0.0075).clamp(3.0, 8.0);
-        final topBarHeight = (h * 0.043).clamp(30.0, 36.0);
+        const topBarHeight = 44.0;
         final topIconSize = (h * 0.023).clamp(16.0, 21.0);
         final actionGap = (h * 0.007).clamp(4.0, 8.0);
         final formPairGap = (spacing * 1.5).clamp(8.0, 12.0);
@@ -1564,7 +1642,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
         final switchScale = (textSize / 13.0).clamp(0.68, 0.86);
 
         return Container(
-          color: const Color(0xFF1E1E1E),
+          color: AppSettingsTheme.background,
           padding: EdgeInsets.all(pad),
           child: SidebarValueBuilder<Object>(
             listenable: manager,
@@ -1621,7 +1699,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                             ),
                           ),
                           SizedBox(
-                            height: topBarHeight - 2,
+                            height: topBarHeight,
                             child: DesktopButtonClickRegion(
                               child: OutlinedButton.icon(
                                 onPressed: _openQueueDialog,
@@ -1638,7 +1716,9 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                                     horizontal: (pad * 0.85).clamp(6.0, 10.0),
                                   ),
                                   foregroundColor: Colors.white70,
-                                  side: const BorderSide(color: Colors.white30),
+                                  side: const BorderSide(
+                                    color: AppSettingsTheme.divider,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),
@@ -1980,9 +2060,9 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                     SizedBox(height: spacing * 0.5),
                     Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24),
+                        border: Border.all(color: AppSettingsTheme.divider),
                         borderRadius: BorderRadius.circular(8),
-                        color: Colors.white.withValues(alpha: 0.03),
+                        color: AppSettingsTheme.surface,
                       ),
                       padding: EdgeInsets.symmetric(
                         horizontal: 10,
@@ -2069,10 +2149,7 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                                 child: OutlinedButton.icon(
                                   onPressed: _openSubtitleManager,
                                   style: OutlinedButton.styleFrom(
-                                    minimumSize: Size(
-                                      0,
-                                      (buttonHeight * 0.82).clamp(28.0, 34.0),
-                                    ),
+                                    minimumSize: Size(0, 40.0),
                                     padding: EdgeInsets.symmetric(
                                       horizontal: (pad * 0.6).clamp(5.0, 8.0),
                                     ),
@@ -2080,7 +2157,10 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                                     side: const BorderSide(
                                       color: Colors.white24,
                                     ),
-                                    textStyle: TextStyle(fontSize: smallSize),
+                                    textStyle: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(fontSize: smallSize),
                                   ),
                                   icon: Icon(
                                     Icons.subtitles_outlined,
@@ -2212,22 +2292,50 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                                 color: Colors.blueAccent,
                               ),
                               onPressed: () async {
-                                String? selectedDirectory = await FilePicker
-                                    .platform
-                                    .getDirectoryPath(dialogTitle: '选择保存目录');
-                                if (selectedDirectory != null && mounted) {
-                                  setState(() {
-                                    _customOutputPath = selectedDirectory;
-                                  });
-                                  settings.updateSetting(
-                                    'videoComposeCustomOutputPath',
-                                    selectedDirectory,
-                                  );
+                                try {
+                                  final selectedDirectory = await FilePicker
+                                      .platform
+                                      .getDirectoryPath(dialogTitle: '选择保存目录');
+                                  if (selectedDirectory != null && mounted) {
+                                    await settings.updateSetting(
+                                      'videoComposeCustomOutputPath',
+                                      selectedDirectory,
+                                    );
+                                    if (mounted) {
+                                      setState(() {
+                                        _customOutputPath = selectedDirectory;
+                                      });
+                                    }
+                                  }
+                                } catch (_) {
+                                  if (mounted) {
+                                    AppToast.show('无法选择输出目录，请重试', type: AppToastType.error);
+                                  }
                                 }
                               },
                             ),
                           ),
-                          if (Platform.isAndroid)
+                          if (_customOutputPath?.isNotEmpty == true)
+                            TextButton(
+                              onPressed: () async {
+                                try {
+                                  await settings.updateSetting(
+                                    'videoComposeCustomOutputPath',
+                                    '',
+                                  );
+                                  if (mounted) {
+                                    setState(() => _customOutputPath = null);
+                                  }
+                                } catch (_) {
+                                  if (mounted) {
+                                    AppToast.show('无法恢复默认目录，请重试', type: AppToastType.error);
+                                  }
+                                }
+                              },
+                              child: const Text('默认'),
+                            ),
+                          if (Platform.isAndroid &&
+                              _customOutputPath?.isNotEmpty == true)
                             DesktopButtonClickRegion(
                               child: IconButton(
                                 padding: EdgeInsets.zero,
@@ -2248,7 +2356,9 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                       if (Platform.isAndroid) ...[
                         SizedBox(height: spacing * 0.4),
                         Text(
-                          '默认输出目录: /storage/emulated/0/Download/ComposedVideos',
+                          _customOutputPath?.isNotEmpty == true
+                              ? '所选公共目录可能需要存储权限。'
+                              : '合成后可通过“保存到设备”选择保存位置。',
                           style: TextStyle(
                             color: Colors.greenAccent,
                             fontSize: smallSize,
@@ -2261,8 +2371,8 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
-                        color: Colors.white.withValues(alpha: 0.035),
-                        border: Border.all(color: Colors.white24),
+                        color: AppSettingsTheme.surface,
+                        border: Border.all(color: AppSettingsTheme.divider),
                       ),
                       padding: EdgeInsets.all((pad * 0.45).clamp(4.0, 8.0)),
                       child: Row(
@@ -2394,12 +2504,13 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                         style: ElevatedButton.styleFrom(
                           minimumSize: Size.fromHeight(buttonHeight),
                           padding: EdgeInsets.zero,
-                          backgroundColor: Colors.blueAccent,
+                          backgroundColor: AppSettingsTheme.accent,
                           foregroundColor: Colors.white,
-                          textStyle: TextStyle(
-                            fontSize: textSize,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          textStyle: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                fontSize: textSize,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                         icon: Icon(
                           Icons.movie_creation_outlined,
@@ -2449,6 +2560,23 @@ class _VideoComposePanelState extends State<VideoComposePanel> {
                                 ),
                               ),
                             ),
+                            if (_mobileOutput)
+                              DesktopButtonClickRegion(
+                                child: IconButton(
+                                  icon: _savingOutput
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.save_alt, color: Colors.white),
+                                  tooltip: _savingOutput ? '正在保存' : '保存到设备',
+                                  iconSize: 28,
+                                  onPressed: _savingOutput
+                                      ? null
+                                      : () => _saveOutput(latest.request.outputPath),
+                                ),
+                              ),
                             DesktopButtonClickRegion(
                               child: IconButton(
                                 icon: const Icon(

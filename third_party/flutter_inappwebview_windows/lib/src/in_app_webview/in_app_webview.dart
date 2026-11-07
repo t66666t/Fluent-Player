@@ -39,6 +39,7 @@ class WindowsInAppWebViewWidgetCreationParams
       super.onScrollChanged,
       @Deprecated('Use onDownloadStartRequest instead') super.onDownloadStart,
       super.onDownloadStartRequest,
+      super.onDownloadStarting,
       @Deprecated('Use onLoadResourceWithCustomScheme instead')
       super.onLoadResourceCustomScheme,
       super.onLoadResourceWithCustomScheme,
@@ -163,6 +164,7 @@ class WindowsInAppWebViewWidgetCreationParams
             onScrollChanged: params.onScrollChanged,
             onDownloadStart: params.onDownloadStart,
             onDownloadStartRequest: params.onDownloadStartRequest,
+            onDownloadStarting: params.onDownloadStarting,
             onLoadResourceCustomScheme: params.onLoadResourceCustomScheme,
             onLoadResourceWithCustomScheme:
                 params.onLoadResourceWithCustomScheme,
@@ -293,12 +295,6 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
             params.initialOptions?.toMap() ??
             initialSettings.toMap();
 
-    Map<String, dynamic> pullToRefreshSettings =
-        params.pullToRefreshController?.params.settings.toMap() ??
-            // ignore: deprecated_member_use_from_same_package
-            params.pullToRefreshController?.params.options.toMap() ??
-            PullToRefreshSettings(enabled: false).toMap();
-
     if ((params.headlessWebView?.isRunning() ?? false) &&
         params.keepAlive != null) {
       final headlessId = params.headlessWebView?.id;
@@ -360,7 +356,8 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
     if (params.onLoadResource != null && settings.useOnLoadResource == null) {
       settings.useOnLoadResource = true;
     }
-    if (params.onDownloadStartRequest != null &&
+    if ((params.onDownloadStartRequest != null ||
+            params.onDownloadStarting != null) &&
         settings.useOnDownloadStart == null) {
       settings.useOnDownloadStart = true;
     }

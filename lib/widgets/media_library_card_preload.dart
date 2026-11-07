@@ -9,8 +9,10 @@ import '../models/video_collection.dart';
 import '../utils/route_transition_work.dart';
 import '../models/video_item.dart';
 import '../services/thumbnail_cache_service.dart';
+import '../services/thumbnail_decode_scheduler.dart';
 import '../services/settings_service.dart';
 import 'media_library_layout_profile.dart';
+import 'media_library_view_defaults.dart';
 import 'media_list_layout_metrics.dart';
 
 /// Page-owned, bounded predecode. Ranges use actual mixed-folder item indexes,
@@ -27,7 +29,7 @@ class MediaLibraryCardPreload extends StatefulWidget {
     bool active = true,
   }) {
     final size = MediaQuery.sizeOf(context);
-    if (settings.mediaLibraryViewMode == 0) {
+    if (!settings.mediaLibraryUsesRowPipeline) {
       final m = MediaLibraryLayoutDefaults.cardGrid(
         textScaler: MediaQuery.textScalerOf(context),
         textStyle: DefaultTextStyle.of(context).style,
@@ -54,32 +56,24 @@ class MediaLibraryCardPreload extends StatefulWidget {
       );
     }
     final style = settings.listStyleFor(size);
-    final m = MediaListLayoutMetrics.forGrid(
+    final m = MediaListLayoutMetrics.forStyle(
+      style: style,
       screenShortestSide: size.shortestSide,
       availableWidth: availableWidth,
-      crossAxisCount: style.crossAxisCount,
-      heightSetting: style.heightScale,
-      titleSetting: style.titleScale,
-      mainSpacingSetting: style.mainSpacingScale,
-      crossSpacingSetting: style.crossSpacingScale,
     );
-    final tile = MediaListLayoutMetrics.forTile(
-      screenShortestSide: size.shortestSide,
-      cellWidth: m.cellWidth,
-      rowHeight: m.rowHeight,
-      titleSetting: style.titleScale,
-    );
-    final extent = tile.thumbnailExtent(m.cellWidth);
+    final thumbnail = style.isTable
+        ? MediaLibraryViewDefaults.tableThumbnailSize(m.rowHeight)
+        : MediaLibraryViewDefaults.rowsThumbnailSize(m.rowHeight, m.cellWidth);
     return MediaLibraryCardPreload(
       key: key,
       controller: controller,
       contents: contents,
       active: active,
       decodeImages: style.showThumbnail,
-      thumbnailWidth: extent,
-      thumbnailHeight: extent,
+      thumbnailWidth: thumbnail.width,
+      thumbnailHeight: thumbnail.height,
       geometry: MediaLibraryGridGeometry(
-        crossAxisCount: style.crossAxisCount,
+        crossAxisCount: style.isTable ? 1 : style.crossAxisCount,
         itemWidth: m.cellWidth,
         itemHeight: m.rowHeight,
         horizontalSpacing: m.crossSpacing,
@@ -115,6 +109,7 @@ class MediaLibraryCardPreload extends StatefulWidget {
 class _MediaLibraryCardPreloadState extends State<MediaLibraryCardPreload> {
   final _queue = Queue<int>();
   final _requests = <ThumbnailLoadRequest>{};
+  final _decodeRequests = <ThumbnailDecodeRequest>{};
   int _generation = 0, _running = 0;
   (int, int)? _range;
   bool _active = true;
@@ -167,6 +162,10 @@ class _MediaLibraryCardPreloadState extends State<MediaLibraryCardPreload> {
       request.dispose();
     }
     _requests.clear();
+    for (final request in _decodeRequests) {
+      request.dispose();
+    }
+    _decodeRequests.clear();
   }
 
   void _schedule() {
@@ -266,20 +265,38 @@ class _MediaLibraryCardPreloadState extends State<MediaLibraryCardPreload> {
     }
     if (path == null || path.isEmpty) return;
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final request = ThumbnailCacheService().requestThumbnail(id, path);
+    final configuration = createLocalImageConfiguration(context);
+    final request = ThumbnailCacheService().requestThumbnail(
+      id,
+      path,
+      prefetch: true,
+    );
     _requests.add(request);
     try {
       final provider = await request.image;
       if (!mounted || generation != _generation || provider == null) return;
-      await precacheImage(
+      final decode = ThumbnailDecodeScheduler.instance.request(
         libraryThumbnailProvider(
           provider,
           width: (widget.thumbnailWidth * dpr).round(),
           height: (widget.thumbnailHeight * dpr).round(),
         ),
-        context,
-        onError: (Object error, StackTrace? stack) {},
+        configuration,
+        priority: ThumbnailDecodeScheduler.prefetchPriority,
+        shouldDefer: () =>
+            !mounted ||
+            !_active ||
+            generation != _generation ||
+            (widget.controller.hasClients &&
+                widget.controller.position.isScrollingNotifier.value),
       );
+      _decodeRequests.add(decode);
+      try {
+        await decode.ready;
+      } finally {
+        decode.dispose();
+        _decodeRequests.remove(decode);
+      }
     } finally {
       request.dispose();
       _requests.remove(request);

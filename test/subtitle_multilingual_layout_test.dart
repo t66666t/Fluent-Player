@@ -94,12 +94,23 @@ void main() {
         final painted = tester
             .widgetList<RichText>(find.byType(RichText))
             .map((w) => w.text.toPlainText(includeSemanticsLabels: false))
-            .toSet();
+            .toList();
         expect(
           painted,
-          hasLength(1),
-          reason: 'fill and outline share the cuts',
+          hasLength(4),
+          reason: 'each track has a fill and outline paragraph',
         );
+        expect(
+          painted[0],
+          painted[2],
+          reason: 'primary fill and outline share the cuts',
+        );
+        expect(
+          painted[1],
+          painted[3],
+          reason: 'secondary fill and outline share the cuts',
+        );
+        final combined = '${painted[0]}\n${painted[1]}';
         final source = [_cue(sample.value.$1)];
         final secondary = [_cue(sample.value.$2)];
         final ass = VideoComposeAssRenderer(VideoComposeFontService())
@@ -121,7 +132,7 @@ void main() {
               .join(',')
               .replaceAll(RegExp(r'\{[^}]*\}'), '')
               .replaceAll(r'\N', '\n');
-          expect(text, painted.single);
+          expect(text, combined);
         }
         await tester.runAsync(() async {
           final boundary = tester.renderObject<RenderRepaintBoundary>(

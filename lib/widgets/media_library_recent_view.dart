@@ -129,7 +129,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
     return _tryReuseFrozen &&
         _frozenSubtree != null &&
         !_libraryChangedWhileAway &&
-        _frozenViewMode == settings.mediaLibraryViewMode &&
+        _frozenViewMode == settings.mediaLibraryContentLayout.index &&
         _frozenBottomPadding == widget.cardBottomPadding &&
         _frozenSelectionToken == (widget.selection?.freezeToken ?? 'off');
   }
@@ -159,7 +159,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
     widget.selection?.host.updateOrderedIds(_visibleChildIds(entries));
 
     if (entries.isEmpty) {
-      _frozenViewMode = settings.mediaLibraryViewMode;
+      _frozenViewMode = settings.mediaLibraryContentLayout.index;
       _frozenBottomPadding = widget.cardBottomPadding;
       _frozenSelectionToken = widget.selection?.freezeToken ?? 'off';
       _frozenSubtree = MediaLibraryEmptyState(
@@ -172,11 +172,11 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
       return _frozenSubtree!;
     }
 
-    final useList = settings.mediaLibraryViewMode == 1;
+    final useList = settings.mediaLibraryUsesRowPipeline;
     final screenSize = MediaQuery.sizeOf(context);
     // Match 文件夹: first-row inset equals mainSpacing so cards sit off the app bar.
     final flow = _flowSpacing(settings, screenSize, useList);
-    _frozenViewMode = settings.mediaLibraryViewMode;
+    _frozenViewMode = settings.mediaLibraryContentLayout.index;
     _frozenBottomPadding = widget.cardBottomPadding;
     _frozenSelectionToken = widget.selection?.freezeToken ?? 'off';
     _frozenSubtree = CustomScrollView(
@@ -471,14 +471,11 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
     Object regionId,
   ) {
     final listStyle = settings.listStyleFor(MediaQuery.sizeOf(context));
-    final metrics = MediaListLayoutMetrics.forGrid(
+    final columns = listStyle.isTable ? 1 : listStyle.crossAxisCount;
+    final metrics = MediaListLayoutMetrics.forStyle(
+      style: listStyle,
       screenShortestSide: MediaQuery.sizeOf(context).shortestSide,
       availableWidth: MediaLibraryScrollViewport.contentWidthOf(context),
-      crossAxisCount: listStyle.crossAxisCount,
-      heightSetting: listStyle.heightScale,
-      titleSetting: listStyle.titleScale,
-      mainSpacingSetting: listStyle.mainSpacingScale,
-      crossSpacingSetting: listStyle.crossSpacingScale,
     );
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: metrics.outerPadding),
@@ -487,7 +484,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
         itemCount: children.length,
         itemKey: (index) => (children[index].kind, children[index].id),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: listStyle.crossAxisCount,
+          crossAxisCount: columns,
           mainAxisExtent: metrics.rowHeight,
           crossAxisSpacing: metrics.crossSpacing,
           mainAxisSpacing: metrics.mainSpacing,
@@ -495,7 +492,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
         delegate: SliverChildBuilderDelegate((context, index) {
           return MediaCoverRevealStamp(
             index: index,
-            crossAxisCount: listStyle.crossAxisCount,
+            crossAxisCount: columns,
             child: _childTile(
               context: context,
               library: library,
@@ -620,6 +617,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
         isSelected: selected,
         isSelectionMode: selecting,
         titleScale: style.titleScale,
+        style: style,
         onTap: open,
         onLongPress: selection == null || selecting
             ? null
@@ -736,6 +734,7 @@ class _MediaLibraryRecentViewState extends State<MediaLibraryRecentView> {
         isSelected: selected,
         isSelectionMode: selecting,
         titleScale: style.titleScale,
+        style: style,
         onTap: open,
         onLongPress: selection == null || selecting
             ? null

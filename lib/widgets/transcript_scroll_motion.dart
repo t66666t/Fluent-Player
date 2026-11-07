@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:flutter/physics.dart';
+import 'package:flutter/animation.dart';
 
-/// Uniform reading motion with no easing or slowly settling tail.
+/// Bounded reading motion with smooth starts, stops and same-direction retargets.
 ///
-/// Duration grows with distance, with diminishing increases toward 300ms.
-/// A line moves in about 200ms and a longer locate takes only a little longer.
-/// Tiny corrections approach zero duration without a separate threshold.
+/// Logical distance sets the reading time; viewport-relative travel adds time
+/// for moves that occupy more of the reader's field of view. There are no
+/// device breakpoints, fixed-speed sweeps or spring overshoots.
 class TranscriptScrollMotion extends Simulation {
   factory TranscriptScrollMotion({
     required double from,
@@ -18,23 +18,40 @@ class TranscriptScrollMotion extends Simulation {
   }) {
     final distance = to - from;
     final travel = distance.abs();
-    if (travel == 0) return TranscriptScrollMotion._(from, to, 0);
-    // Map distance to duration, not to a fixed speed. This continuous,
-    // concave mapping gives 40/80/240px about 200/240/277ms respectively.
-    // Unlike a linear distance term it never grows into a long text sweep.
-    // Retarget from the current position; inherited speed must not stretch
-    // the new reading interval or fling a nearby target past the reader.
-    final seconds = .300 * (travel / (travel + 20));
-    return TranscriptScrollMotion._(from, to, seconds);
+    if (travel == 0) return TranscriptScrollMotion._(from, to, 0, 0);
+    final extent = viewport.isFinite && viewport > 0 ? viewport : 700.0;
+    // At a 700dp viewport, 40/80/240/700dp takes 209/265/375/480ms.
+    // Smooth, concave terms avoid timing cliffs at line/device boundaries.
+    // Tiny corrections still finish quickly instead of acquiring a fixed delay.
+    final seconds =
+        (.120 * (1 - math.exp(-travel / 12)) +
+            .160 * (1 - math.exp(-travel / 120)) +
+            .200 * math.sqrt(travel / extent)) *
+        (isAuto ? 1.06 : 1.0);
+    final boundedSeconds = math.min(seconds, .650);
+    // A quintic Hermite trajectory preserves safe forward velocity. Limiting
+    // the normalized tangent to 2 keeps the entire curve monotonic, with no
+    // overshoot even when a fast locate is redirected to a very close cue.
+    final tangent = initialVelocity.isFinite
+        ? (initialVelocity * distance.sign * boundedSeconds / travel).clamp(
+            0.0,
+            2.0,
+          )
+        : 0.0;
+    return TranscriptScrollMotion._(from, to, boundedSeconds, tangent);
   }
 
-  TranscriptScrollMotion._(this.from, this.to, this.seconds);
+  TranscriptScrollMotion._(this.from, this.to, this.seconds, this._tangent);
 
   final double from;
   final double to;
   final double seconds;
+  final double _tangent;
 
   Duration get duration => Duration(microseconds: (seconds * 1000000).ceil());
+
+  /// Keep custom ScrollPosition implementations on the same trajectory too.
+  Curve get curve => _TranscriptMotionCurve(this);
 
   static double speedLimitFor(double viewport) =>
       (viewport * 1.6).clamp(720.0, 960.0);
@@ -48,15 +65,37 @@ class TranscriptScrollMotion extends Simulation {
   double x(double time) {
     if (time <= 0) return from;
     if (time >= seconds) return to;
-    return from + (to - from) * (time / seconds);
+    final t = time / seconds;
+    final t3 = t * t * t;
+    final progress =
+        t3 * (10 + t * (-15 + 6 * t)) +
+        _tangent * (t + t3 * (-6 + t * (8 - 3 * t)));
+    return from + (to - from) * progress;
   }
 
   @override
   double dx(double time) {
     if (time < 0 || time >= seconds) return 0;
-    return (to - from) / seconds;
+    final t = time / seconds;
+    return (to - from) /
+        seconds *
+        (1 - t) *
+        (1 - t) *
+        (30 * t * t + _tangent * (1 + 2 * t - 15 * t * t));
   }
 
   @override
   bool isDone(double time) => time >= seconds;
+}
+
+class _TranscriptMotionCurve extends Curve {
+  const _TranscriptMotionCurve(this.motion);
+
+  final TranscriptScrollMotion motion;
+
+  @override
+  double transformInternal(double t) => motion.to == motion.from
+      ? t
+      : (motion.x(t * motion.seconds) - motion.from) /
+            (motion.to - motion.from);
 }

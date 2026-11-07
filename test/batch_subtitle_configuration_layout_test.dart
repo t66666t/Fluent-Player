@@ -32,9 +32,7 @@ void main() {
   setUpAll(() async {
     if (!preview) return;
     await (FontLoader('Noto Sans SC')
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'))
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Medium.otf'))
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Bold.otf')))
+          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf')))
         .load();
     await (FontLoader(
       'MaterialIcons',
@@ -46,7 +44,9 @@ void main() {
     (390, 844, 1),
     (768, 1024, 1),
     (1024, 768, 1),
+    (1152, 720, 1),
     (1280, 800, 1),
+    (1440, 900, 1),
     (1920, 1080, 1),
     (320, 740, 1.6),
     (568, 320, 1),
@@ -121,15 +121,61 @@ void main() {
       await tester.tap(keepAwake);
       await tester.pumpAndSettle();
       expect(settings.batchSubtitleKeepScreenAwake, isFalse);
+      if ((width < 600 || height < 600) && scale == 1) {
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('batch-configuration-bar')))
+              .height,
+          lessThanOrEqualTo(49),
+          reason:
+              'The compact strip allows breathing room without adding another row.',
+        );
+      }
+      if (width < 600 && scale == 1) {
+        final bar = tester.getRect(
+          find.byKey(const ValueKey('batch-configuration-bar')),
+        );
+        final button = tester.getRect(
+          find.byKey(const ValueKey('batch-transcription-settings')),
+        );
+        expect(button.height, lessThanOrEqualTo(34));
+        expect(button.width, lessThanOrEqualTo(110));
+        expect(button.top - bar.top, greaterThanOrEqualTo(6));
+        expect(bar.bottom - button.bottom, greaterThanOrEqualTo(6));
+      }
+      if (width >= 1440 && scale == 1) {
+        final add = find.widgetWithText(ElevatedButton, '选择内部媒体');
+        expect(
+          tester.getRect(add).center.dy,
+          closeTo(tester.getRect(keepAwake).center.dy, 1),
+        );
+      }
       if (find.byTooltip('展开配置详情').evaluate().isNotEmpty) {
         await tester.tap(find.byTooltip('展开配置详情'));
         await tester.pumpAndSettle();
       }
-      expect(find.textContaining('公益接口', findRichText: true), findsOneWidget);
-      expect(find.text('仅转录'), findsOneWidget);
-      expect(find.byType(Switch), findsOneWidget);
-      expect(find.text('翻译设置'), findsOneWidget);
-      expect(find.text('转录设置'), findsOneWidget);
+      expect(
+        find.textContaining(
+          manager.modelCenter.asrProfile.local
+              ? manager.modelCenter
+                        .artifact(manager.modelCenter.asrProfile.model)
+                        ?.name ??
+                    manager.modelCenter.asrProfile.name
+              : manager.modelCenter.asrProfile.name,
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('不翻译'), findsOneWidget);
+      expect(find.byType(Switch), findsNWidgets(2));
+      expect(
+        find.byKey(const ValueKey('batch-translation-settings')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('batch-transcription-settings')),
+        findsOneWidget,
+      );
       expect(
         tester
             .widget<Switch>(
@@ -149,23 +195,106 @@ void main() {
         lessThanOrEqualTo(width),
       );
       if (width < 600 || height < 600) {
-        expect(
-          tester.getRect(transcriptionAction).top,
-          tester.getRect(action).top,
+        final optimization = find.byKey(
+          const ValueKey('subtitle-optimization-control'),
         );
         expect(
-          tester.getRect(transcriptionAction).right,
-          lessThanOrEqualTo(tester.getRect(action).left),
+          tester.getRect(optimization).center.dy,
+          closeTo(tester.getRect(transcriptionAction).center.dy, 1),
         );
-      } else if (width < 1100 * scale) {
+        expect(
+          tester.getRect(action).bottom,
+          greaterThan(tester.getRect(optimization).bottom),
+        );
+      } else if (find
+          .byKey(const ValueKey('batch-configuration-stacked'))
+          .evaluate()
+          .isNotEmpty) {
         expect(
           tester.getRect(transcriptionAction).bottom,
           lessThan(tester.getRect(action).top),
         );
+        expect(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('subtitle-optimization-control')),
+              )
+              .left,
+          tester.getRect(transcriptionAction).left,
+        );
+        expect(
+          tester.getRect(action).right,
+          tester.getRect(transcriptionAction).right,
+        );
+        expect(
+          tester.getRect(action).height,
+          tester.getRect(transcriptionAction).height,
+        );
+        final language = tester.getRect(
+          find.byKey(const ValueKey('batch-transcription-language')),
+        );
+        final mode = tester.getRect(
+          find.byKey(const ValueKey('batch-current-mode')),
+        );
+        expect(
+          language.center.dy,
+          closeTo(tester.getRect(transcriptionAction).center.dy, .1),
+        );
+        expect(mode.center.dy, closeTo(tester.getRect(action).center.dy, .1));
+        expect(language.right, closeTo(mode.right, .1));
+      }
+      if (width >= 1152 &&
+          scale == 1 &&
+          find
+              .byKey(const ValueKey('batch-configuration-inline'))
+              .evaluate()
+              .isNotEmpty) {
+        expect(
+          find.byKey(const ValueKey('batch-configuration-inline')),
+          findsOneWidget,
+        );
+        final language = tester.getRect(
+          find.byKey(const ValueKey('batch-transcription-language')),
+        );
+        final mode = tester.getRect(
+          find.byKey(const ValueKey('batch-current-mode')),
+        );
+        for (final rect in [tester.getRect(action), language, mode]) {
+          expect(
+            rect.center.dy,
+            closeTo(tester.getRect(transcriptionAction).center.dy, .1),
+          );
+          expect(
+            rect.height,
+            closeTo(tester.getRect(transcriptionAction).height, .1),
+          );
+        }
+        for (final key in [
+          'batch-transcription-summary',
+          'batch-translation-summary',
+        ]) {
+          final summary = find.byKey(ValueKey(key));
+          final paragraph = tester.renderObject<RenderParagraph>(summary);
+          expect(
+            paragraph.didExceedMaxLines,
+            isFalse,
+            reason: '$key should fit without clipping at $width',
+          );
+          expect(tester.widget<Text>(summary).maxLines, 1);
+          expect(tester.widget<Text>(summary).softWrap, isFalse);
+        }
       }
       final bar = find.byKey(const ValueKey('batch-configuration-bar'));
       expect(tester.getRect(action).right, lessThanOrEqualTo(width));
       expect(tester.getSize(bar).height, lessThan(height / 2));
+      if (width >= 1152 &&
+          scale == 1 &&
+          find
+              .byKey(const ValueKey('batch-configuration-inline'))
+              .evaluate()
+              .isNotEmpty) {
+        expect(tester.getSize(bar).height, lessThanOrEqualTo(54));
+      }
       if (width == 320 && scale == 1) {
         final autoDelete = settings.batchSubtitleAutoDelete;
         for (final expected in [!autoDelete, autoDelete]) {
@@ -186,7 +315,7 @@ void main() {
               .toImage();
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           final file = File(
-            '.artifacts/batch-subtitle/config-v2-${width.toInt()}-$suffix.png',
+            '.artifacts/batch-subtitle/config-v3-${width.toInt()}-$suffix.png',
           );
           await file.parent.create(recursive: true);
           await file.writeAsBytes(bytes!.buffer.asUint8List());
@@ -195,13 +324,25 @@ void main() {
             find.byKey(boundary),
           );
           final rect = tester.getRect(bar);
+          final strip = await (renderBoundary.debugLayer! as OffsetLayer)
+              .toImage(
+                Rect.fromLTWH(0, rect.top, width, rect.height),
+                pixelRatio: 1.5,
+              );
+          final stripBytes = await strip.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          await File(
+            '.artifacts/batch-subtitle/config-v3-${width.toInt()}-$suffix-bar.png',
+          ).writeAsBytes(stripBytes!.buffer.asUint8List());
+          strip.dispose();
           final header = await (renderBoundary.debugLayer! as OffsetLayer)
               .toImage(Rect.fromLTWH(0, 0, width, rect.bottom + 14));
           final headerBytes = await header.toByteData(
             format: ui.ImageByteFormat.png,
           );
           await File(
-            '.artifacts/batch-subtitle/config-v2-${width.toInt()}-$suffix-header.png',
+            '.artifacts/batch-subtitle/config-v3-${width.toInt()}-$suffix-header.png',
           ).writeAsBytes(headerBytes!.buffer.asUint8List());
           header.dispose();
         });
@@ -221,11 +362,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(settings.batchSubtitleTranslateEnabled, isTrue);
       expect(tester.widget<Switch>(toggle).value, isTrue);
-      expect(find.text('仅转录'), findsNothing);
+      expect(find.text('不翻译'), findsNothing);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('batch-current-mode')),
-          matching: find.text('转录并翻译'),
+          matching: find.text('翻译字幕'),
         ),
         findsOneWidget,
       );
@@ -243,7 +384,7 @@ void main() {
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(settings.batchSubtitleTranslateEnabled, isFalse);
-      expect(find.text('仅转录'), findsOneWidget);
+      expect(find.text('不翻译'), findsOneWidget);
       await tester.tap(action);
       await tester.pumpAndSettle();
       expect(find.text('翻译服务'), findsOneWidget);
@@ -253,6 +394,105 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets(
+    'rotation and a constrained tablet pane keep aligned controls and the current mode',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsService()..resetForTest();
+      await settings.init();
+      await settings.updateBatchSubtitleTranslateEnabled(true);
+      final center = ModelCenterService()..loaded = true;
+      center.profiles['layout'] = const ModelServiceProfile(
+        id: 'layout',
+        name: '示例本地模型',
+        kind: TranscriptionServiceKind.local,
+        model: 'layout-model',
+      );
+      center.asrProfileId = 'layout';
+      final translation = SubtitleTranslateSettings(modelCenter: center);
+      await translation.ensureLoaded();
+      final paneWidth = ValueNotifier<double>(double.infinity);
+      addTearDown(paneWidth.dispose);
+      addTearDown(translation.dispose);
+      addTearDown(center.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1152, 720);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topCenter,
+              child: ValueListenableBuilder<double>(
+                valueListenable: paneWidth,
+                builder: (context, width, _) => SizedBox(
+                  width: width,
+                  child: BatchSubtitleConfigurationBar(
+                    settings: settings,
+                    modelCenter: center,
+                    translateSettings: translation,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final state = tester.state(find.byType(BatchSubtitleConfigurationBar));
+      expect(
+        find.byKey(const ValueKey('batch-configuration-inline')),
+        findsOneWidget,
+      );
+      paneWidth.value = 680;
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('batch-configuration-stacked')),
+        findsOneWidget,
+      );
+      for (final size in [
+        const Size(768, 1024),
+        const Size(390, 844),
+        const Size(1152, 720),
+      ]) {
+        paneWidth.value = double.infinity;
+        tester.view.physicalSize = size;
+        await tester.pumpAndSettle();
+        if (find.byTooltip('展开配置详情').evaluate().isNotEmpty) {
+          await tester.tap(find.byTooltip('展开配置详情'));
+          await tester.pumpAndSettle();
+        }
+        final asr = tester.getRect(
+          find.byKey(const ValueKey('batch-transcription-settings')),
+        );
+        final translator = tester.getRect(
+          find.byKey(const ValueKey('batch-translation-settings')),
+        );
+        expect(
+          asr.height,
+          size.shortestSide < 600 ? translator.height - 8 : translator.height,
+        );
+        expect(
+          tester
+              .widget<Switch>(
+                find.byKey(const ValueKey('batch-translation-enabled')),
+              )
+              .value,
+          isTrue,
+        );
+        expect(settings.batchSubtitleTranslateEnabled, isTrue);
+        expect(center.asrProfileId, 'layout');
+        expect(
+          tester.state(find.byType(BatchSubtitleConfigurationBar)),
+          same(state),
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'transcription settings keeps the batch mode and shared defaults',
@@ -303,7 +543,9 @@ void main() {
     },
   );
 
-  testWidgets('long ASR names wrap and react to model changes', (tester) async {
+  testWidgets('long ASR names stay on one line and react to model changes', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsService()..resetForTest();
     await settings.init();
@@ -339,6 +581,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('展开配置详情'));
     await tester.pumpAndSettle();
+    final summary = tester.widget<Text>(
+      find.byKey(const ValueKey('batch-transcription-summary')),
+    );
+    expect(summary.maxLines, 1);
+    expect(summary.softWrap, isFalse);
+    expect(summary.data, contains('测试接口的超长名称'));
     expect(find.textContaining('粤语', findRichText: true), findsOneWidget);
     expect(tester.takeException(), isNull);
     await translate.setMode(SubtitleTranslationMode.fixed);

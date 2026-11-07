@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(() async {
       for (final entry in {
-        'Noto Sans SC': 'NotoSansCJKsc-Bold.otf',
+        'Noto Sans SC': 'NotoSansSC-Variable.ttf',
         'Inter': 'Inter-SemiBold.otf',
       }.entries) {
         final loader = FontLoader(entry.key)

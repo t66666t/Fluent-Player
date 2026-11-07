@@ -383,8 +383,14 @@ class LocalSubtitleTranslator {
       if (cancelled) throw StateError('字幕翻译已取消');
     }
 
-    onActivity?.call('等待本地推理资源');
     try {
+      await center.prepareModel(
+        spec,
+        cancelSignal: cancelSignal,
+        onProgress: (message) => onActivity?.call(message),
+      );
+      check();
+      onActivity?.call('等待本地推理资源');
       return await _scheduler.run(
         () => center.usingModel(spec.profile.model, (model, directory) async {
           if (spec.artifactIdentity != model.identity) {
@@ -1612,8 +1618,8 @@ Future<ModelJobSpec> captureLocalTranslation(ModelCenterService center) async {
   final model = center.artifact(center.translationModelId);
   if (model == null ||
       model.purpose != ModelPurpose.translation ||
-      !center.installed(model.id)) {
-    throw StateError('请先在模型中心下载并选择翻译模型');
+      model.retired) {
+    throw StateError('翻译模型清单缺失或已下架，请重新选择翻译模型');
   }
   return localTranslationConfiguration(center)!;
 }

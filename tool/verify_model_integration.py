@@ -14,7 +14,38 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
+# Public ASR is available for local media when explicitly selected. Keep its
+# bounded transport/resume tests alongside local-only source rejection checks.
+# Official/WebView/RSS live playback suites were retired with their feature,
+# not with any model. Local-only rejection, downloaded-file provenance, queue,
+# restore and batch-import contracts replace their integration expectations.
+# Keep the mixed transcription_online_source_test: it also exercises local
+# probing, cancellation, checkpoints and local transcription with old metadata.
+RETIRED_ONLINE_MEDIA_SUITES = (
+    'playback_control_session_test', 'official_online_store_test',
+    'online_learning_panel_test', 'online_subtitle_store_test',
+    'online_playback_controls_test', 'official_online_screen_test',
+    'in_app_web_navigation_test', 'windows_webview_bridge_compatibility_test',
+    'ai_markdown_internal_link_test',
+    'podcast_transcription_media_test', 'podcast_transcription_pipeline_test',
+)
 TESTS = [
+    'subtitle_file_streaming_test', 'ai_subtitle_translator_test',
+    'generated_subtitle_names_test',
+    'subtitle_optimization_test', 'subtitle_optimization_widgets_test',
+    'subtitle_optimization_progress_test', 'subtitle_optimization_progress_widgets_test',
+    'native_playback_control_session_test',
+    'local_asr_preparation_test', 'model_background_tasks_test',
+    'community_processing_policy_test', 'community_local_runtime_test',
+    'gongyi_network_connection_test', 'gongyi_resume_test',
+    'gongyi_result_polling_test',
+    'podcast_rss_source_policy_test',
+    'local_only_browser_retirement_test', 'community_local_navigation_test',
+    'local_media_provenance_export_test', 'portable_local_snapshot_roundtrip_test',
+    'zip_export_plan_test',
+    'local_media_library_settings_test', 'media_library_actions_menu_test',
+    'media_library_root_entry_order_test', 'playback_restore_preview_test',
+    'inference_settings_migration_test',
     'cloud_asr_contract_test', 'cloud_asr_catalog_test', 'cloud_asr_pipeline_test',
     'cloud_asr_network_test', 'cloud_asr_editor_test', 'cloud_asr_runner_test',
     'cloud_asr_retry_test',
@@ -26,14 +57,18 @@ TESTS = [
     'transcription_hotword_store_test', 'ai_transcription_configuration_test',
     'ai_transcription_button_width_test',
     'model_integration_test', 'new_asr_models_test', 'model_center_test', 'model_center_navigation_test',
+    'model_center_optimization_test',
     'model_download_sources_test', 'model_file_transfer_test',
     'model_download_concurrency_test', 'model_download_network_test',
     'model_retirement_test', 'asr_enhancement_test',
     'network_settings_service_test', 'network_dio_stream_test',
-    'gongyi_network_connection_test', 'translation_network_pool_test',
-    'gongyi_resume_test', 'gongyi_result_polling_test',
+    'translation_network_pool_test',
     'bing_subtitle_translator_test',
-    'asr_enhancement_pipeline_test', 'asr_acceleration_test',
+    # asr_enhancement_pipeline_test was removed in the community source split
+    # (docs/community-removed-files.json). Retain enhancement behavior in
+    # asr_enhancement_test and the bounded/local model pipeline suites.
+    'asr_acceleration_test',
+    'asr_device_selection_test', 'asr_reading_segmentation_test',
     'asr_window_ownership_test', 'local_asr_boundary_test',
     'bounded_model_pipeline_test', 'local_translation_batch_test',
     'local_translation_acceleration_test', 'local_translation_handoff_test',
@@ -63,6 +98,32 @@ TESTS = [
     'video_compose_resource_safety_test',
 ]
 ANALYSIS = [
+    'lib/services/subtitle_file_stream_source.dart',
+    'test/subtitle_file_streaming_test.dart',
+    'lib/services/subtitle_optimization.dart',
+    'lib/services/subtitle_optimization_background.dart',
+    'lib/services/subtitle_file_postprocessor.dart',
+    'lib/services/ai_subtitle_api_settings.dart',
+    'lib/services/ai_subtitle_translator.dart',
+    'lib/widgets/subtitle_ai_connection_picker.dart',
+    'lib/widgets/subtitle_optimization_control.dart',
+    'lib/features/model_center/subtitle_optimization_panel.dart',
+    'test/model_center_optimization_test.dart',
+    'lib/widgets/subtitle_optimization_progress_view.dart',
+    'test/subtitle_optimization_test.dart',
+    'test/subtitle_optimization_widgets_test.dart',
+    'test/subtitle_optimization_progress_test.dart',
+    'test/subtitle_optimization_progress_widgets_test.dart',
+    'tool/local_asr_probe_assets.dart',
+    'test/support/prepared_local_models.dart',
+    'test/support/local_asr_smoke.dart',
+    'test/local_asr_native_smoke_test.dart',
+    'integration_test/local_asr_transcription_test.dart',
+    'test/local_asr_preparation_test.dart',
+    'lib/services/community_media_input.dart',
+    'lib/features/podcasts/podcast_source_policy.dart',
+    'test/podcast_rss_source_policy_test.dart',
+    'test/community_processing_policy_test.dart',
     'lib/features/model_center/cloud_asr_types.dart',
     'lib/features/model_center/cloud_asr_transport.dart',
     'lib/features/model_center/cloud_asr_parser.dart',
@@ -134,13 +195,14 @@ ANALYSIS = [
     'lib/features/model_center/translation_android_inference.dart',
     'lib/features/model_center/translation_inference.dart',
     'lib/features/model_center/asr_accelerated_decoder.dart',
+    'test/asr_device_selection_test.dart',
+    'test/asr_reading_segmentation_test.dart',
     'lib/features/model_center/local_subtitle_translator.dart',
     'tool/model_integration_contract.dart',
     'test/model_integration_test.dart',
     'test/model_integration_native_test.dart',
     'test/new_asr_models_test.dart',
     'test/new_asr_models_native_test.dart',
-    'test/asr_enhancement_pipeline_test.dart',
     'lib/models/ocr_accelerator_contract.dart',
     'lib/services/ocr_native_accelerator.dart',
     'lib/services/ocr_device_probe.dart',
@@ -218,8 +280,10 @@ def main():
             if not (args.native_lib_dir / name).is_file():
                 parser.error(f'Missing prepared native library: {args.native_lib_dir / name}')
         catalog = json.loads((ROOT / 'assets/models/catalog.json').read_text(encoding='utf-8'))
-        for model in catalog['models']:
-            if model.get('retired') or model['purpose'] not in ('transcription', 'translation'):
+        dependencies = json.loads((ROOT / 'assets/models/asr_dependencies.json').read_text(encoding='utf-8'))
+        for model in catalog['models'] + dependencies['models']:
+            if model.get('retired') or (model['purpose'] not in ('transcription', 'translation')
+                                       and model['id'] != 'silero-vad-16k'):
                 continue
             for file in model['files']:
                 path = args.model_root / model['id'] / file['name']
@@ -230,6 +294,7 @@ def main():
             f'--dart-define=MODEL_INTEGRATION_MODEL_ROOT={args.model_root.resolve().as_posix()}',
             f'--dart-define=MODEL_INTEGRATION_REPORT={(args.output.resolve() / "native-results.json").as_posix()}',
             f'--dart-define=QWEN_NATIVE_MODEL_ROOT={args.model_root.resolve().as_posix()}',
+            f'--dart-define=ASR_VAD_PATH={(args.model_root.resolve() / "silero-vad-16k/silero_vad.onnx").as_posix()}',
             'test/model_integration_native_test.dart',
             'test/qwen_asr_native_test.dart',
             'test/qwen_asr_readiness_native_test.dart',

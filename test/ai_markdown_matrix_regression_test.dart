@@ -63,7 +63,7 @@ Future<void> _loadFonts() async {
     )..addFont(Future.value(data))).load();
   }
   for (final entry in {
-    'MiSans': 'assets/fonts/MiSans-Regular.otf',
+    'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
     'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
     'monospace':
         'packages/flutter_math_fork/lib/katex_fonts/fonts/KaTeX_Typewriter-Regular.ttf',
@@ -88,7 +88,7 @@ Future<void> _mount(
       theme: ThemeData(
         platform: TargetPlatform.windows,
         brightness: Brightness.dark,
-        fontFamily: 'MiSans',
+        fontFamily: 'Noto Sans SC',
       ),
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(scale)),

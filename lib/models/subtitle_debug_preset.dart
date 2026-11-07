@@ -46,6 +46,8 @@ class SubtitleDebugPreset {
   }) : backgroundPadding = backgroundPadding ?? (box > 0 ? 4 : 0);
 
   SubtitleDebugPreset copyWith({
+    String? primaryFont,
+    String? secondaryFont,
     double? textScale,
     double? outline,
     double? box,
@@ -62,8 +64,8 @@ class SubtitleDebugPreset {
     name: name,
     category: category,
     description: description,
-    primaryFont: primaryFont,
-    secondaryFont: secondaryFont,
+    primaryFont: primaryFont ?? this.primaryFont,
+    secondaryFont: secondaryFont ?? this.secondaryFont,
     primaryWeight: primaryWeight,
     secondaryWeight: secondaryWeight,
     size: size,
@@ -135,8 +137,18 @@ class SubtitleDebugPreset {
     final families = subtitleDebugPresets
         .expand((p) => [p.primaryFont, p.secondaryFont])
         .toSet();
-    String font(String key, String fallback) =>
-        families.contains(raw[key]) ? raw[key] as String : fallback;
+    String font(String key, String fallback) {
+      final value = raw[key];
+      if (families.contains(value)) return value as String;
+      if (key == 'primaryFont' &&
+          base.primaryFont == 'Noto Serif CJK SC' &&
+          value is String &&
+          RegExp(r'^subtitle_font_[0-9a-f]{64}$').hasMatch(value)) {
+        return value;
+      }
+      return fallback;
+    }
+
     return SubtitleDebugPreset(
       id: base.id,
       name: base.name,
@@ -228,15 +240,17 @@ class SubtitleDebugPreset {
   String get layoutSummary =>
       '720p 主 ${size.toStringAsFixed(0)} / 副 ${(size * ratio).toStringAsFixed(1)} · ${secondaryFirst ? "副上主下" : "主上副下"}\n'
       '描边 $outline · 间隔 $gap · 底距 ${(bottom * 100).round()}% · 宽 ${(math.min(width, SubtitleLayout.maxWidthFraction) * 100).round()}%';
-  static String fontLabel(String font) => switch (font) {
-    'Noto Sans SC' => '清幕黑 · 思源黑体',
-    'Noto Serif CJK SC' => '银幕宋 · 思源宋体',
-    'Inter' => '星际 · Inter',
-    'Roboto' => '窄光 · Roboto Condensed',
-    'Comic Relief' => '漫语 · Comic Relief',
-    'Brawler' => '书影 · Brawler',
-    _ => font,
-  };
+  static String fontLabel(String font) => font.startsWith('subtitle_font_')
+      ? '已下载字体'
+      : switch (font) {
+          'Noto Sans SC' => '清幕黑 · 思源黑体',
+          'Noto Serif CJK SC' => '银幕宋 · 思源宋体',
+          'Inter' => '星际 · Inter',
+          'Roboto' => '窄光 · Roboto Condensed',
+          'Comic Relief' => '漫语 · Comic Relief',
+          'Brawler' => '书影 · Brawler',
+          _ => font,
+        };
 }
 
 final List<SubtitleDebugPreset> subtitleDebugPresets = List.unmodifiable([

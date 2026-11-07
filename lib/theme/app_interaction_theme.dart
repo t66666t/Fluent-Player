@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../utils/keyboard_focus_visibility.dart';
+
 /// A quiet, immediate press surface. It is removed before onTap navigates,
 /// so a covered route has no unfinished ripple to resume when it returns.
-ThemeData appInteractionTheme(ThemeData theme) {
+ThemeData appInteractionTheme(
+  ThemeData theme, {
+  bool keyboardFocusVisible = true,
+}) {
   final overlay = WidgetStateProperty.resolveWith<Color?>((states) {
     // Press feedback is painted by AppPressInk, not InkHighlight's ticker.
     if (states.contains(WidgetState.pressed)) return Colors.transparent;
-    if (states.contains(WidgetState.focused)) {
+    if (keyboardFocusVisible && states.contains(WidgetState.focused)) {
       return theme.colorScheme.primary.withValues(alpha: 0.28);
     }
     if (states.contains(WidgetState.hovered)) return theme.hoverColor;
@@ -14,17 +19,25 @@ ThemeData appInteractionTheme(ThemeData theme) {
   });
   ButtonStyle style(ButtonStyle? original) =>
       (original ?? const ButtonStyle()).copyWith(
+        animationDuration: KeyboardFocusVisibility.fadeDuration,
         overlayColor: overlay,
         side: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.focused) &&
               !states.contains(WidgetState.disabled)) {
-            return BorderSide(color: theme.colorScheme.primary, width: 1.5);
+            if (keyboardFocusVisible) {
+              return BorderSide(color: theme.colorScheme.primary, width: 1.5);
+            }
+            return original?.side?.resolve(
+              {...states}..remove(WidgetState.focused),
+            );
           }
           return original?.side?.resolve(states);
         }),
       );
   return theme.copyWith(
-    focusColor: theme.colorScheme.primary.withValues(alpha: 0.28),
+    focusColor: keyboardFocusVisible
+        ? theme.colorScheme.primary.withValues(alpha: 0.28)
+        : Colors.transparent,
     splashFactory: AppPressInk.splashFactory,
     highlightColor: Colors.transparent,
     splashColor: const Color(0x14FFFFFF),
@@ -44,6 +57,38 @@ ThemeData appInteractionTheme(ThemeData theme) {
       style: style(theme.iconButtonTheme.style),
     ),
   );
+}
+
+/// Updates focus feedback without rebuilding the Navigator or changing focus.
+class KeyboardFocusTheme extends StatelessWidget {
+  const KeyboardFocusTheme({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (context
+            .dependOnInheritedWidgetOfExactType<_KeyboardFocusThemeScope>() !=
+        null) {
+      return child;
+    }
+    return KeyboardFocusVisibilityBuilder(
+      child: _KeyboardFocusThemeScope(child: child),
+      builder: (context, visible, child) => Theme(
+        data: appInteractionTheme(
+          Theme.of(context),
+          keyboardFocusVisible: visible,
+        ),
+        child: child!,
+      ),
+    );
+  }
+}
+
+class _KeyboardFocusThemeScope extends InheritedWidget {
+  const _KeyboardFocusThemeScope({required super.child});
+
+  @override
+  bool updateShouldNotify(_KeyboardFocusThemeScope oldWidget) => false;
 }
 
 class _AppPressInkFactory extends InteractiveInkFeatureFactory {

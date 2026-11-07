@@ -16,8 +16,10 @@ import 'package:video_player_app/features/model_center/model_center_service.dart
 import 'package:video_player_app/features/model_center/model_device_info.dart';
 import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
+import 'support/prepared_local_models.dart';
+import '../tool/local_asr_probe_assets.dart';
 
-class _NativeCenter extends ModelCenterService {
+class _NativeCenter extends ModelCenterService with PreparedLocalModels {
   _NativeCenter(this.weightsRoot, {required super.storage});
   final String weightsRoot;
   @override
@@ -110,7 +112,7 @@ void main() {
           await worker.start(
             engine: model.engine,
             directory: p.join(root, model.id),
-            vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+            vadPath: asrProbeVadPath(),
             language:
                 localAsrAdapters[model.engine]?.fixedLanguage ??
                 (chinese ? 'zh' : 'en'),
@@ -255,6 +257,8 @@ void main() {
             expect(
               outputs.every((s) => RegExp(r'[\u4e00-\u9fff]').hasMatch(s)),
               isTrue,
+              reason:
+                  'cues=${result.map((cue) => cue['t']).join(' | ')} out=${outputs.join(' || ')}',
             );
             final before = (preparations, inferences);
             final firstOutputs = List<String>.of(outputs);

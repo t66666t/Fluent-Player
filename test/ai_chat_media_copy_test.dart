@@ -123,7 +123,7 @@ void main() {
       expect(find.text(copy.askTitle), findsOneWidget);
       expect(find.text(copy.hint), findsOneWidget);
       expect(find.text(copy.summarize), findsOneWidget);
-      expect(find.text(copy.hardConcept), findsOneWidget);
+      expect(find.text(copy.aboutContent), findsOneWidget);
       expect(find.text(copy.completeNotes), findsOneWidget);
       await tester.ensureVisible(find.text(copy.completeNotes));
       await tester.tap(find.text(copy.completeNotes));

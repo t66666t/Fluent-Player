@@ -1,11 +1,11 @@
 {
-    "name": "fluent_player",
-    "short_name": "fluent_player",
+    "name": "Fluent Player",
+    "short_name": "Fluent Player",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
-    "description": "A new Flutter project.",
+    "description": "Fluent Player",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

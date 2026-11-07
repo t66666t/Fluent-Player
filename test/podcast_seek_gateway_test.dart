@@ -101,6 +101,7 @@ void main() {
       mimeType: 'audio/mpeg',
     );
     episode = PodcastEpisode(
+      sourceFeedUrl: 'https://publisher.test/rss',
       id: 'seek-episode',
       channelId: 'show',
       title: 'Long episode',
@@ -373,6 +374,10 @@ void main() {
         url: 'http://127.0.0.1:${origin.port}/redirect',
         mimeType: 'audio/mpeg',
       );
+      episode = PodcastEpisode.fromJson({
+        ...episode.toJson(),
+        'media': [media.toJson()],
+      });
       final uri = await mediaStore.playbackUri(episode, media);
       final head = await (await player.headUrl(uri)).close();
       await head.drain<void>();

@@ -91,7 +91,9 @@ void main() {
     return file;
   }
 
-  Future<void> loadLegacyDocumentsLibrary(List<VideoItem> videos) async {
+  Future<void> loadCommunityBesideLegacyDocuments(
+    List<VideoItem> videos,
+  ) async {
     library.resetLibraryForTesting();
     await storage.releaseForegroundLease();
     final documents = Directory(p.join(container.path, 'Documents'));
@@ -121,7 +123,8 @@ void main() {
     settings.largeDataRootPath = documents.path;
     library.skipImportSidecarWorkForTesting = true;
     await library.init(deferMaintenance: true);
-    expect(storage.dataDirectory.path, documents.path);
+    expect(storage.dataDirectory.path, support.path);
+    expect(library.storageVideos, isEmpty);
   }
 
   VideoItem media(String id, String path, {String? subtitle, String? cover}) =>
@@ -228,7 +231,7 @@ void main() {
   );
 
   test(
-    'legacy Documents library deletion preserves ordinary user originals',
+    'community data stays separate and deletion cannot touch a legacy Documents library',
     () async {
       final source = await fixture(p.join('Documents', 'user-movie.mp4'));
       final subtitle = await fixture(p.join('Documents', 'user-caption.srt'));
@@ -236,7 +239,7 @@ void main() {
       final managed = await fixture(
         p.join('Documents', 'imported_media', 'owned.mp4'),
       );
-      await loadLegacyDocumentsLibrary([
+      await loadCommunityBesideLegacyDocuments([
         media(
           'external',
           source.path,
@@ -250,15 +253,21 @@ void main() {
       expect(await source.readAsBytes(), [1, 2, 3, 4, 5]);
       expect(await subtitle.readAsBytes(), [1, 2, 3, 4, 5]);
       expect(await cover.readAsBytes(), [1, 2, 3, 4, 5]);
-      expect(await managed.exists(), isFalse);
+      expect(await managed.exists(), isTrue);
+      expect(
+        await File(
+          p.join(container.path, 'Documents', 'library.json'),
+        ).exists(),
+        isTrue,
+      );
     },
   );
 
   test(
-    'legacy Documents import never moves an ordinary original by default',
+    'community import never moves an ordinary Documents original by default',
     () async {
       final source = await fixture(p.join('Documents', 'user-movie.mp4'));
-      await loadLegacyDocumentsLibrary([]);
+      await loadCommunityBesideLegacyDocuments([]);
       expect(settings.copyImportedMediaToPrivateStorage, isFalse);
       final item = media('new-external', source.path);
       await library.addSingleVideo(item);

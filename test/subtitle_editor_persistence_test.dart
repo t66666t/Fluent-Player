@@ -735,11 +735,15 @@ class _SubtitleLibrary extends ChangeNotifier implements LibraryService {
     String? language,
     String? wordTimingPath,
     bool shareWithBilibiliPart = true,
+    bool generatedName = false,
     String? contentHash,
     String? sourceLabel,
     String? entryId,
     int? offsetMs,
+    bool machineGenerated = false,
+    void Function()? authorize,
   }) async {
+    authorize?.call();
     final item = _videos[videoId]!;
     final asset = ManagedSubtitleAsset(
       assetId: '$videoId:${item.managedSubtitleAssets.length}',

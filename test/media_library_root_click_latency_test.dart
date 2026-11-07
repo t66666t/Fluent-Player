@@ -11,7 +11,7 @@ void main() {
   const frame = Duration(microseconds: 16667);
 
   for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       testWidgets(
         '${kind.name} release fully paints cold ${entry.name} on the next frame',
         (tester) async {
@@ -182,27 +182,27 @@ void main() {
   ) async {
     final state = await _pumpLibrary(tester);
     for (final entry in [
-      MediaLibraryRootEntry.bilibili,
-      MediaLibraryRootEntry.podcasts,
-      MediaLibraryRootEntry.cloudDrive,
+      MediaLibraryRootEntry.recent,
+      MediaLibraryRootEntry.folders,
+      MediaLibraryRootEntry.continueLearning,
     ]) {
       await _click(tester, entry);
       await tester.pump(frame);
       expect(state.active[entry], isTrue);
     }
     await tester.pumpAndSettle();
-    final cloud = find.byKey(const ValueKey('surface-cloudDrive'));
+    final cloud = find.byKey(const ValueKey('surface-continueLearning'));
     await tester.tap(cloud);
     await tester.pump();
-    expect(find.text('cloudDrive:1'), findsOneWidget);
+    expect(find.text('continueLearning:1'), findsOneWidget);
 
     await _click(tester, MediaLibraryRootEntry.folders);
     await tester.pumpAndSettle();
-    await _click(tester, MediaLibraryRootEntry.cloudDrive);
+    await _click(tester, MediaLibraryRootEntry.continueLearning);
     await tester.pump(frame);
-    expect(state.active[MediaLibraryRootEntry.cloudDrive], isTrue);
+    expect(state.active[MediaLibraryRootEntry.continueLearning], isTrue);
     await tester.pumpAndSettle();
-    expect(find.text('cloudDrive:1'), findsOneWidget);
+    expect(find.text('continueLearning:1'), findsOneWidget);
     expect(state.initializations.values, everyElement(1));
     expect(tester.takeException(), isNull);
   });
@@ -214,14 +214,14 @@ void main() {
     // Run the first optional prewarm callback, but do not settle its layers.
     await tester.pump(kMediaLibraryRootPrewarmDelay);
     await tester.pump();
-    await _click(tester, MediaLibraryRootEntry.cloudDrive);
+    await _click(tester, MediaLibraryRootEntry.continueLearning);
     await tester.pump(frame);
-    expect(state.active[MediaLibraryRootEntry.cloudDrive], isTrue);
+    expect(state.active[MediaLibraryRootEntry.continueLearning], isTrue);
     await tester.pumpAndSettle();
     await tester.pump(kMediaLibraryRootPrewarmDelay);
     await tester.pumpAndSettle();
-    expect(state.selected, MediaLibraryRootEntry.cloudDrive);
-    expect(_alphaOf(tester, MediaLibraryRootEntry.cloudDrive), 255);
+    expect(state.selected, MediaLibraryRootEntry.continueLearning);
+    expect(_alphaOf(tester, MediaLibraryRootEntry.continueLearning), 255);
     expect(state.initializations.values, everyElement(1));
     expect(tester.takeException(), isNull);
   });
@@ -230,7 +230,7 @@ void main() {
     tester,
   ) async {
     final state = await _pumpLibrary(tester, reduceMotion: true);
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       if (entry == state.selected) continue;
       await _click(tester, entry);
       await tester.pump(frame);
@@ -238,7 +238,10 @@ void main() {
       expect(_alphaOf(tester, entry), 255);
       expect(tester.takeException(), isNull);
     }
-    expect(state.initializations.length, MediaLibraryRootEntry.values.length);
+    expect(
+      state.initializations.length,
+      MediaLibraryRootEntryOrder.defaults.length,
+    );
     expect(state.initializations.values, everyElement(1));
   });
 
@@ -258,15 +261,15 @@ void main() {
         debugMediaLibrarySurfacePaintAlpha = paints.add;
         addTearDown(() => debugMediaLibrarySurfacePaintAlpha = null);
       }
-      await _click(tester, MediaLibraryRootEntry.bilibili);
+      await _click(tester, MediaLibraryRootEntry.recent);
       await tester.pump();
       if (platform == TargetPlatform.windows) {
-        expect(_alphaOf(tester, MediaLibraryRootEntry.bilibili), 255);
+        expect(_alphaOf(tester, MediaLibraryRootEntry.recent), 255);
         expect(_alphaOf(tester, MediaLibraryRootEntry.folders), 0);
         expect(paints, contains(255));
       }
       await tester.pump(const Duration(milliseconds: 50));
-      final incoming = _alphaOf(tester, MediaLibraryRootEntry.bilibili);
+      final incoming = _alphaOf(tester, MediaLibraryRootEntry.recent);
       final outgoing = _alphaOf(tester, MediaLibraryRootEntry.folders);
       if (platform == TargetPlatform.windows) {
         expect(incoming, 255);
@@ -278,7 +281,7 @@ void main() {
       }
       paints.clear();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(_alphaOf(tester, MediaLibraryRootEntry.bilibili), 255);
+      expect(_alphaOf(tester, MediaLibraryRootEntry.recent), 255);
       expect(_alphaOf(tester, MediaLibraryRootEntry.folders), 0);
       if (platform == TargetPlatform.windows) {
         // No fade keeps requesting surface paints after the first full frame.
@@ -370,7 +373,7 @@ class _LibraryState extends State<_Library> {
       appBar: AppBar(
         title: MediaLibraryEntrySwitcher(
           selected: selected,
-          availableEntries: MediaLibraryRootEntry.values.toSet(),
+          availableEntries: MediaLibraryRootEntryOrder.defaults.toSet(),
           entries: order,
           reorderEnabled: true,
           onReorder: (oldIndex, newIndex) => setState(() {
@@ -393,12 +396,6 @@ class _LibraryState extends State<_Library> {
             surface(MediaLibraryRootEntry.recent, active),
         foldersBuilder: (_, active) =>
             surface(MediaLibraryRootEntry.folders, active),
-        bilibiliBuilder: (_, active) =>
-            surface(MediaLibraryRootEntry.bilibili, active),
-        podcastsBuilder: (_, active) =>
-            surface(MediaLibraryRootEntry.podcasts, active),
-        cloudDriveBuilder: (_, active) =>
-            surface(MediaLibraryRootEntry.cloudDrive, active),
       ),
     );
   }

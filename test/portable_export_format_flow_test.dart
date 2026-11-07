@@ -252,13 +252,12 @@ void main() {
     expect(_switchValue(tester, '最外层包一层文件夹'), isTrue);
     expect(_switchValue(tester, '包含字幕与附属文件'), isTrue);
     expect(_switchValue(tester, '生成完整性校验'), isTrue);
-    expect(_switchValue(tester, '携带哔哩哔哩在线缓存'), isTrue);
+    expect(find.text('携带哔哩哔哩在线缓存'), findsNothing);
     expect(find.text('极速 · 推荐给视频'), findsOneWidget);
     expect(find.text('软字幕内嵌'), findsNothing);
 
     await _toggle(tester, '最外层包一层文件夹');
     await _toggle(tester, '生成完整性校验');
-    await _toggle(tester, '携带哔哩哔哩在线缓存');
     await _chooseCompression(tester, '最小体积 · 耐心模式');
     await _leaveSettings(tester);
 
@@ -276,7 +275,7 @@ void main() {
     expect(_switchValue(tester, '最外层包一层文件夹'), isFalse);
     expect(_switchValue(tester, '包含字幕与附属文件'), isTrue);
     expect(_switchValue(tester, '生成完整性校验'), isFalse);
-    expect(_switchValue(tester, '携带哔哩哔哩在线缓存'), isFalse);
+    expect(find.text('携带哔哩哔哩在线缓存'), findsNothing);
     expect(find.text('最小体积 · 耐心模式'), findsOneWidget);
   });
 }

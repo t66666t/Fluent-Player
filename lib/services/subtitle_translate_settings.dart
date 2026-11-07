@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai_subtitle_api_settings.dart';
 import 'ai_subtitle_translator.dart';
+import 'subtitle_optimization.dart';
 import 'subtitle_translation_service.dart';
 export 'subtitle_translation_policy.dart';
 import '../features/model_center/model_catalog.dart';
@@ -359,6 +360,9 @@ class SubtitleTranslateSettings extends ChangeNotifier {
   }) : _preferences = preferences ?? SharedPreferences.getInstance,
        _readApiSettings =
            readApiSettings ?? AiSubtitleApiSettingsStore().loadMetadata,
+       // A test double supplies its own endpoint. Only the real store may
+       // adopt a model the user already saved for optimization.
+       _adoptConfiguredOptimization = readApiSettings == null,
        _center = modelCenter ?? ModelCenterService.instance {
     _center.addListener(_onCenterChanged);
     AiSubtitleApiSettingsStore.changes.addListener(_onApiChanged);
@@ -369,6 +373,7 @@ class SubtitleTranslateSettings extends ChangeNotifier {
   static const languageProfilesKey = 'subtitle_translation_languages_v1';
   final Future<SharedPreferences> Function() _preferences;
   final Future<AiSubtitleApiSettings> Function() _readApiSettings;
+  final bool _adoptConfiguredOptimization;
   ModelCenterService _center;
   final Map<String, SubtitleTranslationPair> _pairs = {};
   SubtitleTranslationBinding _binding = const SubtitleTranslationBinding.bing();
@@ -498,7 +503,7 @@ class SubtitleTranslateSettings extends ChangeNotifier {
         languages: subtitleLanguagesForModel(model?.languages ?? const []),
       );
     }
-    final api = await _readApiSettings();
+    final api = await _aiEndpoint();
     final endpoint = api.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
     final identity = jsonEncode([api.providerId, endpoint, api.model.trim()]);
     final preset = AiSubtitleApiPreset.byId(api.providerId);
@@ -513,6 +518,34 @@ class SubtitleTranslateSettings extends ChangeNotifier {
           : '$name · ${api.model.trim()}',
       api: api,
     );
+  }
+
+  /// Uses the translation endpoint once the user has saved one.
+  ///
+  /// A fresh install can configure DeepSeek on optimization first. Choosing AI
+  /// translation then keeps that connection. Saving another translation
+  /// connection later is what makes the two diverge; editing optimization
+  /// afterwards does not move this choice.
+  Future<AiSubtitleApiSettings> _aiEndpoint() async {
+    final current = await _readApiSettings();
+    if (current.ready ||
+        current.connectionId.isNotEmpty ||
+        !_adoptConfiguredOptimization) {
+      return current;
+    }
+    try {
+      final inherited = await (await SubtitleOptimizationSettings.load())
+          .ownEndpoint();
+      if (inherited == null) return current;
+      await AiSubtitleApiSettingsStore().save(
+        inherited.copyWith(profiles: const {}),
+        notifyChanges: false,
+      );
+      return inherited.copyWith(apiKey: '');
+    } catch (error) {
+      debugPrint('[translate-settings] 未能沿用优化接口：$error');
+      return current;
+    }
   }
 
   Future<void> refreshBinding({

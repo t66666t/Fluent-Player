@@ -92,11 +92,18 @@ void main() {
       for (final family in [
         'MiSans',
         'Noto Serif CJK SC',
-        'Swei Gothic CJK SC',
       ]) {
         expect(normalizeBundledFontFamily(family), 'Noto Sans SC');
         expect(fonts.resolveSystemFont(family), 'Noto Sans CJK SC');
       }
+      expect(
+        normalizeBundledFontFamily('Swei Gothic CJK SC'),
+        'Swei Gothic CJK SC',
+      );
+      expect(
+        fonts.resolveSystemFont('Swei Gothic CJK SC'),
+        '獅尾圓體SC-Bold',
+      );
       expect(
         normalizeBundledFontFamily('subtitle_font_custom'),
         'subtitle_font_custom',

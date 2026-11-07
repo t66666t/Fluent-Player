@@ -19,7 +19,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('old styles retain fonts, weights, opacity and dimensions', () {
+  test('old styles use available fonts and retain weights, opacity and dimensions', () {
     final original = const SubtitleStyle();
     final old = original.toJson()
       ..remove('backgroundEnabled')
@@ -29,7 +29,7 @@ void main() {
     expect(restored.backgroundEnabled, isTrue);
     expect(
       restored.textStyle.resolvedLanguageFonts['zh'],
-      const SubtitleFontChoice('MiSans', 600),
+      const SubtitleFontChoice('Noto Sans SC', 600),
     );
     expect(
       restored.textStyle.resolvedLanguageFonts['en'],

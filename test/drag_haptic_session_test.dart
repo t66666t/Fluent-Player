@@ -9,7 +9,6 @@ import 'package:video_player_app/services/settings_service.dart';
 
 const tick = 'HapticFeedbackType.selectionClick';
 const light = 'HapticFeedbackType.lightImpact';
-const medium = 'HapticFeedbackType.mediumImpact';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -121,7 +120,7 @@ void main() {
       drag.update(0.8, checkpoint: true);
       drag.end();
       await flush();
-      expect(calls, [tick, medium]);
+      expect(calls, [tick, light]);
 
       calls.clear();
       start(drag);
@@ -132,7 +131,7 @@ void main() {
       drag.update(0.41);
       drag.end();
       await flush();
-      expect(calls, [tick, medium, tick, light]);
+      expect(calls, [tick, light, tick, light]);
     },
   );
 
@@ -152,6 +151,34 @@ void main() {
     drag.end();
     await flush();
     expect(calls, [tick, tick]);
+  });
+
+  test('swipe ticks follow distance and speed with a 40ms ceiling', () async {
+    Future<int> swipe(double delta) async {
+      calls.clear();
+      elapsed = Duration.zero;
+      final drag = DragHapticSession(
+        step: 10,
+        minimumInterval: const Duration(milliseconds: 40),
+        elapsed: () => elapsed,
+      );
+      drag.begin(0, dragging: true);
+      for (var i = 1; i <= 12; i++) {
+        elapsed = Duration(milliseconds: i * 20);
+        drag.update(i * delta);
+      }
+      await flush();
+      final movingCalls = calls.length;
+      elapsed = const Duration(seconds: 2);
+      drag.update(12 * delta);
+      await flush();
+      expect(calls, hasLength(movingCalls));
+      drag.end(committed: false);
+      return movingCalls;
+    }
+
+    expect(await swipe(2), 3); // start + two distance ticks
+    expect(await swipe(12), 7); // start + six rate-limited ticks
   });
 
   test(
@@ -175,7 +202,7 @@ void main() {
   );
 
   test(
-    'sidebar resize ticks are 12dp with a distinct hard stop; holding it does not repeat',
+    'sidebar resize ticks are 12dp with light boundary feedback; holding it does not repeat',
     () async {
       final drag = session(step: 12);
       drag.begin(300, dragging: true);
@@ -188,12 +215,12 @@ void main() {
       elapsed = const Duration(seconds: 1);
       drag.update(500, boundary: 1);
       await flush();
-      expect(calls, [tick, light, medium]);
+      expect(calls, [tick, light, light]);
       drag.update(460);
       drag.update(100, boundary: -1);
       drag.end();
       await flush();
-      expect(calls, [tick, light, medium, light, medium]);
+      expect(calls, [tick, light, light, light, light]);
     },
   );
 

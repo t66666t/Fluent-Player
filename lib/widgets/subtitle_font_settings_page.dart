@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -5,8 +6,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/subtitle_font.dart';
 import '../models/subtitle_style.dart';
 import '../services/subtitle_font_service.dart';
+import '../services/subtitle_font_preview_service.dart';
+import '../utils/subtitle_font_preview.dart';
 import '../utils/subtitle_util.dart';
 import 'landscape_sidebar_layout.dart';
+import 'subtitle_online_font_preview.dart';
 import 'package:video_player_app/widgets/capsule_selector.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -19,6 +23,21 @@ class SubtitleFontSettingsPage extends StatefulWidget {
   final String? secondarySource;
   final String? primaryLanguage;
   final String? secondaryLanguage;
+  final SubtitleFontService? fontService;
+  final SubtitleFontPreviewService? previewService;
+
+  /// Stays visible above the scrolling font list, for example a size slider.
+  final Widget? pinnedHeader;
+
+  /// A settings-page control that scrolls with the font rows instead of sticking
+  /// above them. Kept outside the dimming applied to the rest of the list.
+  final Widget? settingsControl;
+
+  /// Lets a parent card show through. The video sidebar keeps its own fill.
+  final bool transparentBackground;
+
+  /// Fades the chrome around [pinnedHeader] so a drag can reveal text behind.
+  final bool dimSurroundings;
   const SubtitleFontSettingsPage({
     super.key,
     required this.style,
@@ -29,6 +48,12 @@ class SubtitleFontSettingsPage extends StatefulWidget {
     this.secondarySource,
     this.primaryLanguage,
     this.secondaryLanguage,
+    this.fontService,
+    this.previewService,
+    this.pinnedHeader,
+    this.settingsControl,
+    this.transparentBackground = false,
+    this.dimSurroundings = false,
   });
   @override
   State<SubtitleFontSettingsPage> createState() =>
@@ -36,7 +61,7 @@ class SubtitleFontSettingsPage extends StatefulWidget {
 }
 
 class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
-  final service = SubtitleFontService.instance;
+  late final SubtitleFontService service;
   late SubtitleTextStyle _style;
   late Future<List<SubtitleOnlineFont>> _catalog;
   final _search = TextEditingController();
@@ -71,22 +96,45 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
   @override
   void initState() {
     super.initState();
+    service = widget.fontService ?? SubtitleFontService.instance;
+    service.addListener(_fontsChanged);
     _style = widget.style;
     _catalog = service.catalog();
-    service.ready.then((_) {
-      if (mounted) setState(() {});
+    service.ready.then((_) async {
+      if (!mounted) return;
+      setState(() {});
+      await _prepareSelectedFonts();
     });
+  }
+
+  void _fontsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _prepareSelectedFonts() async {
+    try {
+      await service.prepareFamilies({
+        _style.defaultFont.family,
+        ..._style.resolvedLanguageFonts.values.map((font) => font.family),
+      });
+    } catch (_) {
+      // Missing imported files are reported when the font is selected.
+    }
   }
 
   @override
   void didUpdateWidget(SubtitleFontSettingsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.style != widget.style) _style = widget.style;
+    if (oldWidget.style != widget.style) {
+      _style = widget.style;
+      _prepareSelectedFonts();
+    }
   }
 
   @override
   void dispose() {
     _cancel?.cancel();
+    service.removeListener(_fontsChanged);
     _search.dispose();
     _fontScrollController.dispose();
     super.dispose();
@@ -127,12 +175,13 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
         _style.copyWith(
           defaultFontFamily: font.family,
           defaultFontWeight: font.weight,
+          languageFonts: _style.languageFonts ?? const {},
         ),
       );
     } else {
       _update(
         _style.copyWith(
-          languageFonts: {..._style.resolvedLanguageFonts, _target: font},
+          languageFonts: {...?_style.languageFonts, _target: font},
         ),
       );
     }
@@ -142,9 +191,15 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     try {
       await service.verifyFiles([font.id]);
       if (!mounted) return;
-      final weight = font.weights.contains(_selected.weight)
+      final resolved = service.find(font.id) ?? font;
+      final weight = resolved.hasVariableWeight
+          ? _selected.weight.clamp(
+              resolved.variableWeightMin!,
+              resolved.variableWeightMax!,
+            )
+          : resolved.weights.contains(_selected.weight)
           ? _selected.weight
-          : font.weights.reduce(
+          : resolved.weights.reduce(
               (a, b) => (a - 400).abs() <= (b - 400).abs() ? a : b,
             );
       _choose(SubtitleFontChoice(font.id, weight));
@@ -225,6 +280,8 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     }
   }
 
+  static const int _musicWeightStep = 10;
+
   String _weightLabel(int weight) => switch (weight) {
     100 => '纤细',
     200 => '特细',
@@ -237,6 +294,24 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     900 => '重体',
     _ => '$weight',
   };
+  /// Plain toolbar icon. The splash stays inside the glyph, with no disc behind it.
+  ButtonStyle _musicChromeButton() => IconButton.styleFrom(
+    foregroundColor: Colors.white70,
+    minimumSize: const Size.square(28),
+    fixedSize: const Size.square(28),
+    padding: EdgeInsets.zero,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+  );
+
+  ButtonStyle get _musicTextButton => TextButton.styleFrom(
+    foregroundColor: Colors.white70,
+    minimumSize: Size.zero,
+    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+  );
+
   String _label(String code) => switch (code.toLowerCase()) {
     'zh' => '中文',
     'zh-hans' => '简体中文',
@@ -248,7 +323,10 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
   };
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final layout = LandscapeSidebarLayout.fromSize(constraints.biggest);
       final title = switch (_page) {
@@ -258,8 +336,13 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
         'details' => '字体授权',
         _ => '字体设置',
       };
+      final dim = widget.dimSurroundings ? 0.08 : 1.0;
+      final musicChrome = widget.transparentBackground;
+      // The inline control has to stay opaque while the surrounding rows fade.
+      final controlInList =
+          widget.settingsControl != null && _page == 'settings';
       return Material(
-        color: const Color(0xff1e1e1e),
+        color: musicChrome ? Colors.transparent : AppSettingsTheme.background,
         child: Theme(
           data: Theme.of(context).copyWith(
             brightness: Brightness.dark,
@@ -274,86 +357,134 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
             dividerColor: Colors.white12,
           ),
           child: Column(
+            mainAxisSize: musicChrome && _page == 'settings'
+                ? MainAxisSize.min
+                : MainAxisSize.max,
             children: [
-              SizedBox(
-                height: layout.headerHeight,
-                child: Row(
-                  children: [
-                    DesktopButtonClickRegion(
-                      child: IconButton(
-                        tooltip: '返回',
-                        icon: const Icon(Icons.arrow_back, size: 19),
-                        onPressed: _back,
-                      ),
+              Opacity(
+                key: const ValueKey('subtitle-font-dimmable-header'),
+                opacity: dim,
+                child: SizedBox(
+                  height: musicChrome ? 36 : layout.headerHeight,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: musicChrome ? 4 : 0,
                     ),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: layout.titleSize,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    DesktopButtonClickRegion(
-                      child: IconButton(
-                        tooltip: '关闭',
-                        icon: const Icon(Icons.close, size: 19),
-                        onPressed: widget.onClose,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              if (_busy != null) ...[
-                LinearProgressIndicator(value: _progress),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _busy!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                      if (_cancel != null)
+                    child: Row(
+                      children: [
                         DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: () => _cancel?.cancel(),
-                            child: const Text('取消'),
+                          child: IconButton(
+                            tooltip: '返回',
+                            icon: Icon(
+                              musicChrome
+                                  ? Icons.arrow_back_rounded
+                                  : Icons.arrow_back,
+                              size: musicChrome ? 18 : 19,
+                            ),
+                            onPressed: _back,
+                            style: musicChrome ? _musicChromeButton() : null,
                           ),
                         ),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: musicChrome ? 15 : layout.titleSize,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        DesktopButtonClickRegion(
+                          child: IconButton(
+                            tooltip: '关闭',
+                            icon: Icon(
+                              musicChrome ? Icons.close_rounded : Icons.close,
+                              size: musicChrome ? 18 : 19,
+                            ),
+                            onPressed: widget.onClose,
+                            style: musicChrome ? _musicChromeButton() : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Opacity(
+                opacity: dim,
+                child: Divider(
+                  height: 1,
+                  color: musicChrome ? const Color(0x1FFFFFFF) : null,
+                ),
+              ),
+              if (_busy != null)
+                Opacity(
+                  opacity: dim,
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(value: _progress),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _busy!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                            if (_cancel != null)
+                              DesktopButtonClickRegion(
+                                child: TextButton(
+                                  onPressed: () => _cancel?.cancel(),
+                                  child: const Text('取消'),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ],
               if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontSize: 11,
+                Opacity(
+                  opacity: dim,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                 ),
-              Expanded(
-                child: switch (_page) {
-                  'settings' => _settings(layout),
-                  'picker' => _picker(
-                    layout,
-                    short: constraints.maxHeight < 250,
-                  ),
-                  'languages' || 'source' => _languageList(),
-                  'details' => _licenseDetails(),
-                  _ => const SizedBox.shrink(),
-                },
+              if (widget.pinnedHeader != null && _page == 'settings')
+                widget.pinnedHeader!,
+              Flexible(
+                fit: musicChrome && _page == 'settings'
+                    ? FlexFit.loose
+                    : FlexFit.tight,
+                child: Opacity(
+                  key: const ValueKey('subtitle-font-dimmable-body'),
+                  opacity: controlInList ? 1 : dim,
+                  child: switch (_page) {
+                    'settings' => _settings(layout),
+                    'picker' => _picker(
+                      layout,
+                      short: constraints.maxHeight < 250,
+                    ),
+                    'languages' || 'source' => _languageList(),
+                    'details' => _licenseDetails(),
+                    _ => const SizedBox.shrink(),
+                  },
+                ),
               ),
             ],
           ),
@@ -362,14 +493,44 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     },
   );
 
-  Widget _settings(LandscapeSidebarLayout layout) => ListView(
-    padding: EdgeInsets.all(layout.horizontalPadding),
-    children: [
-      _fontRow('通用字体', '', _style.defaultFont),
-      const Divider(height: 24),
-      for (final item in _style.resolvedLanguageFonts.entries)
-        _fontRow(_label(item.key), item.key, item.value),
-      Align(
+  Widget _settings(LandscapeSidebarLayout layout) {
+    final musicChrome = widget.transparentBackground;
+    Widget fade(Widget child) => widget.dimSurroundings
+        ? Opacity(opacity: 0.08, child: child)
+        : child;
+    return ListView(
+      shrinkWrap: musicChrome,
+      padding: musicChrome
+          ? const EdgeInsets.fromLTRB(12, 0, 8, 6)
+          : EdgeInsets.all(layout.horizontalPadding),
+      children: [
+        fade(_fontRow('通用字体', '', _style.defaultFont)),
+        if (!musicChrome)
+          fade(
+            const Text(
+              '字体不支持的文字会自动使用其他字体显示。',
+              style: TextStyle(fontSize: 11, color: Colors.white54),
+            ),
+          ),
+        fade(Divider(height: musicChrome ? 8 : 24)),
+        for (final language in ['zh', 'en'])
+          fade(
+            _fontRow(
+              _label(language),
+              language,
+              _style.resolvedLanguageFonts[language] ?? _style.defaultFont,
+              inherited: !_style.resolvedLanguageFonts.containsKey(language),
+            ),
+          ),
+        for (final item in _style.resolvedLanguageFonts.entries)
+          if (item.key != 'zh' && item.key != 'en')
+            fade(_fontRow(_label(item.key), item.key, item.value)),
+        if (widget.settingsControl != null) ...[
+          fade(Divider(height: musicChrome ? 8 : 24)),
+          widget.settingsControl!,
+        ],
+        fade(
+          Align(
         alignment: Alignment.centerLeft,
         child: DesktopButtonClickRegion(
           child: TextButton.icon(
@@ -377,29 +538,64 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
               _sourceTarget = null;
               _go('languages');
             },
-            icon: const Icon(Icons.add, size: 17),
+            style: musicChrome ? _musicTextButton : null,
+            icon: Icon(Icons.add, size: musicChrome ? 14 : 17),
             label: const Text('添加语言'),
           ),
         ),
-      ),
-      if (widget.primarySource != null || widget.secondarySource != null) ...[
-        const Divider(height: 24),
-        if (widget.primarySource != null)
-          _sourceRow('主字幕语言', widget.primarySource!, widget.primaryLanguage),
-        if (widget.secondarySource != null)
-          _sourceRow(
-            '副字幕语言',
-            widget.secondarySource!,
-            widget.secondaryLanguage,
           ),
-      ],
+        ),
+        if (widget.primarySource != null || widget.secondarySource != null) ...[
+          fade(Divider(height: musicChrome ? 8 : 24)),
+          if (widget.primarySource != null)
+            fade(
+              _sourceRow(
+                '主字幕语言',
+                widget.primarySource!,
+                widget.primaryLanguage,
+              ),
+            ),
+          if (widget.secondarySource != null)
+            fade(
+              _sourceRow(
+                '副字幕语言',
+                widget.secondarySource!,
+                widget.secondaryLanguage,
+              ),
+            ),
+        ],
     ],
-  );
-  Widget _fontRow(String label, String key, SubtitleFontChoice choice) {
+    );
+  }
+
+  Widget _fontRow(
+    String label,
+    String key,
+    SubtitleFontChoice choice, {
+    bool inherited = false,
+  }) {
     final font = service.find(choice.family);
     final weights = {...?font?.weights, choice.weight}.toList()..sort();
+    final shownWeight = font != null && font.hasVariableWeight
+        ? choice.weight.clamp(font.variableWeightMin!, font.variableWeightMax!)
+        : choice.weight;
+    final musicChrome = widget.transparentBackground;
+    final weightMin = font?.variableWeightMin;
+    final weightMax = font?.variableWeightMax;
+    final steppedWeight =
+        musicChrome &&
+            font != null &&
+            font.hasVariableWeight &&
+            weightMin != null &&
+            weightMax != null &&
+            (weightMax - weightMin) % _musicWeightStep == 0
+        ? ((shownWeight / _musicWeightStep).round() * _musicWeightStep).clamp(
+            weightMin,
+            weightMax,
+          )
+        : shownWeight;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: musicChrome ? 2 : 8),
       child: Column(
         children: [
           Row(
@@ -412,7 +608,9 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                     _go('picker');
                   },
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: EdgeInsets.symmetric(
+                      vertical: musicChrome ? 2 : 8,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -423,9 +621,9 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: musicChrome ? 1 : 4),
                         Text(
-                          service.nameOf(choice.family),
+                          '${!musicChrome && inherited ? '跟随通用字体 · ' : ''}${service.nameOf(choice.family)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 11),
@@ -435,23 +633,26 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 18, color: Colors.white38),
-              if (key.isNotEmpty)
+              Icon(
+                Icons.chevron_right,
+                size: musicChrome ? 16 : 18,
+                color: Colors.white38,
+              ),
+              if (key.isNotEmpty && !inherited)
                 DesktopButtonClickRegion(
                   child: IconButton(
                     tooltip: '恢复通用字体',
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
+                    style: musicChrome ? _musicChromeButton() : null,
+                    constraints: musicChrome
+                        ? null
+                        : const BoxConstraints(minWidth: 32, minHeight: 32),
                     icon: const Icon(
                       Icons.remove_circle_outline,
-                      size: 17,
+                      size: 16,
                       color: Colors.white38,
                     ),
                     onPressed: () {
-                      final next = {..._style.resolvedLanguageFonts}
-                        ..remove(key);
+                      final next = {...?_style.languageFonts}..remove(key);
                       _update(_style.copyWith(languageFonts: next));
                     },
                   ),
@@ -460,36 +661,100 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
           ),
           Row(
             children: [
-              const Text('字重', style: TextStyle(fontSize: 11)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: CapsuleDropdownButton<int>(
-                  isExpanded: true,
-                  isDense: true,
-                  value: choice.weight,
-                  dropdownColor: const Color(0xff292929),
-                  underline: const SizedBox.shrink(),
-                  items: weights
-                      .map(
-                        (w) => DropdownMenuItem(
-                          value: w,
-                          child: Text(
-                            _weightLabel(w),
-                            style: const TextStyle(fontSize: 11),
-                          ),
+              if (!musicChrome) ...[
+                const Text('字重', style: TextStyle(fontSize: 11)),
+                const SizedBox(width: 12),
+              ],
+              if (font != null && font.hasVariableWeight) ...[
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final min = font.variableWeightMin!;
+                      final max = font.variableWeightMax!;
+                      // Ten-unit stops keep 600 reachable without landing on 599.
+                      final stepped =
+                          musicChrome && (max - min) % _musicWeightStep == 0;
+                      return SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: musicChrome ? 2 : null,
+                          padding: musicChrome
+                              ? const EdgeInsets.symmetric(vertical: 2)
+                              : null,
+                          overlayShape: musicChrome
+                              ? const RoundSliderOverlayShape(overlayRadius: 10)
+                              : null,
                         ),
-                      )
-                      .toList(),
-                  onChanged: (w) {
-                    if (w != null) {
-                      _target = key;
-                      _choose(SubtitleFontChoice(choice.family, w));
-                    }
-                  },
+                        child: Slider(
+                          key: ValueKey('subtitle-font-weight-$key'),
+                          min: min.toDouble(),
+                          max: max.toDouble(),
+                          divisions: stepped
+                              ? (max - min) ~/ _musicWeightStep
+                              : null,
+                          value: steppedWeight.toDouble(),
+                          label: '$steppedWeight',
+                          onChanged: (value) {
+                            final next = stepped
+                                ? ((value / _musicWeightStep).round() *
+                                          _musicWeightStep)
+                                      .clamp(min, max)
+                                : value.round();
+                            _target = key;
+                            _choose(SubtitleFontChoice(choice.family, next));
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
+                SizedBox(
+                  width: 32,
+                  child: Text(
+                    '$steppedWeight',
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              ] else
+                Expanded(
+                  child: CapsuleDropdownButton<int>(
+                    isExpanded: true,
+                    isDense: true,
+                    value: choice.weight,
+                    dropdownColor: const Color(0xff292929),
+                    underline: const SizedBox.shrink(),
+                    items: weights
+                        .map(
+                          (w) => DropdownMenuItem(
+                            value: w,
+                            child: Text(
+                              _weightLabel(w),
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (w) {
+                      if (w != null) {
+                        _target = key;
+                        _choose(SubtitleFontChoice(choice.family, w));
+                      }
+                    },
+                  ),
+                ),
             ],
           ),
+          if (!musicChrome &&
+              font != null &&
+              font.hasVariableWeight &&
+              !inherited)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(
+                '粗略合成的字重可能有偏差，精确渲染可保持效果。',
+                style: TextStyle(fontSize: 10, color: Colors.white54),
+              ),
+            ),
         ],
       ),
     );
@@ -497,8 +762,11 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
 
   Widget _sourceRow(String title, String source, String? hint) {
     final current = service.manualLanguageForSource(source);
+    final musicChrome = widget.transparentBackground;
     return ListTile(
       dense: true,
+      visualDensity: musicChrome ? VisualDensity.compact : null,
+      minVerticalPadding: musicChrome ? 0 : null,
       contentPadding: EdgeInsets.zero,
       title: Text(title, style: const TextStyle(fontSize: 12)),
       subtitle: Text(
@@ -550,7 +818,8 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                 ),
               for (final code in codes)
                 if ((_page == 'source' ||
-                        !_style.resolvedLanguageFonts.containsKey(code)) &&
+                        (!['zh', 'en'].contains(code) &&
+                            !_style.resolvedLanguageFonts.containsKey(code))) &&
                     ('${_label(code)} $code'.toLowerCase().contains(_query)))
                   ListTile(
                     dense: true,
@@ -581,7 +850,7 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
       _update(
         _style.copyWith(
           languageFonts: {
-            ..._style.resolvedLanguageFonts,
+            ...?_style.languageFonts,
             language: _style.defaultFont,
           },
         ),
@@ -682,41 +951,63 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
 
   Widget _pickerToolbar({required bool short}) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 10),
-    child: Row(
-      children: [
-        for (final online in [false, true])
-          DesktopButtonClickRegion(
-            child: TextButton(
-              style: short
-                  ? TextButton.styleFrom(
-                      minimumSize: const Size(0, 30),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    )
-                  : null,
-              onPressed: () => setState(() => _online = online),
-              child: Text(
-                online ? '在线' : '我的',
-                style: TextStyle(
-                  color: _online == online ? Colors.blueAccent : Colors.white54,
-                ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 240;
+        final buttonStyle = short || narrow
+            ? TextButton.styleFrom(
+                minimumSize: const Size(0, 30),
+                padding: narrow ? EdgeInsets.zero : null,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              )
+            : null;
+        Widget tab(bool online) => DesktopButtonClickRegion(
+          child: TextButton(
+            style: buttonStyle,
+            onPressed: () => setState(() => _online = online),
+            child: Text(
+              online ? '在线' : '我的',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: narrow ? 12 : null,
+                color: _online == online ? Colors.blueAccent : Colors.white54,
               ),
             ),
           ),
-        const Spacer(),
-        DesktopButtonClickRegion(
-          child: TextButton.icon(
-            style: short
-                ? TextButton.styleFrom(
-                    minimumSize: const Size(0, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  )
-                : null,
-            onPressed: _busy == null ? _import : null,
-            icon: const Icon(Icons.file_upload_outlined, size: 16),
-            label: const Text('导入'),
-          ),
-        ),
-      ],
+        );
+        return Row(
+          children: [
+            for (final online in [false, true])
+              if (narrow) Expanded(child: tab(online)) else tab(online),
+            if (!narrow) const Spacer(),
+            if (narrow)
+              Expanded(
+                child: DesktopButtonClickRegion(
+                  child: TextButton(
+                    style: buttonStyle,
+                    onPressed: _busy == null ? _import : null,
+                    child: const Text(
+                      '导入',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              )
+            else
+              DesktopButtonClickRegion(
+                child: TextButton.icon(
+                  style: buttonStyle,
+                  onPressed: _busy == null ? _import : null,
+                  icon: const Icon(Icons.file_upload_outlined, size: 16),
+                  label: const Text('导入'),
+                ),
+              ),
+          ],
+        );
+      },
     ),
   );
 
@@ -747,7 +1038,9 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
             final fonts = snapshot.data!
                 .where(
                   (f) =>
-                      f.name.toLowerCase().contains(_query) &&
+                      (f.name.toLowerCase().contains(_query) ||
+                          (f.name == 'Noto Serif SC' &&
+                              '思源宋体'.contains(_query))) &&
                       (_license == null || f.license == _license) &&
                       (_language.isEmpty ||
                           f.languages.any(
@@ -777,10 +1070,59 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                       _supportsLanguage(f, _language),
                 )
                 .toList();
-            return _fontList(
-              fonts.length,
-              (index) => _installedRow(fonts[index]),
-              sliver: sliver,
+            final imported = fonts.where((font) => font.path != null).toList();
+            final builtIn = fonts.where((font) => font.path == null).toList();
+            return FutureBuilder<List<SubtitleOnlineFont>>(
+              future: _catalog,
+              builder: (context, snapshot) {
+                final recommended =
+                    (snapshot.data ?? const <SubtitleOnlineFont>[])
+                        .where(
+                          (font) =>
+                              font.name == 'Noto Serif SC' &&
+                              (font.name.toLowerCase().contains(_query) ||
+                                  '思源宋体'.contains(_query)) &&
+                              (_license == null || font.license == _license) &&
+                              (_language.isEmpty ||
+                                  font.languages.any(
+                                    (language) =>
+                                        language.toLowerCase() ==
+                                            _language.toLowerCase() ||
+                                        language.split('-').first == _language,
+                                  )) &&
+                              !imported.any(
+                                (item) => item.sourceUrl == font.sourceUrl,
+                              ),
+                        )
+                        .toList();
+                final rows = <Object>[
+                  if (imported.isNotEmpty) ...['已下载和导入', ...imported],
+                  if (builtIn.isNotEmpty) ...['内置字体', ...builtIn],
+                  if (recommended.isNotEmpty) ...[
+                    '推荐字体 · 思源宋体',
+                    ...recommended,
+                  ],
+                ];
+                return _fontList(
+                  rows.length,
+                  (index) => switch (rows[index]) {
+                    SubtitleFontAsset font => _installedRow(font),
+                    SubtitleOnlineFont font => _onlineRow(font),
+                    String title => Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    _ => const SizedBox.shrink(),
+                  },
+                  sliver: sliver,
+                );
+              },
             );
           },
         );
@@ -804,12 +1146,7 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     if (font.id == 'System') return true;
     if (['en', 'fr', 'de', 'es', 'vi'].contains(language)) return true;
     return language.startsWith('zh') &&
-        [
-          'MiSans',
-          'Noto Sans SC',
-          'Noto Serif CJK SC',
-          'Swei Gothic CJK SC',
-        ].contains(font.id);
+        ['Noto Sans SC', 'Swei Gothic CJK SC'].contains(font.id);
   }
 
   Widget _fontList(
@@ -909,14 +1246,35 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     final installed = service.fonts
         .where((f) => f.sourceUrl == font.sourceUrl && f.path != null)
         .firstOrNull;
+    final sample = subtitleFontPreviewSample(
+      font.languages,
+      preferredLanguage: _language,
+      fontName: font.name,
+    );
     return _row(
       font.name,
       font.license,
-      previewFamily: installed?.id,
-      showPreview: installed != null,
-      previewText: installed == null
-          ? (font.directDownload ? '下载后可预览' : '从官网获取后导入')
-          : null,
+      showPreview: false,
+      preview: SubtitleOnlineFontPreview(
+        key: ValueKey('subtitle-online-preview-${font.sourceUrl}'),
+        font: font,
+        sample: sample,
+        previewService: widget.previewService,
+        installedFamily: installed?.id,
+        prepareInstalled: installed == null
+            ? null
+            : () async {
+                await service.ensureLoaded(installed.id);
+                final available = service.find(installed.id) ?? installed;
+                if (available.coverage.isEmpty ||
+                    sample.text.runes
+                        .where((rune) => rune > 32)
+                        .any((rune) => !available.supports(rune))) {
+                  throw const FormatException('此字体缺少预览文字的字形');
+                }
+              },
+        onOfficialPreview: () => _open(font.sourceUrl),
+      ),
       action: installed != null
           ? '使用'
           : font.directDownload
@@ -942,6 +1300,7 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
     SubtitleFontLicense license, {
     String? previewFamily,
     String? previewText,
+    Widget? preview,
     bool showPreview = true,
     bool selected = false,
     required String action,
@@ -963,8 +1322,10 @@ class SubtitleFontSettingsPageState extends State<SubtitleFontSettingsPage> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12, color: Colors.white),
                 ),
-                if (showPreview) const SizedBox(height: 3),
-                if (showPreview)
+                if (showPreview || preview != null) const SizedBox(height: 3),
+                if (preview != null)
+                  preview
+                else if (showPreview)
                   Text(
                     previewText ??
                         (_language == 'ja' ? '字幕の見え方 Aa' : '字幕预览 Aa'),

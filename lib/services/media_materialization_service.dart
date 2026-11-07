@@ -19,6 +19,7 @@ import '../utils/ffmpeg_utils.dart';
 import '../utils/ffmpeg_progress.dart';
 import 'bilibili/bilibili_api_service.dart';
 import 'settings_service.dart';
+import 'community_media_input.dart';
 import 'network/resumable_media_download.dart';
 import 'network/network_recovery.dart';
 
@@ -286,22 +287,8 @@ class MediaMaterializationService extends ChangeNotifier {
        _cacheDirectory = cacheDirectory;
 
   Future<List<CacheQuality>> videoQualities(VideoItem item) async {
-    final info = await _fetchStreamInfo(item);
-    if (info.isPreview) return const [];
-    final seen = <int>{};
-    return [
-      for (final stream in info.videoStreams)
-        if (_hasAllowedMediaUri(stream) && seen.add(stream.id))
-          CacheQuality(
-            id: '${stream.id}',
-            label:
-                stream.qualityName ??
-                info.qualityMap[stream.id] ??
-                _qualityLabel(stream.height),
-            width: stream.width,
-            height: stream.height,
-          ),
-    ];
+    requireCommunityLocalMedia(item.path);
+    return const [];
   }
 
   Future<MediaMaterializationEstimate> estimate(
@@ -310,11 +297,9 @@ class MediaMaterializationService extends ChangeNotifier {
     int? targetHeight,
     String? qualityId,
   }) async {
-    if (isCloudDriveMedia(source: item.sourceRef, path: item.path)) {
-      throw StateError('网盘卡片不能按本地文件准备素材');
-    }
+    requireCommunityLocalMedia(item.path);
     if (!_isBilibiliStream(item)) {
-      final file = File(item.path);
+      final file = File(communityLocalMediaPath(item.path));
       return MediaMaterializationEstimate(
         estimatedBytes: await file.exists() ? await file.length() : null,
         qualityId: null,
@@ -404,18 +389,17 @@ class MediaMaterializationService extends ChangeNotifier {
     void Function(MediaMaterializationProgress progress)? onProgress,
     Future<void>? cancelSignal,
   }) async {
-    if (isCloudDriveMedia(source: item.sourceRef, path: item.path)) {
-      throw StateError('网盘卡片不能按本地文件准备素材');
-    }
+    requireCommunityLocalMedia(item.path);
     if (!_isBilibiliStream(item)) {
-      if (!await File(item.path).exists()) throw StateError('媒体文件不存在');
+      final localPath = communityLocalMediaPath(item.path);
+      if (!await File(localPath).exists()) throw StateError('媒体文件不存在');
       return MaterializedMediaLease(
         videoId: item.id,
         audioPath: requirement == MediaMaterializationRequirement.videoFrames
             ? null
-            : item.path,
-        videoPath: item.path,
-        completePath: item.path,
+            : localPath,
+        videoPath: localPath,
+        completePath: localPath,
         qualityId: null,
         width: null,
         height: null,
@@ -487,6 +471,7 @@ class MediaMaterializationService extends ChangeNotifier {
   }
 
   Future<File?> getVerifiedPlaybackFile(VideoItem item) async {
+    requireCommunityLocalMedia(item.path);
     if (!_isBilibiliStream(item)) return null;
     final manifest = await _readValidManifest(item);
     final path = manifest?.completePath;
@@ -535,6 +520,7 @@ class MediaMaterializationService extends ChangeNotifier {
   Future<MaterializedMediaLease?> acquireExistingPlayback(
     VideoItem item,
   ) async {
+    requireCommunityLocalMedia(item.path);
     if (!_isBilibiliStream(item)) return null;
     var manifest = await _readValidManifest(item);
     if (manifest == null) return null;
@@ -564,6 +550,9 @@ class MediaMaterializationService extends ChangeNotifier {
   /// already on disk, downloading the audio track first when it is missing.
   /// Never throws; returns whether a verified playable file is available.
   Future<bool> ensurePlaybackFileReady(VideoItem item) {
+    if (!communityMediaIsLocal(item.path)) {
+      return Future<bool>.error(UnsupportedError('开源版仅支持本地媒体，不会恢复远程素材下载'));
+    }
     final existing = _playbackBuilds[item.id];
     if (existing != null) return existing;
     final build = _buildPlaybackFile(item);
@@ -581,6 +570,10 @@ class MediaMaterializationService extends ChangeNotifier {
   Future<bool> _buildPlaybackFile(VideoItem item) async {
     var taskRegistered = false;
     try {
+      requireCommunityLocalMedia(item.path);
+      if (communityMediaIsLocal(item.path)) {
+        return File(communityLocalMediaPath(item.path)).exists();
+      }
       var manifest = await _readValidManifest(item);
       if (manifest == null) return false;
       if (manifest.completePath != null &&
@@ -1413,6 +1406,7 @@ class MediaMaterializationService extends ChangeNotifier {
   }
 
   Future<BilibiliStreamInfo> _fetchStreamInfo(VideoItem item) async {
+    requireCommunityLocalMedia(item.path);
     final source = item.sourceRef;
     if (source?.bvid?.isNotEmpty != true || source?.cid == null) {
       throw const FormatException('在线视频卡片缺少 BVID 或 CID');
@@ -1834,8 +1828,9 @@ class MediaMaterializationService extends ChangeNotifier {
   }
 
   bool _isBilibiliStream(VideoItem item) =>
-      item.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
-      item.path.startsWith('bilibili://stream/');
+      !communityMediaIsLocal(item.path) &&
+      (item.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
+          item.path.startsWith('bilibili://stream/'));
 
   Future<bool> _isNonEmpty(File file) async =>
       await file.exists() && await file.length() > 0;

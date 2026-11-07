@@ -114,6 +114,16 @@ class _MusicCoverVideoStageState extends State<MusicCoverVideoStage>
     _widthFrom = widget.coverSize;
     _widthTo = widget.coverSize;
     _bindController(widget.controller);
+    MediaPlaybackService().addListener(_onSurfaceOwnershipChanged);
+  }
+
+  /// The floating player inside the fullscreen AI chat borrows the same output.
+  /// media_kit keeps one view, so lose the claim and fall back to artwork
+  /// instead of fighting over the texture.
+  void _onSurfaceOwnershipChanged() {
+    if (!_surfaceClaimed || _disposed) return;
+    if (MediaPlaybackService().ownsVideoSurface(this)) return;
+    _runOutsideBuild(_snapCover);
   }
 
   @override
@@ -165,6 +175,7 @@ class _MusicCoverVideoStageState extends State<MusicCoverVideoStage>
   @override
   void dispose() {
     _disposed = true;
+    MediaPlaybackService().removeListener(_onSurfaceOwnershipChanged);
     _sheenTimer?.cancel();
     _loadingTimer?.cancel();
     _boostTimer?.cancel();

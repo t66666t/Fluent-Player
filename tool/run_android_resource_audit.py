@@ -8,6 +8,7 @@ import argparse
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -17,8 +18,10 @@ import urllib.error
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "build/android-resource-audit-20261101"
 PACKAGE = "com.example.video_player_app.android_resource_audit"
-SERIAL = "983d4e11"
-ADB = Path("C:/Users/11/AppData/Local/Android/sdk/platform-tools/adb.exe")
+SERIAL = os.environ.get("ANDROID_SERIAL", "")
+if not SERIAL:
+    raise SystemExit("Set ANDROID_SERIAL to the device used for this audit.")
+ADB = Path(os.environ.get("ANDROID_SDK_ROOT", "")) / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
 BASE = "http://127.0.0.1:8783"
 
 
@@ -219,7 +222,7 @@ def main() -> None:
     args = parser.parse_args()
     AUDIT.mkdir(exist_ok=True)
     if args.apk:
-        aapt = Path("C:/Users/11/AppData/Local/Android/sdk/build-tools/36.0.0/aapt.exe")
+        aapt = Path(os.environ.get("ANDROID_SDK_ROOT", "")) / "build-tools" / "36.0.0" / ("aapt.exe" if os.name == "nt" else "aapt")
         badging = subprocess.check_output([str(aapt), "dump", "badging", str(args.apk)], text=True)
         if not badging.startswith(f"package: name='{PACKAGE}' "):
             raise SystemExit("Refusing APK: package identity differs from private audit")

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../features/model_center/model_center_screen.dart';
 import '../features/model_center/model_center_service.dart';
 import '../services/subtitle_translate_settings.dart';
+import 'subtitle_settings_layout.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 /// Opens feature bindings while keeping the current subtitle workflow mounted.
@@ -14,6 +15,8 @@ class ModelCenterButton extends StatelessWidget {
     this.onPressed,
     this.translateSettings,
     this.service,
+    this.settingsRow = false,
+    this.transcriptionOnly = false,
   });
 
   final bool compact;
@@ -21,6 +24,8 @@ class ModelCenterButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final SubtitleTranslateSettings? translateSettings;
   final ModelCenterService? service;
+  final bool settingsRow;
+  final bool transcriptionOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -29,11 +34,19 @@ class ModelCenterButton extends StatelessWidget {
       tab: 0,
       translateSettings: translateSettings,
       service: service,
+      transcriptionOnly: transcriptionOnly,
     );
+    if (settingsRow) {
+      return SubtitleSettingsRow(
+        title: '模型设置',
+        description: '转录模型、接口与增强',
+        onTap: onPressed ?? open,
+      );
+    }
     if (compact) {
       return DesktopButtonClickRegion(
         child: IconButton(
-          tooltip: '模型中心（转录与翻译）',
+          tooltip: '模型中心（转录、优化与翻译）',
           color: foregroundColor,
           icon: const Icon(Icons.tune_rounded, size: 20),
           onPressed: onPressed ?? open,

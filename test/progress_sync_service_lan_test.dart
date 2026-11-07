@@ -36,6 +36,12 @@ class _DeviceLibrary extends ChangeNotifier implements LibraryService {
   @override
   List<VideoCollection> get collections => [folder];
   @override
+  List<VideoCollection> get storageCollections => [folder];
+  @override
+  List<VideoItem> get storageVideos => [video];
+  @override
+  List<ImportBatchRecord> get importBatches => [];
+  @override
   VideoCollection? getCollection(String id) => id == folder.id ? folder : null;
   @override
   VideoItem? getVideo(String id) => id == video.id ? video : null;

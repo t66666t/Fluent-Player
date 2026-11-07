@@ -8,6 +8,7 @@ import '../progress_sync/folder_transfer_disk_space.dart' as disk;
 import 'podcast_client.dart';
 import 'podcast_media_store.dart';
 import 'podcast_models.dart';
+import 'podcast_source_policy.dart';
 import 'podcast_store.dart';
 import 'podcast_preview_loader.dart';
 import 'podcast_transfer.dart';
@@ -113,12 +114,24 @@ class PodcastController extends ChangeNotifier {
     bool debounced = false,
     bool notify = true,
     bool project = true,
+    bool forcePlaybackUpdate = false,
   }) {
     final value = state(id);
     final bucketBefore = value.listenBucket;
     final wasFavorite = value.favorite;
+    final positionBefore = value.positionMs;
+    final playedBefore = value.played;
+    final lastPlayedBefore = value.lastPlayedMs;
+    final playedAtBefore = value.playedAtMs;
     update(value);
     value.updatedMs = DateTime.now().millisecondsSinceEpoch;
+    if (forcePlaybackUpdate ||
+        value.positionMs != positionBefore ||
+        value.played != playedBefore ||
+        value.lastPlayedMs != lastPlayedBefore ||
+        value.playedAtMs != playedAtBefore) {
+      value.playbackUpdatedMs = value.updatedMs;
+    }
     if (wasFavorite != value.favorite) {
       value.favoriteUpdatedMs = value.updatedMs;
     }
@@ -189,6 +202,7 @@ class PodcastController extends ChangeNotifier {
       },
       notify: notify,
       project: project,
+      forcePlaybackUpdate: true,
     );
   }
 
@@ -233,6 +247,7 @@ class PodcastController extends ChangeNotifier {
     if (existing != null) {
       existing.active = true;
       store.write('channel', existing.id, existing.toJson());
+      if (feed.channel.id == existing.id) store.mergeFeed(feed);
       notifyListeners();
       return existing;
     }
@@ -309,13 +324,19 @@ class PodcastController extends ChangeNotifier {
     notifyListeners();
     try {
       final oldIds = store.episodes(id).map((e) => e.id).toSet();
+      final needsSourceConfirmation = store
+          .episodes(id)
+          .any((episode) => episode.sourceFeedUrl.isEmpty);
       final url = history ? channel.nextPage : channel.feedUrl;
       if (url == null) return;
       final response = await client.http.get(
         url,
         headers: {
-          if (!history && channel.etag != null) 'If-None-Match': channel.etag!,
-          if (!history && channel.lastModified != null)
+          if (!history && !needsSourceConfirmation && channel.etag != null)
+            'If-None-Match': channel.etag!,
+          if (!history &&
+              !needsSourceConfirmation &&
+              channel.lastModified != null)
             'If-Modified-Since': channel.lastModified!,
         },
       );
@@ -340,14 +361,15 @@ class PodcastController extends ChangeNotifier {
       );
       if (history) {
         for (final e in feed.episodes) {
-          if (store.episode(e.id) == null) {
-            store.write(
-              'episode',
-              e.id,
-              e.toJson()..['discoveredMs'] = channel.subscribedMs,
-              channel: id,
-            );
-          }
+          final existing = store.episode(e.id);
+          store.write(
+            'episode',
+            e.id,
+            e.toJson()
+              ..['discoveredMs'] =
+                  existing?.discoveredMs ?? channel.subscribedMs,
+            channel: id,
+          );
         }
         channel.nextPage = feed.channel.nextPage;
         store.write('channel', id, channel.toJson());
@@ -453,6 +475,10 @@ class PodcastController extends ChangeNotifier {
       task.status = PodcastDownloadStatus.failed;
       task.error = '分段流媒体不能作为完整离线文件下载，请选择音频文件或 MP4 版本';
     }
+    if (!podcastHasRssMedia(episode, media)) {
+      task.status = PodcastDownloadStatus.failed;
+      task.error = podcastRssSourceMessage;
+    }
     if (mediaStore.isDownloaded(episode.id, media.url)) {
       task.status = PodcastDownloadStatus.completed;
     }
@@ -546,6 +572,9 @@ class PodcastController extends ChangeNotifier {
   }) async {
     if (media.isStreamManifest) {
       throw const FormatException('这个来源是分段流媒体，请选择文件版本以生成字幕');
+    }
+    if (!mediaStore.isComplete(episode.id, media.url)) {
+      requirePodcastRssMedia(episode, media);
     }
     var cancelled = false, settled = false;
     cancelSignal?.then((_) {
@@ -650,7 +679,9 @@ class PodcastController extends ChangeNotifier {
         await reuseCompleteMedia();
       } else {
         if (store.preferences.flag('pauseAllDownloads')) {
-          throw const HttpException('播客下载已全局暂停，请在“播客设置 → 离线下载”中关闭“暂停所有下载任务”后继续生成字幕');
+          throw const HttpException(
+            '播客下载已全局暂停，请在“播客设置 → 离线下载”中关闭“暂停所有下载任务”后继续生成字幕',
+          );
         }
         if (!joined) {
           // A paused request can still be releasing its socket/lease. Do not
@@ -754,7 +785,7 @@ class PodcastController extends ChangeNotifier {
 
   /// Wakes the dispatcher. Returns when this pass has started every task that
   /// currently fits, without waiting for those downloads to finish.
-  Future<void> requestDispatch() {
+  Future<void> requestDispatch() async {
     if (_closed) return Future<void>.value();
     if (_dispatchFuture != null) {
       _redispatch = true;
@@ -823,6 +854,21 @@ class PodcastController extends ChangeNotifier {
       }
       final episode = store.episode(task.episodeId);
       if (episode == null) continue;
+      final media = episode.media
+          .where((candidate) => candidate.url == task.mediaUrl)
+          .firstOrNull;
+      if (!mediaStore.isComplete(episode.id, task.mediaUrl) &&
+          (media == null || !podcastHasRssMedia(episode, media))) {
+        task.status = PodcastDownloadStatus.failed;
+        task.error = podcastRssSourceMessage;
+        store.write(
+          'download',
+          task.episodeId,
+          task.toJson(),
+          channel: episode.channelId,
+        );
+        continue;
+      }
       final settings = store.effective(episode.channelId);
       if (task.automatic && !settings.flag('autoDownload')) {
         pause(task.episodeId);

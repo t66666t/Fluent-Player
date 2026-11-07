@@ -30,9 +30,9 @@ Future<void> _loadFonts() async {
     }
     await loader.load();
   }
-  await (FontLoader('MiSans')
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Bold.otf')))
+  await (FontLoader('Noto Sans SC')
+        ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))
+        ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
       .load();
   _fontsLoaded = true;
 }
@@ -51,7 +51,7 @@ Future<void> _mount(
       theme: ThemeData(
         platform: TargetPlatform.windows,
         brightness: Brightness.dark,
-        fontFamily: 'MiSans',
+        fontFamily: 'Noto Sans SC',
       ),
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(scale)),
@@ -200,16 +200,16 @@ void main() {
       final bold = leaf('粗体');
       final italic = leaf('斜体');
       final tail = leaf('尾部');
-      expect(bold.$2?.fontWeight, FontWeight.bold);
-      expect(italic.$2?.fontWeight, FontWeight.bold);
+      expect(bold.$2?.fontWeight, FontWeight.w600);
+      expect(italic.$2?.fontWeight, FontWeight.w600);
       expect(italic.$2?.fontStyle, FontStyle.italic);
-      expect(tail.$2?.fontWeight, FontWeight.bold);
+      expect(tail.$2?.fontWeight, FontWeight.w600);
       expect(identical(bold.$1.recognizer, italic.$1.recognizer), isTrue);
       expect(identical(bold.$1.recognizer, tail.$1.recognizer), isTrue);
       expect(bold.$1.recognizer, isA<TapGestureRecognizer>());
       final formula = tester.widget<AiMathFormula>(find.byType(AiMathFormula));
       expect(formula.source, r'A+\frac{b}{c}');
-      expect(formula.textStyle?.fontWeight, FontWeight.bold);
+      expect(formula.textStyle?.fontWeight, FontWeight.w600);
       expect(formula.textStyle?.fontStyle, FontStyle.italic);
       await tester.tapAt(_glyphBoxes(prose, needle: '粗体').single.center);
       await tester.pumpAndSettle();
@@ -250,7 +250,7 @@ void main() {
                 data: ThemeData(
                   platform: TargetPlatform.windows,
                   brightness: brightness,
-                  fontFamily: 'MiSans',
+                  fontFamily: 'Noto Sans SC',
                 ),
                 child: AiMarkdown(data: markdown),
               ),

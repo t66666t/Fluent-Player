@@ -94,8 +94,8 @@ void main() {
     if (!preview) return;
     await (FontLoader('Noto Sans SC')
           ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'))
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Medium.otf'))
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Bold.otf')))
+          ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))
+          ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
         .load();
     await (FontLoader(
       'MaterialIcons',

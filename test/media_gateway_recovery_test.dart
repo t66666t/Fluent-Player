@@ -52,7 +52,7 @@ class _InterruptedUpstream implements CloudDriveUpstreamClient {
 void main() {
   setUp(() => HttpOverrides.global = null);
   test(
-    'cancelled cloud recovery ends its pending read without a late error',
+    'cancelled normal streaming recovery ends its pending read without a late error',
     () async {
       final waiting = Completer<void>();
       final disconnect = Completer<void>();
@@ -146,6 +146,7 @@ void main() {
         length: payload.length,
       );
       final episode = PodcastEpisode(
+        sourceFeedUrl: 'https://publisher.test/rss',
         id: 'episode',
         channelId: 'channel',
         title: 'episode',
@@ -158,76 +159,38 @@ void main() {
     },
   );
   test(
-    'cloud playback keeps one local response while resuming a disconnected upstream',
+    'retired cloud gateway refuses a restored descriptor before upstream access',
     () async {
       final upstream = _InterruptedUpstream();
       final gateway = CloudDriveStreamGateway(
         upstream: upstream,
         retryDelays: const [Duration.zero],
       );
-      final lease = await gateway.open(
-        descriptor: sample(),
-        accountLocalId: 'account',
+      addTearDown(gateway.close);
+      await expectLater(
+        gateway.open(descriptor: sample(), accountLocalId: 'account'),
+        throwsUnsupportedError,
       );
-      final client = HttpClient();
-      addTearDown(() async {
-        client.close(force: true);
-        await lease.release();
-        await gateway.close();
-      });
-      final response = await (await client.getUrl(lease.loopbackUri)).close();
-      expect(await response.expand((bytes) => bytes).toList(), upstream.bytes);
-      expect(upstream.calls, hasLength(2));
-      expect(upstream.calls.last['Range'], 'bytes=8192-16383');
-      expect(upstream.calls.last['If-Range'], '"stable"');
-      expect(lease.needsReopen, isFalse);
+      expect(upstream.calls, isEmpty);
     },
   );
 
   test(
-    'web playback relay resumes from the first missing byte after a socket drop',
+    'retired webpage relay refuses a saved media resource without a request',
     () async {
       final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final payload = [
-        0,
-        0,
-        0,
-        24,
-        102,
-        116,
-        121,
-        112,
-        ...List.generate(16384 - 8, (i) => i % 251),
-      ];
-      final ranges = <String?>[];
+      var requests = 0;
       origin.listen((request) async {
-        ranges.add(request.headers.value('range'));
-        if (ranges.length == 1) {
-          final socket = await request.response.detachSocket(
-            writeHeaders: false,
-          );
-          socket.write(
-            'HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n'
-            'Content-Length: 16384\r\nETag: "stable"\r\nConnection: close\r\n\r\n',
-          );
-          socket.add(payload.sublist(0, 8192));
-          await socket.flush();
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-          socket.destroy();
-          return;
-        }
-        expect(request.headers.value('if-range'), '"stable"');
-        request.response.statusCode = 206;
-        request.response.headers
-          ..set('content-range', 'bytes 8192-16383/16384')
-          ..set('etag', '"stable"')
-          ..set('content-type', 'video/mp4');
-        request.response.contentLength = 8192;
-        request.response.add(payload.sublist(8192));
+        requests++;
+        request.response.statusCode = 500;
         await request.response.close();
       });
-      final service = WebMediaDownloadService(dio: Dio())
-        ..retryDelay = const Duration(milliseconds: 1);
+      final service = WebMediaDownloadService(dio: Dio());
+      addTearDown(() async {
+        await service.cancel();
+        service.close();
+        await origin.close(force: true);
+      });
       final media = WebMediaResource(
         url: 'http://127.0.0.1:${origin.port}/media',
         sourcePage: Uri.parse('http://127.0.0.1:${origin.port}/page'),
@@ -235,18 +198,11 @@ void main() {
         kind: WebMediaKind.video,
         headers: {},
       );
-      final relay = await service.openPlaybackRelay(media);
-      final client = HttpClient();
-      addTearDown(() async {
-        client.close(force: true);
-        await service.cancel();
-        service.close();
-        await relay.server.close(force: true);
-        await origin.close(force: true);
-      });
-      final response = await (await client.getUrl(relay.url)).close();
-      expect(await response.expand((bytes) => bytes).toList(), payload);
-      expect(ranges, [null, 'bytes=8192-16383']);
+      await expectLater(
+        service.openPlaybackRelay(media),
+        throwsUnsupportedError,
+      );
+      expect(requests, 0);
     },
   );
 

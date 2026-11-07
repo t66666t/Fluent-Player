@@ -4,7 +4,7 @@ project(video_player_app LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "fluent_player_community")
+set(BINARY_NAME "fluent-player")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -64,6 +64,16 @@ add_subdirectory("runner")
 set(CMAKE_DISABLE_FIND_PACKAGE_JNI TRUE)
 include(flutter/generated_plugins.cmake)
 
+# The pinned ANGLE bundle carries an unused zlib built against the debug CRT.
+# No shipped module imports it (ordinary or delay imports). Never distribute
+# developer-only CRT dependencies; packaging still rejects any future caller.
+foreach(ANGLE_RUNTIME IN LISTS PLUGIN_BUNDLED_LIBRARIES)
+  file(TO_CMAKE_PATH "${ANGLE_RUNTIME}" ANGLE_RUNTIME_NORMALIZED)
+  if(ANGLE_RUNTIME_NORMALIZED MATCHES "/ANGLE/zlib[.]dll$")
+    list(REMOVE_ITEM PLUGIN_BUNDLED_LIBRARIES "${ANGLE_RUNTIME}")
+  endif()
+endforeach()
+
 # CMake may omit files which are already built directly into the installation
 # directory from install_manifest.txt. Record the evaluated runtime targets as
 # well, including FFI libraries (SQLite, notifications, WebView2 loader, etc.).
@@ -82,6 +92,19 @@ set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "Install path" FORCE)
 
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
+# Bundle the compiler's redistributable CRT beside each process that loads
+# MSVC-built libraries, so release bundles also work without Visual Studio.
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+include(InstallRequiredSystemLibraries)
+if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+  foreach(RUNTIME_DEST "${INSTALL_BUNDLE_LIB_DIR}"
+      "${INSTALL_BUNDLE_LIB_DIR}/resources/asr"
+      "${INSTALL_BUNDLE_LIB_DIR}/resources/ocr"
+      "${INSTALL_BUNDLE_LIB_DIR}/resources/translation")
+    install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+      DESTINATION "${RUNTIME_DEST}" COMPONENT Runtime)
+  endforeach()
+endif()
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 

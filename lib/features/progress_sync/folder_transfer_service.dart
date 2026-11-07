@@ -18,6 +18,7 @@ import 'folder_transfer_disk_space.dart' as disk;
 import 'folder_transfer_storage.dart';
 import 'folder_transfer_transport.dart' as wire;
 import 'folder_direct_transport.dart';
+import '../../utils/app_branding.dart';
 import 'progress_sync_lan.dart';
 
 typedef FolderLinkBuilder =
@@ -409,6 +410,7 @@ class FolderTransferService extends ChangeNotifier {
         }
         task.transportOffer = offer.toJson();
         task.syncDescriptor = Map<String, dynamic>.from(payload['sync'] as Map);
+        _requireCurrentEditionDescriptor(task.syncDescriptor);
         final expectedGroup = task.syncOptions['groupId'];
         if (expectedGroup != null &&
             (task.syncDescriptor!['group'] as Map?)?['id'] != expectedGroup) {
@@ -783,6 +785,13 @@ class FolderTransferService extends ChangeNotifier {
     await _control(task, 'folder.directReady', {'id': task.id, 'offer': offer});
   }
 
+  void _requireCurrentEditionDescriptor(Map<String, dynamic>? descriptor) {
+    final group = descriptor?['group'];
+    if (group is! Map || group['edition'] != kApplicationId) {
+      throw const FormatException('传输属于其他版本或来自旧版，请更新两台设备并重新发送');
+    }
+  }
+
   Future<void> _receiveDirect(FolderTransferTask task) async {
     task.error = null;
     final directory = await _taskDirectory(task);
@@ -830,6 +839,7 @@ class FolderTransferService extends ChangeNotifier {
       );
       if (_cancelled(task)) return;
       task.syncDescriptor = Map<String, dynamic>.from(received['sync'] as Map);
+      _requireCurrentEditionDescriptor(task.syncDescriptor);
       final receivedManifest = Map<String, dynamic>.from(
         received['manifest'] as Map,
       );
@@ -929,7 +939,9 @@ class FolderTransferService extends ChangeNotifier {
     task.packagePath = file.path;
     Map<String, PortableFolderFingerprint> fingerprints = {};
     await prepareCatalog?.call(task.sourceCollectionId, task.peerId);
-    if (!await file.exists() || task.syncDescriptor == null) {
+    if (!await file.exists() ||
+        task.syncDescriptor == null ||
+        task.syncOptions['podcastReferenceOnlyVersion'] != 1) {
       task.stageLabel = '正在核对已有文件';
       _changed();
       final known = await _readInventory(task);
@@ -974,6 +986,11 @@ class FolderTransferService extends ChangeNotifier {
         },
       );
       fingerprints = prepared.fingerprints;
+      if (_cancelled(task)) return;
+      task.syncOptions = {
+        ...task.syncOptions,
+        'podcastReferenceOnlyVersion': 1,
+      };
     }
     if (_cancelled(task)) return;
     task.stageLabel = '正在关联观看进度';
@@ -1022,6 +1039,7 @@ class FolderTransferService extends ChangeNotifier {
       throw const FormatException('此传输使用旧版明文协议，请更新两台设备并重新发送');
     }
     if (task.transportOffer?['protocol'] == 3) return _receiveDirect(task);
+    _requireCurrentEditionDescriptor(task.syncDescriptor);
     task.error = null;
     final directory = await _taskDirectory(task);
     final file = File(p.join(directory.path, 'incoming.fluentpack'));

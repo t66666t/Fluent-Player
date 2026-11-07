@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../services/app_wakelock_coordinator.dart';
+import '../models/processing_screen_protection_timing.dart';
+import '../utils/page_shortcut_keys.dart';
 
 /// Shared by all processing wake-lock owners. This is an overlay, not a route.
 class ProcessingScreenProtection extends StatefulWidget {
@@ -13,11 +16,19 @@ class ProcessingScreenProtection extends StatefulWidget {
     required this.enabled,
     required this.child,
     this.observer,
+    this.idleDelay = const Duration(
+      seconds: ProcessingScreenProtectionTiming.defaultSeconds,
+    ),
+    this.playbackActive = false,
+    this.onDisableRequested,
   });
 
   final bool enabled;
   final Widget child;
   final ProtectionNavigatorObserver? observer;
+  final Duration idleDelay;
+  final bool playbackActive;
+  final Future<void> Function(BuildContext context)? onDisableRequested;
   static final navigationObserver = ProtectionNavigatorObserver();
 
   @override
@@ -67,7 +78,7 @@ class ProtectionNavigatorObserver extends NavigatorObserver {
 }
 
 class _ProtectionState extends State<ProcessingScreenProtection>
-    with WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _idle;
   Timer? _sample;
   Timer? _move;
@@ -78,10 +89,21 @@ class _ProtectionState extends State<ProcessingScreenProtection>
   bool _dimmed = false;
   bool _foreground = true;
   bool _eligible = false;
+  bool _dialogOpen = false;
+  bool _scrolling = false;
   int _position = 0;
   int _pointers = 0;
+  late final _entrance = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+  );
+  late final _fade = CurvedAnimation(
+    parent: _entrance,
+    curve: Curves.easeOutCubic,
+  );
   List<String> _details = const [];
   final _swallowedKeys = <PhysicalKeyboardKey>{};
+  final _auxiliaryPointers = <int>{};
   ProtectionNavigatorObserver get _observer =>
       widget.observer ?? ProcessingScreenProtection.navigationObserver;
 
@@ -99,6 +121,7 @@ class _ProtectionState extends State<ProcessingScreenProtection>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_key);
+    FocusManager.instance.addListener(_focusChanged);
     AppWakelockCoordinator.changes.addListener(_changed);
     _observer.changes.addListener(_navigation);
     _foreground =
@@ -117,6 +140,7 @@ class _ProtectionState extends State<ProcessingScreenProtection>
       _observer.changes.addListener(_navigation);
     }
     _refresh();
+    if (oldWidget.idleDelay != widget.idleDelay) _restartIdle();
   }
 
   void _changed() {
@@ -131,12 +155,22 @@ class _ProtectionState extends State<ProcessingScreenProtection>
   }
 
   void _navigation() => scheduleMicrotask(() {
-    if (mounted) _dismiss();
+    if (mounted) {
+      _scrolling = false;
+      _dismiss();
+    }
   });
+
+  void _focusChanged() {
+    if (mounted && !_disposing && !_visible) _restartIdle();
+  }
 
   void _refresh() {
     final eligible =
-        widget.enabled && _foreground && AppWakelockCoordinator.canProtect;
+        widget.enabled &&
+        _foreground &&
+        !widget.playbackActive &&
+        AppWakelockCoordinator.canProtect;
     if (_eligible == eligible) return;
     _eligible = eligible;
     if (!eligible) {
@@ -148,22 +182,40 @@ class _ProtectionState extends State<ProcessingScreenProtection>
 
   void _restartIdle() {
     _idle?.cancel();
+    if (_disposing) return;
     if (_eligible &&
         !_visible &&
+        !_dialogOpen &&
+        !_scrolling &&
         _pointers == 0 &&
+        !isEditableTextFocused() &&
+        _observer.currentRoute is PageRoute &&
         HardwareKeyboard.instance.physicalKeysPressed.isEmpty) {
-      _idle = Timer(const Duration(seconds: 10), _enter);
+      _idle = Timer(widget.idleDelay, _enter);
     }
   }
 
   void _enter() {
-    if (!mounted || !_eligible || _visible || _pointers != 0) return;
+    if (!mounted ||
+        !_eligible ||
+        _visible ||
+        !widget.enabled ||
+        widget.playbackActive ||
+        !AppWakelockCoordinator.canProtect ||
+        _dialogOpen ||
+        _scrolling ||
+        _pointers != 0 ||
+        _observer.currentRoute is! PageRoute) {
+      return;
+    }
     // A focused editor or assistive navigation should not be interrupted.
     if (WidgetsBinding
             .instance
             .platformDispatcher
             .accessibilityFeatures
             .accessibleNavigation ||
+        isEditableTextFocused() ||
+        HardwareKeyboard.instance.physicalKeysPressed.isNotEmpty ||
         (MediaQuery.maybeOf(context)?.viewInsets.bottom ?? 0) > 0) {
       _restartIdle();
       return;
@@ -182,6 +234,16 @@ class _ProtectionState extends State<ProcessingScreenProtection>
       _history = null;
     }
     setState(() => _visible = true);
+    if (WidgetsBinding
+            .instance
+            .platformDispatcher
+            .accessibilityFeatures
+            .disableAnimations ||
+        (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _entrance.value = 1;
+    } else {
+      _entrance.forward(from: 0);
+    }
     _sample = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       setState(() => _details = AppWakelockCoordinator.protectionDetails());
@@ -201,6 +263,7 @@ class _ProtectionState extends State<ProcessingScreenProtection>
   }
 
   void _dismiss() {
+    _entrance.stop();
     _sample?.cancel();
     _move?.cancel();
     _relocate?.cancel();
@@ -210,6 +273,23 @@ class _ProtectionState extends State<ProcessingScreenProtection>
     if (_visible && mounted) setState(() => _visible = false);
     _dimmed = false;
     _restartIdle();
+  }
+
+  Future<void> _requestDisable() async {
+    final request = widget.onDisableRequested;
+    final dialogContext = _observer.navigator?.overlay?.context;
+    if (_dialogOpen || request == null || dialogContext == null) return;
+    _dialogOpen = true;
+    _dismiss();
+    try {
+      await request(dialogContext);
+    } finally {
+      _dialogOpen = false;
+      if (mounted) {
+        _refresh();
+        _restartIdle();
+      }
+    }
   }
 
   bool _key(KeyEvent event) {
@@ -231,6 +311,8 @@ class _ProtectionState extends State<ProcessingScreenProtection>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
     _pointers = 0;
+    _auxiliaryPointers.clear();
+    _scrolling = false;
     _refresh();
   }
 
@@ -257,33 +339,65 @@ class _ProtectionState extends State<ProcessingScreenProtection>
     _observer.changes.removeListener(_navigation);
     AppWakelockCoordinator.changes.removeListener(_changed);
     HardwareKeyboard.instance.removeHandler(_key);
+    FocusManager.instance.removeListener(_focusChanged);
     WidgetsBinding.instance.removeObserver(this);
+    _fade.dispose();
+    _entrance.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Listener(
-      onPointerDown: (_) {
+      onPointerDown: (event) {
         _pointers++;
         _idle?.cancel();
+        if (_visible && event.buttons != kPrimaryButton) {
+          _auxiliaryPointers.add(event.pointer);
+        }
       },
-      onPointerUp: (_) {
+      onPointerUp: (event) {
         _pointers = (_pointers - 1).clamp(0, 100);
+        if (_auxiliaryPointers.remove(event.pointer) && _visible) _dismiss();
         _restartIdle();
       },
       onPointerCancel: (_) {
         _pointers = 0;
+        _auxiliaryPointers.clear();
         _restartIdle();
       },
       onPointerHover: (_) => _restartIdle(),
-      onPointerSignal: (_) => _restartIdle(),
+      onPointerSignal: (_) => _visible ? _dismiss() : _restartIdle(),
+      onPointerPanZoomStart: (_) {
+        _pointers++;
+        _idle?.cancel();
+      },
+      onPointerPanZoomEnd: (_) {
+        _pointers = (_pointers - 1).clamp(0, 100);
+        _restartIdle();
+      },
       child: Stack(
         fit: StackFit.expand,
         children: [
           ExcludeFocus(
             excluding: _visible,
-            child: ExcludeSemantics(excluding: _visible, child: widget.child),
+            child: ExcludeSemantics(
+              excluding: _visible,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (!_visible) {
+                    if (notification is ScrollStartNotification) {
+                      _scrolling = true;
+                    } else if (notification is ScrollEndNotification) {
+                      _scrolling = false;
+                    }
+                    _restartIdle();
+                  }
+                  return false;
+                },
+                child: widget.child,
+              ),
+            ),
           ),
           if (_visible)
             Positioned.fill(
@@ -297,33 +411,58 @@ class _ProtectionState extends State<ProcessingScreenProtection>
                   systemStatusBarContrastEnforced: false,
                   systemNavigationBarContrastEnforced: false,
                 ),
-                child: Listener(
-                  behavior: HitTestBehavior.opaque,
-                  // Dismiss on release so the entire first pointer sequence is
-                  // captured here, including mouse back/secondary buttons.
-                  onPointerUp: (_) => _dismiss(),
-                  onPointerSignal: (_) => _dismiss(),
-                  onPointerHover: (event) {
-                    if (event.delta.distance > 3) _dismiss();
-                  },
-                  child: Semantics(
-                    button: true,
-                    label: '屏幕保护，点击退出',
-                    onTap: _dismiss,
-                    child: ColoredBox(
-                      key: const ValueKey('processing-screen-protection'),
-                      color: Colors.black,
-                      child: SafeArea(
-                        minimum: const EdgeInsets.all(24),
-                        child: Align(
-                          alignment: _positions[_position],
-                          child: AnimatedOpacity(
-                            opacity: _dimmed ? 0 : 1,
-                            duration: const Duration(milliseconds: 600),
-                            child: ProtectionReadout(details: _details),
+                child: FadeTransition(
+                  key: const ValueKey('processing-protection-entrance'),
+                  opacity: _fade,
+                  child: ColoredBox(
+                    key: const ValueKey('processing-screen-protection'),
+                    color: Colors.black,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Positioned.fill(
+                          child: Listener(
+                            behavior: HitTestBehavior.opaque,
+                            // Capture the entire first pointer sequence.
+                            onPointerUp: (_) => _dismiss(),
+                            onPointerSignal: (_) => _dismiss(),
+                            child: Semantics(
+                              button: true,
+                              label: '屏幕保护，点击退出',
+                              onTap: _dismiss,
+                              child: const SizedBox.expand(),
+                            ),
                           ),
                         ),
-                      ),
+                        SafeArea(
+                          minimum: const EdgeInsets.all(24),
+                          child: Align(
+                            alignment: _positions[_position],
+                            child: AnimatedOpacity(
+                              opacity: _dimmed ? 0 : 1,
+                              duration: const Duration(milliseconds: 600),
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, .08),
+                                  end: Offset.zero,
+                                ).animate(_fade),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _dismiss,
+                                  onSecondaryTap: _dismiss,
+                                  child: ProtectionReadout(
+                                    details: _details,
+                                    onDisableRequested:
+                                        widget.onDisableRequested == null
+                                        ? null
+                                        : _requestDisable,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -337,8 +476,13 @@ class _ProtectionState extends State<ProcessingScreenProtection>
 
 /// Fixed geometry and tabular digits keep progress updates from shifting text.
 class ProtectionReadout extends StatelessWidget {
-  const ProtectionReadout({super.key, required this.details});
+  const ProtectionReadout({
+    super.key,
+    required this.details,
+    this.onDisableRequested,
+  });
   final List<String> details;
+  final VoidCallback? onDisableRequested;
 
   @override
   Widget build(BuildContext context) {
@@ -354,7 +498,7 @@ class ProtectionReadout extends StatelessWidget {
       fit: BoxFit.scaleDown,
       child: SizedBox(
         width: 256,
-        height: 168,
+        height: onDisableRequested == null ? 168 : 240,
         child: DefaultTextStyle(
           style: TextStyle(
             fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,
@@ -386,9 +530,63 @@ class ProtectionReadout extends StatelessWidget {
                 SizedBox(height: 28, child: Text(secondary)),
                 const SizedBox(height: 20),
                 const Text(
-                  '点击任意位置退出 · 按键 / 返回',
+                  '点击空白处或进度退出 · 按键 / 返回',
                   style: TextStyle(fontSize: 11, color: Color(0xFF686868)),
                 ),
+                if (onDisableRequested != null) ...[
+                  const SizedBox(height: 8),
+                  Material(
+                    color: Colors.transparent,
+                    child: Center(
+                      child: MergeSemantics(
+                        child: Semantics(
+                          checked: false,
+                          child: InkWell(
+                            key: const ValueKey(
+                              'processing-protection-disable',
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: onDisableRequested,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minHeight: 48,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.check_box_outline_blank_rounded,
+                                      key: ValueKey(
+                                        'processing-protection-disable-icon',
+                                      ),
+                                      size: 18,
+                                      color: Color(0xFF707070),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      '关闭防烧屏',
+                                      key: ValueKey(
+                                        'processing-protection-disable-label',
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF808080),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -14,13 +14,14 @@ import 'package:video_player_app/features/model_center/model_device_info.dart';
 import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
+import 'support/prepared_local_models.dart';
 
 String _projectPath(String relative) {
   const project = String.fromEnvironment('ASR_PIPELINE_ROOT');
   return p.join(project.isEmpty ? Directory.current.path : project, relative);
 }
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center({required super.storage});
   @override
   Future<void> initialize() async {}
@@ -139,7 +140,7 @@ void main() {
         createLocalWorker: () {
           final w = LocalAsrWorker(
             libraryDirectory:
-                'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+                '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
           );
           workers.add(w);
           return w;

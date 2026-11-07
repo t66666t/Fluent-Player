@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'processing_screen_protection_timing.dart';
 
 import 'package:flutter/widgets.dart';
 
@@ -16,7 +17,7 @@ import '../services/subtitle_manual_translation_settings.dart';
 import '../services/subtitle_translate_settings.dart';
 import 'danmaku_style.dart';
 
-/// A profile describes the device, never a fixed screen-specific layout.
+/// Device and home-window metrics used to choose initial preferences.
 class DefaultSettingsDevice {
   const DefaultSettingsDevice(this.platform, this.size);
   final TargetPlatform platform;
@@ -25,6 +26,7 @@ class DefaultSettingsDevice {
       platform == TargetPlatform.android || platform == TargetPlatform.iOS;
   bool get tablet => mobile && size.shortestSide >= 600;
   bool get phone => mobile && !tablet;
+  bool get skipPortraitPlayerByDefault => !mobile || size.width > size.height;
   String get label => phone
       ? '手机'
       : tablet
@@ -60,7 +62,7 @@ abstract final class RecommendedAppDefaults {
     'doubleTapSeekSeconds': 5,
     'autoPauseOnExit': device.mobile,
     'pausePlaybackWhenAppBackgrounded': device.mobile,
-    'skipPortraitPlayer': !device.phone,
+    'skipPortraitPlayer': device.skipPortraitPlayerByDefault,
     'allowConcurrentPlayback': false,
     'useHardwareVideoDecoding': true,
     'autoPlayOnPageEntry': true,
@@ -97,6 +99,8 @@ abstract final class RecommendedAppDefaults {
     'videoComposeDeleteOutputOnTaskDelete': false,
     'batchSubtitleAutoDelete': false,
     'processingScreenProtection': true,
+    'processingScreenProtectionWaitSeconds':
+        ProcessingScreenProtectionTiming.defaultSeconds,
     'batchSubtitleKeepScreenAwake': false,
     'batchSubtitleEmbedSoftDeleteOriginal': false,
     'batchSubtitleEmbedAutoDeleteSrt': false,
@@ -104,8 +108,8 @@ abstract final class RecommendedAppDefaults {
     'mediaLibraryRestoreLastPage': false,
     'mediaLibraryReadableCardDefaults': true,
     'mediaLibraryStartupEntry': 'folders',
-    'portraitSidebarShowTimestamps': !device.phone,
-    'landscapeSidebarShowTimestamps': true,
+    'portraitSidebarShowTimestamps': false,
+    'landscapeSidebarShowTimestamps': false,
     'portraitSidebarTimeColumnRatio': .12,
     'landscapeSidebarTimeColumnRatio': .16,
     'userSubtitleSidebarWidth': device.phone ? 262.4 : 320.0,
@@ -339,10 +343,8 @@ abstract final class RecommendedAppDefaults {
   static Map<String, String> summary(DefaultSettingsDevice device) => {
     '适用设备': '${device.label}，布局继续随窗口和横竖屏适配',
     '播放': '1 倍速、不锁速、不静音；长按 2 倍速；双击前后跳 5 秒；硬件解码、预览、耳机控制开启；单播放器',
-    '平台行为': device.phone
-        ? '保留竖屏播放入口；离开和后台暂停；震动与系统媒体通知开启'
-        : device.tablet
-        ? '优先横屏播放；离开和后台暂停；震动与系统媒体通知开启'
+    '平台行为': device.mobile
+        ? '${device.skipPortraitPlayerByDefault ? '跳过竖屏播放页' : '保留竖屏播放入口'}；离开和后台暂停；震动与系统媒体通知开启'
         : '优先横屏布局；离开页面和切到后台继续播放；关闭触觉和手机通知选项',
     '连续播放':
         '自动播放下一项；列表尾部停止；关闭单项重复和从头重复；${device.mobile ? '关闭视频预加载' : '开启视频预加载'}',
@@ -355,7 +357,7 @@ abstract final class RecommendedAppDefaults {
     '媒体库':
         '卡片视图；手机竖屏 3 列/横屏 6 列，平板竖屏 6 列/横屏 9 列，电脑竖屏 8 列/横屏 12 列，侧栏不改变列数；所有端共用宽 150、标题 12.5 的基准卡片，字号、封面、图标、间距、圆角和高度随卡宽严格等比例缩放；标题保留两行，默认高度按字体和辅助信息测量，不再强制宽度的 1.08 倍；系统文字放大时增加基准高度；手动设置优先；保留用户文件夹组织',
     '悬浮字幕':
-        '所有语言狮尾圆体；描边 4.0；阴影模糊 3.5、距离 2.5；黑底 90%；主副字号比 100:85；普通字幕按实际视频画面等比例缩放，横竖屏共用字号与相对位置；幽灵字幕保留独立屏幕阅读尺寸，参考主字号手机 16–17、平板 22–26、电脑不超过 26 逻辑像素；手动主副字号与整体倍率继续生效',
+        '所有语言狮尾圆体；描边 4.0；阴影模糊 3.5、距离 2.5；黑底 90%；默认主字号 30、副字号 25；普通字幕按实际视频画面等比例缩放，横竖屏共用字号与相对位置；幽灵字幕沿用独立屏幕阅读尺寸与缩放规则；手动主副字号与整体倍率继续生效',
     '字幕与弹幕':
         '自动缓存/跟随字幕、加载内嵌字幕；连续字幕关闭；弹幕显示与下载开启，关闭“弹幕仅在视频区域内展示”，不透明度 95%；思源黑体、700 字重；横竖屏分别保存字号、显示区域、速度和密度，源轨道重排到可用行，滚动/置顶/置底允许叠加，同类型只做短时入场防挤；竖屏默认手机字号约 14–16、上方 1/4 区域、50% 密度、1.0 倍（每秒 60 逻辑像素）；横屏默认字号随逻辑窗口温和变化、大小滑块 100%、上方 1/4 区域、100% 密度，初始速度 1.0 倍（每秒 60 逻辑像素），横竖屏同速；开启“以锁定倍速为弹幕速度基准”和“自动更新弹幕”；两套设置均可继续手动调整',
     '翻译与模型处理':

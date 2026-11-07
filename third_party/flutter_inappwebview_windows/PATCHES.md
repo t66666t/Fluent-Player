@@ -1,6 +1,8 @@
 # Windows composition shutdown
 
-The existing local JavaScript and download changes are retained.
+The local JavaScript null-response and composition lifetime fixes are retained.
+Community media observation is removed; see LOCAL_CHANGES.md for the aligned
+platform-interface migration and disabled network-capture APIs.
 
 The plugin's shared compositor, graphics context, dispatcher queue and WinRT
 helper used to survive until DLL static destruction. They are now released by

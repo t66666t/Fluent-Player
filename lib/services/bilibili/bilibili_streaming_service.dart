@@ -1,3 +1,4 @@
+import '../community_media_input.dart';
 import 'package:video_player_app/services/network/network_http.dart';
 import '../network/resumable_media_download.dart';
 import '../network/network_recovery.dart';
@@ -474,6 +475,7 @@ class BilibiliStreamingService extends ChangeNotifier {
   /// without opening a native player. Notification/Mini skip then only has to
   /// point libmpv at an already-live loopback URL.
   Future<void> prefetch(VideoItem item) async {
+    requireCommunityOfficialBilibili();
     if (_priorityStartup?.isPending == true) return;
     final source = item.sourceRef;
     if (source?.kind != MediaSourceKind.bilibiliStream ||
@@ -533,6 +535,7 @@ class BilibiliStreamingService extends ChangeNotifier {
     BilibiliStartupContext? startup,
     int? qualityId,
   }) async {
+    requireCommunityOfficialBilibili();
     if (startup == null) return prepare(item, qualityId: qualityId);
     startup.qualityId = qualityId ?? startup.qualityId;
     _priorityStartup = startup;
@@ -586,6 +589,7 @@ class BilibiliStreamingService extends ChangeNotifier {
     bool allowWarmReuse = true,
     bool forceRefresh = false,
   }) async {
+    requireCommunityOfficialBilibili();
     final startup = Zone.current[_startupZone] as BilibiliStartupContext?;
     startup?.check();
     final networkGeneration = _networkGeneration;
@@ -712,6 +716,7 @@ class BilibiliStreamingService extends ChangeNotifier {
   /// active source while still allowing the quality menu to offer online
   /// alternatives.
   Future<List<BilibiliStreamQuality>> listQualities(VideoItem item) async {
+    requireCommunityOfficialBilibili();
     final source = item.sourceRef;
     if (source?.bvid?.isNotEmpty != true || source?.cid == null) {
       throw const FormatException('媒体库条目缺少 Bilibili 播放身份信息');
@@ -1068,6 +1073,7 @@ class BilibiliStreamingService extends ChangeNotifier {
   }
 
   Future<List<BilibiliAudioQuality>> listAudioQualities(VideoItem item) async {
+    requireCommunityOfficialBilibili();
     final source = item.sourceRef;
     if (source?.bvid?.isNotEmpty != true || source?.cid == null) {
       return const [];
@@ -1156,6 +1162,7 @@ class BilibiliStreamingService extends ChangeNotifier {
     void Function(BilibiliAudioDownloadProgress progress)? onProgress,
     Future<void>? cancelSignal,
   }) {
+    requireCommunityOfficialBilibili();
     final source = item.sourceRef;
     if (source == null ||
         source.kind != MediaSourceKind.bilibiliStream ||

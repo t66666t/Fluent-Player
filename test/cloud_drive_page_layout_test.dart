@@ -11,6 +11,7 @@ import 'package:video_player_app/features/cloud_drive/models/cloud_drive_models.
 import 'package:video_player_app/features/cloud_drive/models/cloud_drive_view_options.dart';
 import 'package:video_player_app/features/cloud_drive/presentation/cloud_drive_screen.dart';
 import 'package:video_player_app/models/media_library_root_entry.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
@@ -22,10 +23,12 @@ import 'support/cloud_drive_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
   setUpAll(() async {
-    for (final font in ['MiSans', 'Noto Sans SC']) {
+    for (final font in ['Noto Sans SC', 'Noto Sans CJK Fallback']) {
       final loader = FontLoader(font)
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+        ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
       await loader.load();
     }
     final icons = FontLoader('MaterialIcons')
@@ -109,7 +112,7 @@ void main() {
               theme: ThemeData(
                 brightness: Brightness.dark,
                 useMaterial3: true,
-                fontFamily: 'MiSans',
+                fontFamily: 'Noto Sans SC',
                 scaffoldBackgroundColor: AppTokens.bgBase,
               ),
               home: RepaintBoundary(

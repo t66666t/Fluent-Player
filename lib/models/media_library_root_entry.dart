@@ -9,6 +9,15 @@ enum MediaLibraryRootEntry {
 }
 
 extension MediaLibraryRootEntryX on MediaLibraryRootEntry {
+  /// Local surfaces are distinct from the available RSS podcast surface.
+  bool get isLocal =>
+      this == MediaLibraryRootEntry.continueLearning ||
+      this == MediaLibraryRootEntry.recent ||
+      this == MediaLibraryRootEntry.folders;
+
+  /// Active community surfaces include local media and RSS podcasts.
+  bool get isAvailable => isLocal || this == MediaLibraryRootEntry.podcasts;
+
   String get storageValue {
     switch (this) {
       case MediaLibraryRootEntry.continueLearning:
@@ -39,7 +48,7 @@ extension MediaLibraryRootEntryX on MediaLibraryRootEntry {
       case MediaLibraryRootEntry.podcasts:
         return '播客';
       case MediaLibraryRootEntry.cloudDrive:
-        return '网盘';
+        return '网盘官网';
     }
   }
 

@@ -14,14 +14,15 @@ import 'package:video_player_app/features/model_center/device_resource_snapshot.
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/features/model_center/bounded_model_pipeline.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const enabled = bool.fromEnvironment('ASR_WORKFLOW_NATIVE');
   const project = String.fromEnvironment('ASR_WORKFLOW_ROOT');
   final root = project.isEmpty ? Directory.current.path : project;
-  const libraries =
-      'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows';
+  final libraries =
+      '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows';
   test(
     'zero-copy native VAD preserves padded frame detection and resets between chunks',
     () async {
@@ -30,7 +31,7 @@ void main() {
       final vad = sherpa.VoiceActivityDetector(
         config: sherpa.VadModelConfig(
           sileroVad: sherpa.SileroVadModelConfig(
-            model: p.join(root, 'assets/models/asr/silero_vad.onnx'),
+            model: asrProbeVadPath(),
             minSilenceDuration: .35,
             minSpeechDuration: .18,
             maxSpeechDuration: 12,
@@ -140,7 +141,7 @@ void main() {
             await worker.start(
               engine: model.engine,
               directory: directory,
-              vadPath: p.join(root, 'assets/models/asr/silero_vad.onnx'),
+              vadPath: asrProbeVadPath(),
               language: language,
               threads: 2,
               retainModels: reuse,
@@ -163,7 +164,7 @@ void main() {
               await post.start(
                 engine: model.engine,
                 directory: directory,
-                vadPath: p.join(root, 'assets/models/asr/silero_vad.onnx'),
+                vadPath: asrProbeVadPath(),
                 language: language,
                 threads: 2,
                 retainModels: true,
@@ -336,7 +337,7 @@ void main() {
             root,
             '.artifacts/model-center/native/parakeet-v3-int8',
           ),
-          vadPath: p.join(root, 'assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'en',
           threads: 2,
           retainModels: true,

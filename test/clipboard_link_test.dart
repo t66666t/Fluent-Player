@@ -281,7 +281,7 @@ void main() {
         'https://v.douyin.com.evil.example/abc/',
         'https://example.org/?url=https://v.douyin.com/abc/',
       ]) {
-        expect(detect(url).single.offersGenericDownload, isTrue, reason: url);
+        expect(detect(url).single.offersGenericDownload, isFalse, reason: url);
       }
     },
   );

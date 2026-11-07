@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/screens/collection_screen.dart';
@@ -16,6 +17,9 @@ import 'package:video_player_app/widgets/media_library_selection_bottom_bar.dart
 import 'package:video_player_app/widgets/media_library_selection_drop_targets.dart';
 
 void main() {
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
+
   for (final size in [const Size(400, 800), const Size(1200, 800)]) {
     for (final viewMode in [0, 1]) {
       testWidgets('selection exits before saving at $size, mode $viewMode', (

@@ -20,4 +20,4 @@ if [ "${FLUENT_PLAYER_SOFTWARE_RENDERING:-0}" = 1 ]; then
     LIBGL_ALWAYS_SOFTWARE=1
     export LIBGL_ALWAYS_SOFTWARE
 fi
-exec "$APP_DIR/video_player_app" "$@"
+exec "$APP_DIR/fluent-player" "$@"

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'community_media_input.dart';
 import '../features/model_center/inference_resource_governor.dart';
 import '../models/subtitle_stream.dart';
 import 'subtitle_stream_source.dart';
@@ -65,6 +66,31 @@ import '../utils/subtitle_converter.dart';
 import '../utils/subtitle_parser.dart';
 import 'subtitle_word_timing_store.dart';
 import '../utils/youtube_auto_caption_normalizer.dart';
+
+// Runtime projection only: preserve the library's historical provenance while
+// preventing it from selecting a remote transport for an actual local file.
+VideoItem _communityPlaybackItem(VideoItem item) {
+  requireCommunityPlaybackSource(item.path, source: item.sourceRef);
+  if (communityMediaIsPodcast(item.path, source: item.sourceRef)) return item;
+  final path = communityLocalMediaPath(item.path);
+  final previousPlaybackPath = item.playbackPath;
+  final playbackPath =
+      previousPlaybackPath != null &&
+          communityMediaIsLocal(previousPlaybackPath)
+      ? communityLocalMediaPath(previousPlaybackPath)
+      : null;
+  if (item.sourceRef == null &&
+      path == item.path &&
+      playbackPath == previousPlaybackPath) {
+    return item;
+  }
+  return VideoItem.fromJson({
+    ...item.toJson(),
+    'path': path,
+    'playbackPath': playbackPath,
+    'sourceRef': null,
+  });
+}
 
 List<Map<String, Object?>> _parseTextSubtitlesToSerializable(
   Map<String, Object?> input,
@@ -328,13 +354,24 @@ class MediaPlaybackService extends ChangeNotifier {
   final Set<Object> _playbackPageOwners = <Object>{};
   final Set<Object> _miniPlaybackCardOwners = <Object>{};
 
-  /// While the landscape music cover is showing video, playback pages must
-  /// not also mount a [Video] for this controller. media_kit keeps a single
-  /// output view; a second one steals the texture.
-  Object? _musicCoverVideoSurfaceOwner;
+  /// While an auxiliary surface is showing video — the landscape music cover
+  /// or the floating player inside the fullscreen AI chat — playback pages
+  /// must not also mount a [Video] for this controller. media_kit keeps a
+  /// single output view; a second one steals the texture.
+  ///
+  /// Exactly one claimant is allowed. The last claim wins, and the previous
+  /// holder is expected to notice via [notifyListeners] and drop its own view
+  /// (the music cover snaps back to its artwork).
+  Object? _videoSurfaceClaimant;
   bool _musicCoverRequestsBilibiliVideo = false;
 
-  bool get musicCoverOwnsVideoSurface => _musicCoverVideoSurfaceOwner != null;
+  bool get videoSurfaceClaimed => _videoSurfaceClaimant != null;
+
+  bool ownsVideoSurface(Object owner) =>
+      identical(_videoSurfaceClaimant, owner);
+
+  /// Pages ask whether *anything* borrowed the output, not just the cover.
+  bool get musicCoverOwnsVideoSurface => videoSurfaceClaimed;
   bool _mediaNotificationVisible = false;
   final SleepTimerController sleepTimer = SleepTimerController();
 
@@ -724,14 +761,7 @@ class MediaPlaybackService extends ChangeNotifier {
   @visibleForTesting
   PlaybackStartupContext? get onlineStartupForTesting => _onlineStartup;
 
-  bool _isOnlineMedia(VideoItem item) =>
-      item.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
-      item.sourceRef?.podcast != null ||
-      item.sourceRef?.kind == MediaSourceKind.podcastEpisode ||
-      isCloudDriveMedia(source: item.sourceRef, path: item.path) ||
-      item.path.startsWith('http://') ||
-      item.path.startsWith('https://') ||
-      item.path.startsWith('podcast:');
+  bool _isOnlineMedia(VideoItem item) => !communityMediaIsLocal(item.path);
 
   Future<MaterializedMediaLease?> _acquireBilibiliPlaybackFile(
     VideoItem item, {
@@ -1378,19 +1408,37 @@ class MediaPlaybackService extends ChangeNotifier {
 
   /// Drops a cover request that never reached a mounted surface.
   void cancelMusicCoverVideoRequest() {
-    if (_musicCoverVideoSurfaceOwner != null) return;
+    if (_videoSurfaceClaimant != null) return;
     if (!_musicCoverRequestsBilibiliVideo) return;
     _musicCoverRequestsBilibiliVideo = false;
     _syncBilibiliVideoTrackPolicy();
   }
 
+  /// Takes the shared video output for an auxiliary surface.
+  ///
+  /// The caller must mount its own [Video] only after the playback page below
+  /// has rebuilt without one, i.e. at least one frame later.
+  void claimVideoSurface(Object owner) {
+    if (identical(_videoSurfaceClaimant, owner)) return;
+    _videoSurfaceClaimant = owner;
+    notifyListeners();
+  }
+
+  /// Gives the shared video output back. Releasing is idempotent for a stale
+  /// owner so a widget that already lost the claim cannot clear the new one.
+  void releaseVideoSurface(Object owner) {
+    if (!identical(_videoSurfaceClaimant, owner)) return;
+    _videoSurfaceClaimant = null;
+    notifyListeners();
+  }
+
   void setMusicCoverVideoSurfaceOwner(Object owner, bool owned) {
     if (owned) {
-      if (identical(_musicCoverVideoSurfaceOwner, owner)) return;
-      _musicCoverVideoSurfaceOwner = owner;
+      if (identical(_videoSurfaceClaimant, owner)) return;
+      _videoSurfaceClaimant = owner;
     } else {
-      if (!identical(_musicCoverVideoSurfaceOwner, owner)) return;
-      _musicCoverVideoSurfaceOwner = null;
+      if (!identical(_videoSurfaceClaimant, owner)) return;
+      _videoSurfaceClaimant = null;
       _musicCoverRequestsBilibiliVideo = false;
       _syncBilibiliVideoTrackPolicy();
     }
@@ -1400,9 +1448,8 @@ class MediaPlaybackService extends ChangeNotifier {
   @visibleForTesting
   void debugClearMusicCoverVideoSurface() {
     final notify =
-        _musicCoverVideoSurfaceOwner != null ||
-        _musicCoverRequestsBilibiliVideo;
-    _musicCoverVideoSurfaceOwner = null;
+        _videoSurfaceClaimant != null || _musicCoverRequestsBilibiliVideo;
+    _videoSurfaceClaimant = null;
     if (_musicCoverRequestsBilibiliVideo) {
       _musicCoverRequestsBilibiliVideo = false;
       _syncBilibiliVideoTrackPolicy();
@@ -3156,6 +3203,8 @@ class MediaPlaybackService extends ChangeNotifier {
   /// Restore uses this so Mini playback card can appear from local metadata.
   /// A live session is left untouched.
   void publishRestoredSessionPreview(VideoItem item, Duration position) {
+    if (!communityMediaIsPlayable(item.path, source: item.sourceRef)) return;
+    item = _communityPlaybackItem(item);
     if (_currentItem != null || _controller != null) return;
     final loadingDuration = Duration(
       milliseconds: item.durationMs > 0 ? item.durationMs : 0,
@@ -3185,42 +3234,16 @@ class MediaPlaybackService extends ChangeNotifier {
 
   /// Remote bookmarks render from local metadata. Only local files can prepare
   /// a native player during restore without depending on network availability.
-  static bool shouldPrepareNativePlayerOnRestore(VideoItem item) {
-    if (itemNeedsOnlineMaterialization(
-          source: item.sourceRef,
-          path: item.path,
-        ) ||
-        item.sourceRef?.kind == MediaSourceKind.podcastEpisode ||
-        item.path.startsWith('podcast:')) {
-      return false;
-    }
-    final uri = Uri.tryParse(item.path);
-    return uri == null ||
-        !uri.hasScheme ||
-        uri.scheme == 'file' ||
-        (uri.scheme.length == 1 && item.path.length > 2 && item.path[1] == ':');
-  }
+  static bool shouldPrepareNativePlayerOnRestore(VideoItem item) =>
+      communityMediaIsLocal(item.path);
 
   /// Opens a restored online item in the background, paused at [position].
   ///
   /// Mini chrome is already on screen. Doing this work at launch means opening
   /// the card does not wait on playurl, TLS and a cold decoder. Failure leaves
   /// the bookmark in place so the card can retry.
-  Future<void> warmRestoredOnlinePlayback(VideoItem item, Duration position) {
-    if (item.sourceRef?.kind != MediaSourceKind.bilibiliStream) {
-      return Future<void>.value();
-    }
-    if (_currentItem?.id != item.id || _controller != null) {
-      return Future<void>.value();
-    }
-    return play(
-      item,
-      startPosition: position,
-      autoPlay: false,
-      userInitiatedWatch: false,
-      keepBookmarkOnFailure: true,
-    );
-  }
+  Future<void> warmRestoredOnlinePlayback(VideoItem item, Duration position) =>
+      Future<void>.value();
 
   /// A Mini-card open must not start a second play while restore is already
   /// preparing this item. That second call cancels the in-flight open and can
@@ -3943,6 +3966,9 @@ class MediaPlaybackService extends ChangeNotifier {
           final bilibili = change.scopes.contains(NetworkScope.bilibili);
           final cloud = change.scopes.contains(NetworkScope.cloudDrive);
           final item = _currentItem;
+          if (!communityMediaIsPlayable(item?.path ?? '', source: item?.sourceRef)) {
+            return;
+          }
           if (item?.sourceRef?.kind == MediaSourceKind.bilibiliStream &&
               _currentMaterializedPlaybackLease != null) {
             // An offline representation owns no API/CDN connection to
@@ -4156,7 +4182,9 @@ class MediaPlaybackService extends ChangeNotifier {
   }
 
   @visibleForTesting
-  int get subtitleIntentGenerationForTest => _subtitleIntentGeneration;
+  int get subtitleIntentGenerationForTest => subtitleSelectionRevision;
+
+  int get subtitleSelectionRevision => _subtitleIntentGeneration;
 
   String? get selectedCloudDriveQualityId => _selectedCloudDriveQualityId;
 
@@ -5993,8 +6021,9 @@ class MediaPlaybackService extends ChangeNotifier {
     required String itemId,
     required List<String> paths,
     bool userInitiated = true,
+    bool Function()? shouldApply,
   }) async {
-    if (_currentItem?.id != itemId) return false;
+    if (_currentItem?.id != itemId || shouldApply?.call() == false) return false;
     final int requestId = _beginSubtitleLoad();
     // An explicit (including empty) selection wins over a pending auto task.
     if (userInitiated) {
@@ -6007,7 +6036,7 @@ class MediaPlaybackService extends ChangeNotifier {
         paths.where((path) => path.trim().isNotEmpty).take(2),
       );
       if (selectedPaths.isEmpty) {
-        if (requestId != _subtitleLoadRequestId || _currentItem?.id != itemId) {
+        if (requestId != _subtitleLoadRequestId || _currentItem?.id != itemId || shouldApply?.call() == false) {
           return false;
         }
         _currentItem!
@@ -6024,7 +6053,7 @@ class MediaPlaybackService extends ChangeNotifier {
       final parsed = await Future.wait(selectedPaths.map(_parseSubtitleFile));
       final primary = parsed.first;
       final secondary = parsed.length > 1 ? parsed[1] : <SubtitleItem>[];
-      if (requestId != _subtitleLoadRequestId || _currentItem?.id != itemId) {
+      if (requestId != _subtitleLoadRequestId || _currentItem?.id != itemId || shouldApply?.call() == false) {
         return false;
       }
 
@@ -6913,6 +6942,9 @@ class MediaPlaybackService extends ChangeNotifier {
 
   /// 设置外部控制器（用于UI创建的控制器移交给服务管理）
   Future<void> setController(VideoPlayerController controller) async {
+    if (!identical(controller, _controller)) {
+      requireCommunityLocalMedia(controller.dataSource);
+    }
     // 如果是同一个控制器，无需处理
     if (_controller == controller) return;
     _playRequestId++;
@@ -7191,6 +7223,7 @@ class MediaPlaybackService extends ChangeNotifier {
 
   /// 更新媒体元数据
   Future<void> updateMetadata(VideoItem item) async {
+    item = _communityPlaybackItem(item);
     if (_currentItem?.id != item.id) {
       _clearSubtitleStateForMediaSwitch();
     }
@@ -7303,6 +7336,11 @@ class MediaPlaybackService extends ChangeNotifier {
     bool allowCloudDriveFallback = true,
     int? directEpoch,
   }) {
+    try {
+      item = _communityPlaybackItem(item);
+    } catch (error, stack) {
+      return Future<void>.error(error, stack);
+    }
     final epoch = directEpoch ?? _directEpoch;
     final pending = _onlinePlayInFlight;
     if (!forceRecreate &&
@@ -9838,6 +9876,9 @@ class MediaPlaybackService extends ChangeNotifier {
 
   /// 继续播放
   Future<void> resume() async {
+    if (_currentItem case final current?) {
+      requireCommunityPlaybackSource(current.path, source: current.sourceRef);
+    }
     final currentItem = _currentItem;
     if (currentItem == null && queuedPreviewItem != null) {
       await playPlaylistItem(queuedPreviewItem!, autoPlay: true);
@@ -10698,6 +10739,7 @@ class MediaPlaybackService extends ChangeNotifier {
     Duration? startPosition,
     bool forceFromStart = false,
   }) async {
+    item = _communityPlaybackItem(item);
     final manager = _playlistManager;
     if (manager != null && !manager.isQueueEligible(item)) return;
     // The intent exists before the switch lock, so a tap on C does not wait
@@ -12020,18 +12062,8 @@ class MediaPlaybackService extends ChangeNotifier {
   /// call that runs before the current prepare() finishes must pass false:
   /// retaining then would release the session this switch is about to play.
   void _prefetchNeighborBilibiliStreams({bool replaceStale = true}) {
-    final streaming = _bilibiliStreamingService;
-    if (streaming == null) return;
-    final neighbors = <VideoItem>[
-      ?nextPlayableItem,
-      ?previousPlayableItem,
-    ].where((item) => item.sourceRef?.kind == MediaSourceKind.bilibiliStream);
-    if (replaceStale) {
-      streaming.retainWarmPlaybacks({for (final item in neighbors) item.id});
-    }
-    for (final item in neighbors) {
-      unawaited(streaming.prefetch(item));
-    }
+    // Retire any inherited warm handles; never request remote neighbors.
+    _bilibiliStreamingService?.retainWarmPlaybacks({});
   }
 
   /// 预加载播放列表中的下一个视频控制器
@@ -12042,8 +12074,11 @@ class MediaPlaybackService extends ChangeNotifier {
     // speculative controller can block a background episode switch.
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) return;
 
-    final nextItem = nextPlayableItem;
-    if (nextItem == null) return;
+    final nextCandidate = nextPlayableItem;
+    if (nextCandidate == null || !communityMediaIsLocal(nextCandidate.path)) {
+      return;
+    }
+    final nextItem = _communityPlaybackItem(nextCandidate);
     if (nextItem.sourceRef?.kind == MediaSourceKind.bilibiliStream) {
       // Online Bilibili is playurl + CDN TLS, not a second native Player.
       // A speculative Player would compete with the current stream for Range

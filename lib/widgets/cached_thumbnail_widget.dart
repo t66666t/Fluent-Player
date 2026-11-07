@@ -1,58 +1,21 @@
 import 'dart:async';
-import 'dart:ui' show lerpDouble;
+import 'dart:collection';
 import 'package:flutter/material.dart';
 import '../services/thumbnail_cache_service.dart';
+import '../services/thumbnail_decode_scheduler.dart';
 import 'media_card_preparation.dart';
+import 'media_cover_reveal.dart';
+
+export 'media_cover_reveal.dart'
+    show MediaCoverRevealStamp, mediaCoverRevealDelay;
 
 /// Covers that have already played their entrance. Scrolling back should
 /// not run the cascade again.
-final Set<String> _revealedCoverKeys = <String>{};
+final LinkedHashSet<String> _revealedCoverKeys = LinkedHashSet<String>();
 
 /// Test hook. The set is process-wide so cases do not leak into each other.
 @visibleForTesting
 void resetMediaCoverRevealMemory() => _revealedCoverKeys.clear();
-
-/// How long a cover waits before its fade, so a grid washes in by row
-/// instead of popping as one block.
-///
-/// Only the first five rows wait. Anything further down was scrolled into
-/// view and should fade as soon as it decodes.
-Duration mediaCoverRevealDelay({
-  required int index,
-  required int crossAxisCount,
-}) {
-  if (index < 0) return Duration.zero;
-  final columns = crossAxisCount < 1 ? 1 : crossAxisCount;
-  final row = index ~/ columns;
-  if (row >= 5) return Duration.zero;
-  final column = index % columns;
-  // Row gap is long enough to read as a wave; the column gap is a lighter
-  // left-to-right trickle inside that row.
-  return Duration(milliseconds: row * 72 + column * 36);
-}
-
-/// Marks one grid cell so [CachedThumbnailWidget] can join that cascade.
-class MediaCoverRevealStamp extends InheritedWidget {
-  const MediaCoverRevealStamp({
-    super.key,
-    required this.index,
-    required this.crossAxisCount,
-    required super.child,
-  });
-
-  final int index;
-  final int crossAxisCount;
-
-  static MediaCoverRevealStamp? maybeOf(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<MediaCoverRevealStamp>();
-  }
-
-  @override
-  bool updateShouldNotify(MediaCoverRevealStamp oldWidget) {
-    return index != oldWidget.index ||
-        crossAxisCount != oldWidget.crossAxisCount;
-  }
-}
 
 /// 缓存缩略图组件
 ///
@@ -146,11 +109,12 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
   /// 行级出场。没有 [MediaCoverRevealStamp] 的调用方保持原来的即时显示。
   late final AnimationController _reveal;
   MediaCoverRevealStamp? _stamp;
-
-  /// Identity of the cascade already started, so a parent rebuild does not
-  /// restart it, and a recycled cell with a new index does.
+  MediaCoverRevealCoordinator? _coordinator;
+  MediaCoverRevealTicket? _ticket;
   String? _clockKey;
-  Duration _stagedDelay = Duration.zero;
+  ThumbnailDecodeRequest? _decodeRequest;
+  ImageProvider? _requestedProvider;
+  ImageProvider? _decodedProvider;
 
   @override
   void initState() {
@@ -173,14 +137,30 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final preparation = MediaCardPreparationHost.maybeOf(context);
-    if (!identical(preparation, _preparation)) {
+    final stamp = MediaCoverRevealStamp.maybeOf(context);
+    if (!identical(preparation, _preparation) ||
+        (_stamp == null) != (stamp == null)) {
       _finishPreparation();
       _preparation = preparation;
-      if (_loadingState != _LoadingState.error) _beginPreparation();
+      _prepareExpired = false;
+      if (stamp == null && _loadingState != _LoadingState.error) {
+        _beginPreparation();
+      }
     }
-    _stamp = preparation == null
-        ? MediaCoverRevealStamp.maybeOf(context)
-        : null;
+    final coordinator = stamp == null
+        ? null
+        : mediaCoverRevealCoordinatorOf(context);
+    if (_stamp?.index != stamp?.index ||
+        _stamp?.crossAxisCount != stamp?.crossAxisCount ||
+        !identical(_coordinator, coordinator)) {
+      _ticket?.dispose();
+      _ticket = null;
+      _coordinator = coordinator;
+      _stamp = stamp;
+      _registerReveal();
+    } else {
+      _stamp = stamp;
+    }
     _kickStagedReveal();
   }
 
@@ -191,12 +171,15 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
     if (oldWidget.videoId != widget.videoId ||
         oldWidget.thumbnailPath != widget.thumbnailPath) {
       _finishPreparation();
-      _beginPreparation();
+      if (!_staged) _beginPreparation();
       _prepareExpired = false;
       _clockKey = null;
       _reveal.stop();
       _reveal.value = 0;
       _cancelPendingLoad();
+      _ticket?.dispose();
+      _ticket = null;
+      _registerReveal();
       final cachedProvider = _cacheService.getThumbnailFromMemory(
         widget.videoId,
         widget.thumbnailPath,
@@ -218,6 +201,7 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
     _isDisposed = true;
     _finishPreparation();
     _cancelPendingLoad();
+    _ticket?.dispose();
     _reveal.removeStatusListener(_onRevealStatus);
     _reveal.dispose();
     super.dispose();
@@ -230,59 +214,67 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
 
   void _onRevealStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed || !_staged) return;
+    _revealedCoverKeys.remove(_revealMemoryKey);
     _revealedCoverKeys.add(_revealMemoryKey);
+    while (_revealedCoverKeys.length > 512) {
+      _revealedCoverKeys.remove(_revealedCoverKeys.first);
+    }
   }
 
-  /// Starts the hold-then-fade once the pixels exist. The controller is
-  /// muted while the page is hidden, so a prewarmed grid does not burn the
-  /// cascade before the user actually lands on it.
-  void _kickStagedReveal() {
-    if (!_staged || _loadingState != _LoadingState.loaded) return;
-    if (_imageProvider == null) return;
-    final key = '$_revealMemoryKey#${_stamp!.index}/${_stamp!.crossAxisCount}';
-    if (_revealedCoverKeys.contains(_revealMemoryKey)) {
-      _clockKey = key;
-      if (_reveal.value != 1) {
-        if (_reveal.isAnimating) _reveal.stop();
-        _reveal.value = 1;
-      }
+  void _registerReveal() {
+    final stamp = _stamp;
+    final coordinator = _coordinator;
+    if (stamp == null ||
+        coordinator == null ||
+        stamp.index < 0 ||
+        stamp.index >=
+            5 * (stamp.crossAxisCount < 1 ? 1 : stamp.crossAxisCount)) {
       return;
     }
-    if (_clockKey == key && (_reveal.isAnimating || _reveal.value > 0)) {
+    _ticket = coordinator.register(stamp.index, _startReveal);
+  }
+
+  void _startReveal() {
+    if (!mounted || !_staged || _decodedProvider == null) return;
+    if (MediaQuery.disableAnimationsOf(context) ||
+        widget.fadeInDuration <= Duration.zero ||
+        _revealedCoverKeys.contains(_revealMemoryKey)) {
+      _reveal.value = 1;
       return;
     }
-    if (_reveal.isAnimating) _reveal.stop();
-    _clockKey = key;
-    final delay = mediaCoverRevealDelay(
-      index: _stamp!.index,
-      crossAxisCount: _stamp!.crossAxisCount,
-    );
-    final fade = widget.fadeInDuration;
-    final total = delay + fade;
-    _stagedDelay = delay;
-    _reveal.duration = total <= Duration.zero
-        ? const Duration(milliseconds: 1)
-        : total;
+    _reveal.duration = widget.fadeInDuration;
     _reveal.forward(from: 0);
   }
 
-  /// 0 until this cell's row slot, then ease-out across the fade.
-  double get _stagedOpacity {
-    final totalUs = _reveal.duration?.inMicroseconds ?? 0;
-    if (totalUs <= 0) return _reveal.value;
-    final elapsed = _reveal.value * totalUs;
-    final delayUs = _stagedDelay.inMicroseconds;
-    if (elapsed <= delayUs) return 0;
-    final fadeUs = widget.fadeInDuration.inMicroseconds;
-    if (fadeUs <= 0) return 1;
-    final raw = ((elapsed - delayUs) / fadeUs).clamp(0.0, 1.0);
-    return Curves.easeOutCubic.transform(raw);
+  /// Do not start the fade when a FileImage is created: it has no pixels yet.
+  void _kickStagedReveal() {
+    if (!_staged || _loadingState != _LoadingState.loaded) return;
+    if (_decodedProvider == null) return;
+    final key = '$_revealMemoryKey#${_stamp!.index}/${_stamp!.crossAxisCount}';
+    if (_clockKey == key || _reveal.isAnimating || _reveal.value > 0) return;
+    _clockKey = key;
+    if (_revealedCoverKeys.contains(_revealMemoryKey) ||
+        MediaQuery.disableAnimationsOf(context)) {
+      _ticket?.dispose();
+      _ticket = null;
+      _startReveal();
+    } else if (_ticket != null) {
+      _ticket!.ready();
+    } else {
+      _startReveal();
+    }
   }
+
+  double get _stagedOpacity => Curves.easeOutCubic.transform(_reveal.value);
 
   /// 取消正在进行的加载操作
   void _cancelPendingLoad() {
     _thumbnailRequest?.dispose();
     _thumbnailRequest = null;
+    _decodeRequest?.dispose();
+    _decodeRequest = null;
+    _requestedProvider = null;
+    _decodedProvider = null;
     _loadCompleter?.complete();
     _loadCompleter = null;
   }
@@ -346,6 +338,8 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
         });
         _kickStagedReveal();
       } else {
+        _ticket?.dispose();
+        _ticket = null;
         setState(() {
           _loadingState = _LoadingState.error;
         });
@@ -357,6 +351,8 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
       }
 
       debugPrint('CachedThumbnailWidget 加载失败: $e');
+      _ticket?.dispose();
+      _ticket = null;
       setState(() {
         _loadingState = _LoadingState.error;
       });
@@ -374,7 +370,7 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
 
   @override
   Widget build(BuildContext context) {
-    if (_prepareExpired && _loadingState != _LoadingState.loaded) {
+    if (!_staged && _prepareExpired && _loadingState != _LoadingState.loaded) {
       return _buildErrorWidget();
     }
     return _buildContent();
@@ -394,6 +390,9 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
 
   /// 构建占位符
   Widget _buildPlaceholder() {
+    if (_staged && widget.placeholder == null) {
+      return const ColoredBox(color: Color(0xFF121212));
+    }
     return widget.placeholder ??
         Container(
           key: const ValueKey('placeholder'),
@@ -416,9 +415,60 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
     builder: (context, constraints) => _buildSizedImage(context, constraints),
   );
 
+  void _ensureDecoded(ImageProvider provider) {
+    if (_requestedProvider == provider) return;
+    _decodeRequest?.dispose();
+    _requestedProvider = provider;
+    final request = ThumbnailDecodeScheduler.instance.request(
+      provider,
+      createLocalImageConfiguration(context),
+      priority: (_stamp?.index ?? 0).clamp(0, 1 << 29),
+      shouldDefer: () =>
+          mounted && Scrollable.recommendDeferredLoadingForContext(context),
+    );
+    _decodeRequest = request;
+    request.ready.then((success) {
+      request.dispose();
+      if (!mounted || !identical(_decodeRequest, request)) return;
+      _decodeRequest = null;
+      if (!success && _decodedProvider == null) {
+        _ticket?.dispose();
+        _ticket = null;
+        _finishPreparation();
+        setState(() => _loadingState = _LoadingState.error);
+        return;
+      }
+      if (success) {
+        setState(() => _decodedProvider = provider);
+        _finishPreparation();
+        _kickStagedReveal();
+      }
+    });
+  }
+
   Widget _buildSizedImage(BuildContext context, BoxConstraints constraints) {
     if (_imageProvider == null) {
       return _buildErrorWidget();
+    }
+
+    final targetProvider = libraryThumbnailProvider(
+      _imageProvider!,
+      width:
+          widget.cacheWidth ??
+          (constraints.maxWidth.isFinite
+              ? (constraints.maxWidth * MediaQuery.devicePixelRatioOf(context))
+                    .round()
+              : 512),
+      height:
+          widget.cacheHeight ??
+          (constraints.maxHeight.isFinite
+              ? (constraints.maxHeight * MediaQuery.devicePixelRatioOf(context))
+                    .round()
+              : null),
+    );
+    if (_staged) {
+      _ensureDecoded(targetProvider);
+      if (_decodedProvider == null) return _buildPlaceholder();
     }
 
     // Keep the underlay a solid dark fill. Grid cards used to stack a 50px
@@ -427,39 +477,20 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
     // rounded white square on the now-tiny thumbnail.
     final image = Image(
       key: ValueKey('image_${widget.videoId}'),
-      image: libraryThumbnailProvider(
-        _imageProvider!,
-        width:
-            widget.cacheWidth ??
-            (constraints.maxWidth.isFinite
-                ? (constraints.maxWidth *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round()
-                : 512),
-        height:
-            widget.cacheHeight ??
-            (constraints.maxHeight.isFinite
-                ? (constraints.maxHeight *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round()
-                : null),
-      ),
+      image: _staged ? _decodedProvider! : targetProvider,
       fit: widget.fit,
       width: double.infinity,
       height: double.infinity,
       alignment: Alignment.center,
       gaplessPlayback: true,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (_staged) {
+          if (wasSynchronouslyLoaded || frame != null) return child;
+          return const SizedBox.expand();
+        }
         if (_preparation != null) {
           if (wasSynchronouslyLoaded || frame != null) _finishPreparation();
           return child;
-        }
-        if (_staged) {
-          // The cascade below owns the fade, including memory-cache hits.
-          // Those used to return the child immediately, so a whole screen
-          // of covers popped in on one frame.
-          if (wasSynchronouslyLoaded || frame != null) return child;
-          return const SizedBox.expand();
         }
         if (wasSynchronouslyLoaded) {
           return child;
@@ -484,24 +515,16 @@ class _CachedThumbnailWidgetState extends State<CachedThumbnailWidget>
       animation: _reveal,
       builder: (context, child) {
         final t = _stagedOpacity;
-        final scale = t >= 1 ? 1.0 : lerpDouble(1.035, 1, t)!;
-        return ClipRect(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (t < 1) _buildPlaceholder(),
-              Opacity(
-                opacity: t,
-                child: Transform.scale(
-                  scale: scale,
-                  filterQuality: t >= 1
-                      ? FilterQuality.none
-                      : FilterQuality.low,
-                  child: child,
-                ),
-              ),
-            ],
-          ),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (t < 1) _buildPlaceholder(),
+            Opacity(
+              key: ValueKey('media-cover-opacity-${widget.videoId}'),
+              opacity: t,
+              child: child,
+            ),
+          ],
         );
       },
       child: image,

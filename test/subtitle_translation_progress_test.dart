@@ -69,6 +69,8 @@ void main() {
       try {
         await secondRequest.future.timeout(const Duration(seconds: 3));
         expect(service.isTranslating, isTrue);
+        expect(service.activeOptimizationEnabled, isFalse);
+        expect(service.activeTranslationEnabled, isTrue);
         expect(progress, 0.5);
         expect(updates.last.$2, contains('已处理 5/10 条'));
         expect(updates.any((entry) => entry.$1 == 1), isFalse);
@@ -81,6 +83,8 @@ void main() {
       expect(await File(result.outputPath).exists(), isTrue);
       expect(service.isTranslating, isFalse);
       expect(service.activity, isNull);
+      expect(service.activeOptimizationEnabled, isNull);
+      expect(service.activeTranslationEnabled, isNull);
     },
   );
 
@@ -153,6 +157,8 @@ void main() {
       try {
         await secondRequest.future.timeout(const Duration(seconds: 2));
         expect(service.isTranslating, isTrue);
+        expect(service.activeOptimizationEnabled, isFalse);
+        expect(service.activeTranslationEnabled, isTrue);
         expect(progress, 0.5);
         expect(updates.last.$2, '已处理 1/2 条');
       } finally {

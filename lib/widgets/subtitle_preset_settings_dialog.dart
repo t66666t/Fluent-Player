@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
@@ -16,7 +17,10 @@ class SubtitlePresetSettingsPanel extends StatelessWidget {
     required this.onBack,
   });
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) => ListenableBuilder(
     listenable: SubtitleDebugSession.instance,
     builder: (context, _) {
       final session = SubtitleDebugSession.instance;
@@ -220,7 +224,7 @@ class SubtitlePresetSettingsPanel extends StatelessWidget {
                 onPressed: onBack,
                 label: '完成',
                 fontSize: 12,
-                height: 28,
+                height: 40,
               ),
             ),
           ),

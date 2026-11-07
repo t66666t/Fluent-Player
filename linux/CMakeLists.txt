@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.13)
 project(runner LANGUAGES CXX)
 
-set(BINARY_NAME "fluent_player_community")
-set(APPLICATION_ID "io.github.t66666t.FluentPlayerCommunity")
+set(BINARY_NAME "fluent-player")
+set(APPLICATION_ID "cn.teezy.fluentplayer.standard")
 cmake_policy(SET CMP0063 NEW)
 set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/lib")
 set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)

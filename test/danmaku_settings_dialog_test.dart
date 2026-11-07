@@ -179,7 +179,7 @@ void main() {
         find.byWidgetPredicate((widget) => widget is DropdownButton<int>),
         findsNothing,
       );
-      await select('Noto Serif CJK SC');
+      await select('Brawler');
       expect(weights(), [400, 700]);
       tester
           .widget<CapsuleDropdownButtonFormField<int>>(
@@ -190,8 +190,8 @@ void main() {
           .onChanged!(400);
       await tester.pumpAndSettle();
       expect(settings.bilibiliDanmakuFontWeight, 400);
-      await select('MiSans');
-      expect(weights(), [100, 200, 300, 400, 500, 600, 700, 900]);
+      await select('Noto Sans SC');
+      expect(weights(), [100, 200, 300, 400, 500, 600, 700, 800, 900]);
       expect(tester.takeException(), isNull);
     },
   );

@@ -1,3 +1,4 @@
+import 'subtitle_settings_layout.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -229,13 +230,7 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
   @override
   Widget build(BuildContext context) {
     final center = widget.manager.center;
-    return Theme(
-      data: ThemeData.dark(useMaterial3: true).copyWith(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF65A2FF),
-          brightness: Brightness.dark,
-        ),
-      ),
+    return SubtitleSettingsTheme(
       child: _error != null
           ? Center(
               child: Padding(
@@ -300,7 +295,10 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
                   Text(
                     '本机推荐依据处理器、内存余量、语言和可对比的历史测速；选择后固定使用该模型。'
                     '${_device?.memoryBytes == null ? '' : ' 设备内存约 ${(_device!.memoryBytes! / 1073741824).round()} GB。'}',
-                    style: const TextStyle(fontSize: 12, color: Colors.white60),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: SubtitleSettingsTheme.secondary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   for (final model in _models!.where(
@@ -381,7 +379,7 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
           children: [
             Text(
               '${model.name}${model.legacy ? ' · ${model.groups.map(_language).join('、')}' : ''}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              style: SubtitleSettingsTheme.heading,
             ),
             if (recommended)
               const Padding(
@@ -394,13 +392,19 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
             const SizedBox(height: 4),
             Text(
               '${model.parameters} · ${modelBytes(bytes)} · FP32 / ONNX',
-              style: const TextStyle(fontSize: 12, color: Colors.white60),
+              style: const TextStyle(
+                fontSize: 12,
+                color: SubtitleSettingsTheme.secondary,
+              ),
             ),
             const SizedBox(height: 6),
             Text(model.description),
             Text(
               '建议 ${model.suggestedRamGb} GB 起，实际取决于当前可用内存。',
-              style: const TextStyle(fontSize: 12, color: Colors.white60),
+              style: const TextStyle(
+                fontSize: 12,
+                color: SubtitleSettingsTheme.secondary,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -460,7 +464,7 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
                       key: PageStorageKey('ocr-model-import-${model.id}'),
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Colors.white60,
+                        color: SubtitleSettingsTheme.secondary,
                       ),
                     ),
                   ),
@@ -492,7 +496,7 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
                     fontSize: 11,
                     color: s.phase == ModelDownloadPhase.failed
                         ? Colors.redAccent
-                        : Colors.white60,
+                        : SubtitleSettingsTheme.secondary,
                   ),
                 ),
             ],
@@ -506,12 +510,18 @@ class _OcrModelsPaneState extends State<OcrModelsPane> {
                 '本机上次任务：${((measured.first['mediaMs'] as num) / 1000).round()} 秒视频用时 '
                 '${((measured.first['elapsedMs'] as num) / 1000).toStringAsFixed(1)} 秒 · ${measured.first['backend']}。'
                 '实际速度随素材和区域变化。',
-                style: const TextStyle(fontSize: 11, color: Colors.white60),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: SubtitleSettingsTheme.secondary,
+                ),
               ),
             for (final check in checks)
               Text(
                 '${modelSourceLabel(check.key)}：${check.available ? '${modelBytes(check.bytesPerSecond.round())}/s' : '本次检测未连通'}',
-                style: const TextStyle(fontSize: 11, color: Colors.white60),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: SubtitleSettingsTheme.secondary,
+                ),
               ),
             const SizedBox(height: 8),
             Wrap(

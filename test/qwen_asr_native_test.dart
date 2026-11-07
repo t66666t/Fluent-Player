@@ -15,8 +15,10 @@ import 'package:video_player_app/features/model_center/model_center_service.dart
 import 'package:video_player_app/features/model_center/model_device_info.dart';
 import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
+import 'support/prepared_local_models.dart';
+import '../tool/local_asr_probe_assets.dart';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center(this.root, {required super.storage});
   final String root;
   @override
@@ -98,7 +100,7 @@ void main() {
             await worker.start(
               engine: engine,
               directory: p.join(root, id),
-              vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+              vadPath: asrProbeVadPath(),
               language: 'auto',
               threads: 4,
               textProcessingVersion: 1,
@@ -161,7 +163,7 @@ void main() {
         await worker.start(
           engine: 'qwen3-asr',
           directory: p.join(root, 'qwen3-asr-1.7b-f16'),
-          vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'ja',
           threads: 4,
         );
@@ -185,7 +187,7 @@ void main() {
         await resumed.start(
           engine: 'qwen3-asr',
           directory: p.join(root, 'qwen3-asr-0.6b-f16'),
-          vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'ja',
           threads: 4,
         );

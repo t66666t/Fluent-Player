@@ -19,15 +19,56 @@ void main() {
     return file.writeAsString(json);
   }
 
-  test(
-    'formal ID copies the former authoritative settings and retains both originals',
-    () async {
-      final old = await settings(
+  test('community identity never adopts full-edition preferences', () async {
+    expect(linuxApplicationId, 'cn.teezy.fluentplayer.standard');
+    expect(linuxLegacyApplicationIds, ['cn.teezy.fluentplayer.community']);
+    final originals = <File>[
+      for (final id in [
+        'cn.teezy.fluentplayer',
+        'cn.teezy.fluentplayer.pro',
+        'io.github.t66666t.FluentPlayer',
         'com.example.video_player_app',
-        '{"flutter.volume":0.6}',
-      );
-      final fallback = await settings(
         'video_player_app',
+      ])
+        await settings(id, '{"flutter.volume":0.6}'),
+    ];
+    await prepareLinuxApplicationIdentity(
+      environment: {'XDG_DATA_HOME': temporary.path},
+    );
+    final current = File(
+      p.join(temporary.path, linuxApplicationId, 'shared_preferences.json'),
+    );
+    expect(await current.exists(), isFalse);
+    for (final original in originals) {
+      expect(await original.readAsString(), '{"flutter.volume":0.6}');
+    }
+  });
+
+  test('existing community preferences remain authoritative', () async {
+    await settings('cn.teezy.fluentplayer', 'broken');
+    final current = await settings(
+      linuxApplicationId,
+      '{"flutter.volume":0.9}',
+    );
+    await prepareLinuxApplicationIdentity(
+      environment: {'XDG_DATA_HOME': temporary.path},
+    );
+    expect(await current.readAsString(), '{"flutter.volume":0.9}');
+  });
+
+  test(
+    'standard identity reuses only its former community preferences',
+    () async {
+      final oldCommunity = await settings(
+        'cn.teezy.fluentplayer.community',
+        '{"flutter.volume":0.7}',
+      );
+      final full = await settings(
+        'cn.teezy.fluentplayer',
+        '{"flutter.volume":0.1}',
+      );
+      final pro = await settings(
+        'cn.teezy.fluentplayer.pro',
         '{"flutter.volume":0.2}',
       );
       await prepareLinuxApplicationIdentity(
@@ -36,33 +77,9 @@ void main() {
       final current = File(
         p.join(temporary.path, linuxApplicationId, 'shared_preferences.json'),
       );
-      expect(await current.readAsString(), await old.readAsString());
-      expect(await fallback.readAsString(), '{"flutter.volume":0.2}');
-      await current.writeAsString('{"flutter.volume":0.9}');
-      await prepareLinuxApplicationIdentity(
-        environment: {'XDG_DATA_HOME': temporary.path},
-      );
-      expect(await current.readAsString(), '{"flutter.volume":0.9}');
-      expect(await old.readAsString(), '{"flutter.volume":0.6}');
-    },
-  );
-
-  test(
-    'malformed legacy preferences cannot replace settings with an empty file',
-    () async {
-      await settings('com.example.video_player_app', 'broken');
-      await expectLater(
-        prepareLinuxApplicationIdentity(
-          environment: {'XDG_DATA_HOME': temporary.path},
-        ),
-        throwsFormatException,
-      );
-      expect(
-        await File(
-          p.join(temporary.path, linuxApplicationId, 'shared_preferences.json'),
-        ).exists(),
-        isFalse,
-      );
+      expect(await current.readAsString(), await oldCommunity.readAsString());
+      expect(await full.readAsString(), '{"flutter.volume":0.1}');
+      expect(await pro.readAsString(), '{"flutter.volume":0.2}');
     },
   );
 

@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -138,7 +139,7 @@ class SubtitlePresetTextAction extends StatelessWidget {
                   Icon(
                     icon,
                     size: fontSize + 3,
-                    color: enabled ? Colors.tealAccent : Colors.white24,
+                    color: enabled ? AppSettingsTheme.accent : Colors.white24,
                   ),
                   const SizedBox(width: 3),
                 ],
@@ -149,8 +150,8 @@ class SubtitlePresetTextAction extends StatelessWidget {
                   style: TextStyle(
                     fontSize: fontSize,
                     height: 1.1,
-                    color: enabled ? Colors.tealAccent : Colors.white38,
-                    fontWeight: FontWeight.w600,
+                    color: enabled ? AppSettingsTheme.accent : Colors.white38,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],

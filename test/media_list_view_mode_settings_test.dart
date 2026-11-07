@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/services/library_service.dart';
@@ -108,6 +109,77 @@ void main() {
     expect(prefs.getInt('mediaListCrossAxisCount'), 20);
     expect(prefs.getString('structuredImportSortField'), 'fileName');
     expect(prefs.getString('structuredImportSortDirection'), 'ascending');
+  });
+
+  test('树形/表格偏好与 rows、table 定向槽位导出并在冷启动后保留', () async {
+    final settings = SettingsService();
+    settings.resetForTest();
+    await settings.init();
+
+    await settings.updateSetting('mediaLibraryViewMode', 3);
+    await settings.updateSetting('mediaTableSortKey', 'title');
+    await settings.updateSetting('mediaTableSortDescending', true);
+    await settings.updateSetting('mediaTreeContentMode', 1);
+    await settings.updateSetting('mediaTreeSidebarWidth', 280.0);
+    await settings.updateSetting('mediaTreeShowCounts', false);
+    await settings.updateSetting('mediaTreeSidebarCollapsed', true);
+
+    const portrait = Size(390, 844);
+    await settings.updateRowsStyleFor(
+      portrait,
+      columns: 3,
+      rowExtent: 72,
+      showMeta: false,
+    );
+    await settings.updateTableStyleFor(
+      portrait,
+      rowExtent: 44,
+      striped: true,
+    );
+
+    final snapshot = settings.exportSettingsSnapshot(viewportSize: portrait);
+    final home = snapshot['home'] as Map<String, dynamic>;
+    expect(home['mediaLibraryViewMode'], 3);
+    expect(home['mediaTableSortKey'], 'title');
+    expect(home['mediaTableSortDescending'], isTrue);
+    expect(home['mediaTreeContentMode'], 1);
+    expect(home['mediaTreeSidebarWidth'], 280.0);
+    expect(home['mediaTreeShowCounts'], isFalse);
+    expect(home['mediaTreeSidebarCollapsed'], isTrue);
+
+    final overrides =
+        snapshot['layout']['mediaLibraryOrientationOverrides'] as Map;
+    expect(overrides['mediaListRowsColumnsPortrait'], 3);
+    expect(overrides['mediaListRowsExtentPortrait'], 72);
+    expect(overrides['mediaListRowsShowMetaPortrait'], isFalse);
+    expect(overrides['mediaListTableExtentPortrait'], 44);
+    expect(overrides['mediaListTableStripedPortrait'], isTrue);
+
+    final portraitProfile =
+        (snapshot['layout']['effectiveMediaLibraryProfiles']
+            as Map)['portrait'] as Map;
+    expect(portraitProfile['list'], isA<Map>());
+    expect(portraitProfile['rows']['columns'], 3);
+    expect(portraitProfile['rows']['rowExtent'], 72);
+    expect(portraitProfile['table']['rowExtent'], 44);
+    expect(portraitProfile['table']['striped'], isTrue);
+
+    settings.resetForTest();
+    await settings.init();
+
+    expect(settings.mediaLibraryViewMode, 3);
+    expect(settings.mediaTableSortKey, 'title');
+    expect(settings.mediaTableSortDescending, isTrue);
+    expect(settings.mediaTreeContentMode, 1);
+    expect(settings.mediaTreeSidebarWidth, 280.0);
+    expect(settings.mediaTreeShowCounts, isFalse);
+    expect(settings.mediaTreeSidebarCollapsed, isTrue);
+    expect(settings.rowsStyleFor(portrait).crossAxisCount, 3);
+    expect(settings.rowsStyleFor(portrait).rowExtent, 72);
+    expect(settings.rowsStyleFor(portrait).showMeta, isFalse);
+    expect(settings.tableStyleFor(portrait).rowExtent, 44);
+    expect(settings.tableStyleFor(portrait).striped, isTrue);
+    expect(settings.legacyListStyleFor(portrait).crossAxisCount, isNotNull);
   });
 
   test('结构化导入文件名排序符合自然顺序与拼音顺序', () {

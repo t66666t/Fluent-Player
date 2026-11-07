@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 
 import '../models/media_artwork_ref.dart';
 import '../services/media_artwork_repository.dart';
+import '../services/thumbnail_decode_scheduler.dart';
 import 'media_card_preparation.dart';
+import 'media_cover_reveal.dart';
 
 /// Remembers covers that have already faded in.
 ///
@@ -183,7 +185,23 @@ class _MediaArtworkViewState extends State<MediaArtworkView> {
       widget.size,
       MediaQuery.devicePixelRatioOf(context),
     );
+    final inMediaGrid = MediaCoverRevealStamp.maybeOf(context) != null;
     if (snapshot.localPath != null) {
+      if (inMediaGrid) {
+        return _GridArtworkImage(
+          image: ResizeImage.resizeIfNeeded(
+            bucket,
+            null,
+            FileImage(File(snapshot.localPath!)),
+          ),
+          fit: widget.fit,
+          placeholder: widget.placeholder,
+          alreadyShown: ArtworkRevealMemory.shown.contains(
+            snapshot.blobHash ?? snapshot.requestKey,
+          ),
+          onFinished: _finishPreparation,
+        );
+      }
       return Image.file(
         File(snapshot.localPath!),
         fit: widget.fit,
@@ -199,6 +217,21 @@ class _MediaArtworkViewState extends State<MediaArtworkView> {
     if (!identical(bytes, _memorySource)) {
       _memorySource = bytes;
       _memoryBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    }
+    if (inMediaGrid) {
+      return _GridArtworkImage(
+        image: ResizeImage.resizeIfNeeded(
+          bucket,
+          null,
+          MemoryImage(_memoryBytes!),
+        ),
+        fit: widget.fit,
+        placeholder: widget.placeholder,
+        alreadyShown: ArtworkRevealMemory.shown.contains(
+          snapshot.blobHash ?? snapshot.requestKey,
+        ),
+        onFinished: _finishPreparation,
+      );
     }
     return Image.memory(
       _memoryBytes!,
@@ -223,5 +256,164 @@ class _MediaArtworkViewState extends State<MediaArtworkView> {
   Widget _error(BuildContext context, Object error, StackTrace? stack) {
     _finishPreparation();
     return widget.placeholder ?? const SizedBox.shrink();
+  }
+}
+
+/// Artwork repository covers participate in the same decode budget as local
+/// thumbnails when they appear in a media grid.
+class _GridArtworkImage extends StatefulWidget {
+  const _GridArtworkImage({
+    required this.image,
+    required this.fit,
+    required this.placeholder,
+    required this.alreadyShown,
+    required this.onFinished,
+  });
+
+  final ImageProvider image;
+  final BoxFit fit;
+  final Widget? placeholder;
+  final bool alreadyShown;
+  final VoidCallback onFinished;
+
+  @override
+  State<_GridArtworkImage> createState() => _GridArtworkImageState();
+}
+
+class _GridArtworkImageState extends State<_GridArtworkImage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+  ThumbnailDecodeRequest? _request;
+  MediaCoverRevealTicket? _ticket;
+  MediaCoverRevealCoordinator? _coordinator;
+  MediaCoverRevealStamp? _stamp;
+  bool _loaded = false;
+  bool _immediate = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final stamp = MediaCoverRevealStamp.maybeOf(context);
+    final coordinator = mediaCoverRevealCoordinatorOf(context);
+    if (_stamp?.index != stamp?.index ||
+        _stamp?.crossAxisCount != stamp?.crossAxisCount ||
+        !identical(_coordinator, coordinator)) {
+      _ticket?.dispose();
+      _stamp = stamp;
+      _coordinator = coordinator;
+      _ticket = null;
+      if (_fade.value == 0 && !_fade.isAnimating) {
+        _register();
+        if (_loaded) {
+          if (_ticket != null) {
+            _ticket!.ready();
+          } else {
+            _show();
+          }
+        }
+      }
+    }
+    if (_request == null && !_loaded) _load();
+  }
+
+  @override
+  void didUpdateWidget(_GridArtworkImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) {
+      _request?.dispose();
+      _request = null;
+      _ticket?.dispose();
+      _fade.value = 0;
+      _loaded = false;
+      _register();
+      _load();
+    }
+  }
+
+  void _register() {
+    _ticket = null;
+    final stamp = _stamp;
+    if (stamp == null ||
+        stamp.index < 0 ||
+        stamp.index >=
+            5 * (stamp.crossAxisCount < 1 ? 1 : stamp.crossAxisCount)) {
+      return;
+    }
+    _ticket = _coordinator?.register(stamp.index, _show);
+  }
+
+  void _show() {
+    if (!mounted || !_loaded) return;
+    if (_immediate || MediaQuery.disableAnimationsOf(context)) {
+      _fade.value = 1;
+    } else {
+      _fade.forward(from: 0);
+    }
+  }
+
+  void _load() {
+    _immediate = widget.alreadyShown;
+    final request = ThumbnailDecodeScheduler.instance.request(
+      widget.image,
+      createLocalImageConfiguration(context),
+      priority: (_stamp?.index ?? 0).clamp(0, 1 << 29),
+      shouldDefer: () =>
+          mounted && Scrollable.recommendDeferredLoadingForContext(context),
+    );
+    _request = request;
+    request.ready.then((success) {
+      request.dispose();
+      if (!mounted || !identical(_request, request)) return;
+      _request = null;
+      widget.onFinished();
+      if (!success) {
+        _ticket?.dispose();
+        _ticket = null;
+        return;
+      }
+      setState(() => _loaded = true);
+      if (_immediate || MediaQuery.disableAnimationsOf(context)) {
+        _ticket?.dispose();
+        _ticket = null;
+        _show();
+      } else if (_ticket != null) {
+        _ticket!.ready();
+      } else {
+        _show();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _request?.dispose();
+    _ticket?.dispose();
+    _fade.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = widget.placeholder ?? const SizedBox.shrink();
+    if (!_loaded) return placeholder;
+    return Stack(
+      fit: StackFit.passthrough,
+      alignment: Alignment.center,
+      children: [
+        placeholder,
+        FadeTransition(
+          opacity: _fade.drive(CurveTween(curve: Curves.easeOutCubic)),
+          child: Image(
+            image: widget.image,
+            fit: widget.fit,
+            gaplessPlayback: true,
+            errorBuilder: (_, _, _) => placeholder,
+          ),
+        ),
+      ],
+    );
   }
 }

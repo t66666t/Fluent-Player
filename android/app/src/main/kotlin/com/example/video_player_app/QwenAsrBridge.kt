@@ -71,6 +71,16 @@ class QwenAsrBridge @JvmOverloads constructor(
     }
     init {
         channel.setMethodCallHandler { call, result ->
+            if (call.method == "gpuStatus") {
+                // Readable without a live native owner. Memory kills do not
+                // set these flags, so Dart can avoid a false GPU blacklist.
+                result.success(mapOf(
+                    "ok" to true,
+                    "gpuNativeCrash" to gpuNativeCrash,
+                    "gpuTimedOut" to gpuTimedOut,
+                ))
+                return@setMethodCallHandler
+            }
             @Suppress("UNCHECKED_CAST")
             val args = call.arguments as? Map<String, Any?> ?: emptyMap()
             val owner = args["owner"] as? String

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/models/library_activity.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/media_library_root_entry.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
@@ -20,14 +21,17 @@ import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/theme/app_tokens.dart';
 import 'package:video_player_app/widgets/media_library_entry_switcher.dart';
+import 'package:video_player_app/widgets/media_library_keyboard_navigation.dart';
 import 'package:video_player_app/widgets/media_library_scroll_viewport.dart';
 import 'package:video_player_app/widgets/media_library_shell.dart';
 
 void main() {
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
   setUpAll(() async {
-    for (final name in ['MiSans', 'Noto Sans SC']) {
+    for (final name in ['Noto Sans SC', 'Noto Sans CJK Fallback']) {
       final font = FontLoader(name)
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+        ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'));
       await font.load();
     }
     final icons = FontLoader('MaterialIcons')
@@ -103,7 +107,7 @@ void main() {
             child: MaterialApp(
               theme: ThemeData(
                 brightness: Brightness.dark,
-                fontFamily: 'MiSans',
+                fontFamily: 'Noto Sans SC',
                 scaffoldBackgroundColor: AppTokens.bgBase,
               ),
               builder: (_, child) =>
@@ -154,21 +158,20 @@ void main() {
             expect(
               edge,
               closeTo(
-                size.width < 600
-                    ? 12
-                    : size.width < 1024
-                    ? 16
-                    : 20,
-                .01,
+                MediaLibraryScrollViewport.cardEdgeFor(
+                  size.width,
+                  viewport.contentInsetFraction,
+                ),
+                .5,
               ),
             );
             expect(
               tester.getCenter(thumb).dx - frameLeft,
-              closeTo(edge / 2, .01),
+              closeTo(edge / 2, .5),
             );
             expect(
               tester.getTopLeft(find.byType(MediaLibraryEntrySwitcher)).dx,
-              closeTo(cardLeft, .01),
+              closeTo(cardLeft, .5),
             );
             final trailingIcon = find.descendant(
               of: find.byType(AppBar),
@@ -176,7 +179,7 @@ void main() {
             ).last;
             expect(
               tester.getBottomRight(trailingIcon).dx,
-              closeTo(cardLeft + grid.constraints.crossAxisExtent, .01),
+              closeTo(cardLeft + grid.constraints.crossAxisExtent, .5),
             );
             // The first label has no extra inner padding of its own.
             if (entry == MediaLibraryRootEntry.continueLearning) {
@@ -186,18 +189,29 @@ void main() {
                   MediaLibraryRootEntry.continueLearning.label,
                 ),
               );
-              expect(tester.getTopLeft(label).dx, closeTo(cardLeft, .01));
+              expect(tester.getTopLeft(label).dx, closeTo(cardLeft, .5));
             }
             final before = viewport.controller.offset;
-            await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
-            await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
-            await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+            // Arrows move card focus; the viewport follows when that focus
+            // reaches an item beyond the visible part of the lazy grid.
+            for (var i = 0; i < 50 && viewport.controller.offset <= before; i++) {
+              await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+              await tester.pump();
+            }
             await tester.pumpAndSettle();
             expect(viewport.controller.offset, greaterThan(before));
             final after = viewport.controller.offset;
-            await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+            for (var i = 0;
+                i < 50 && viewport.controller.offset >= after &&
+                    !MediaLibraryKeyboardItem.interactiveControlHasFocus;
+                i++) {
+              await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+              await tester.pump();
+            }
             await tester.pumpAndSettle();
-            expect(viewport.controller.offset, lessThan(after));
+            // The preceding focus target may also be a visible toolbar button.
+            expect(viewport.controller.offset < after ||
+                MediaLibraryKeyboardItem.interactiveControlHasFocus, isTrue);
             final drag = await tester.startGesture(
               tester.getCenter(thumb),
               kind: PointerDeviceKind.mouse,

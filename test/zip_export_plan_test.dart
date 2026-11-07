@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -417,12 +416,12 @@ void main() {
           keptOriginals: 0,
           droppedExtras: 0,
         ),
-        '2 个媒体 · 2.0 KB · 已跳过 1 个在线卡片 · 1 个改为外挂字幕',
+        '2 个媒体 · 2.0 KB · 已跳过 1 个不支持的条目 · 1 个改为外挂字幕',
       );
     });
 
     test(
-      'podcast channel exports a card reference without downloaded episodes',
+      'historical podcast folders export their local files without reference entries',
       () async {
         final channel = await library.createCollection('播客', null);
         await _add(
@@ -444,26 +443,16 @@ void main() {
           includeDanmaku: true,
         );
         expect(layout.isEmpty, isFalse);
-        expect(layout.media, isEmpty);
-        expect(layout.references.map((entry) => entry.archivePath), [
-          '播客.url',
-          zipPodcastReferencesPath,
-        ]);
-        final snapshot =
-            (jsonDecode(layout.references.last.contents) as Map)['snapshot']
-                as Map;
-        expect(snapshot['videos'], isEmpty);
         expect(
-          (snapshot['collections'] as List).single['podcastRef']['channelId'],
-          'channel',
+          layout.media.single.sourcePath,
+          library.getVideo('download')!.path,
         );
-        expect((snapshot['podcasts'] as List).single['episodes'], isEmpty);
-        expect(layout.references.last.contents, isNot(contains(tempDir.path)));
+        expect(layout.references, isEmpty);
       },
     );
 
     test(
-      'individual podcast episodes export only selected reference records',
+      'selected local podcast histories keep actual files and subtitles',
       () async {
         final channel = await library.createCollection('播客', null);
         for (final id in ['one', 'two']) {
@@ -497,30 +486,21 @@ void main() {
           library: library,
           rootIds: ['one', 'two'],
         );
-        expect(draft.candidates, isEmpty);
-        expect(draft.referenceCount, 2);
-        final snapshot =
-            (jsonDecode(draft.references.last.contents) as Map)['snapshot']
-                as Map;
+        expect(draft.candidates.map((item) => item.item.id).toSet(), {
+          'one',
+          'two',
+        });
+        expect(draft.referenceCount, 0);
+        expect(draft.references, isEmpty);
         expect(
-          (snapshot['collections'] as List).single['exportId'],
-          channel.id,
+          draft.candidates.every((item) => File(item.sourcePath).existsSync()),
+          isTrue,
         );
-        expect((snapshot['videos'] as List).length, 2);
-        expect((snapshot['podcasts'] as List).single['episodes'].length, 2);
-        expect(
-          draft.references.last.contents,
-          isNot(contains(tempDir.path.replaceAll(r'\', r'\\'))),
-        );
-        for (final record in snapshot['videos'] as List) {
-          expect(record['video']['playbackPath'], isNull);
-          expect(record['video']['subtitlePath'], isNull);
-        }
       },
     );
 
     test(
-      'uncached cloud media blocks export instead of being silently skipped',
+      'remote cloud cards are skipped without a cache or playback runtime',
       () async {
         const source = CloudDriveSourceRef(
           providerId: 'quark',
@@ -540,16 +520,12 @@ void main() {
           kind: MediaSourceKind.cloudDrive,
           cloudDrive: source,
         );
-        expect(
-          () => enumerateZipCandidates(library: library, rootIds: ['cloud']),
-          throwsA(
-            isA<StateError>().having(
-              (error) => error.message,
-              'message',
-              contains('完整缓存'),
-            ),
-          ),
+        final draft = enumerateZipCandidates(
+          library: library,
+          rootIds: ['cloud'],
         );
+        expect(draft.candidates, isEmpty);
+        expect(draft.skippedOnline, 1);
       },
     );
 
@@ -615,18 +591,17 @@ void main() {
         expect(draft.skippedOnline, 0);
         library.getVideo('cloud-local')!.path = source.logicalUri;
         library.getVideo('cloud-local')!.playbackPath = path;
-        expect(
-          () => enumerateZipCandidates(
-            library: library,
-            rootIds: ['cloud-local'],
-          ),
-          throwsStateError,
+        final remote = enumerateZipCandidates(
+          library: library,
+          rootIds: ['cloud-local'],
         );
+        expect(remote.candidates, isEmpty);
+        expect(remote.skippedOnline, 1);
       },
     );
 
     test(
-      'podcast references preserve actual enclosing archive folder paths',
+      'empty podcast folders export OPML beside ordinary local files',
       () async {
         final folder = await library.createCollection('文件夹', null);
         final nested = await library.createCollection('订阅', folder.id);
@@ -646,29 +621,13 @@ void main() {
           rootIds: [folder.id],
         );
         expect(draft.referenceCount, 1);
-        expect(draft.references.first.archivePath, '文件夹/订阅.url');
-        final snapshot =
-            (jsonDecode(draft.references.last.contents) as Map)['snapshot']
-                as Map;
-        final records = (snapshot['collections'] as List).cast<Map>();
         expect(
-          records.singleWhere(
-            (record) => record['exportId'] == nested.id,
-          )['parentExportId'],
-          folder.id,
+          draft.references.where(
+            (entry) => entry.archivePath.endsWith('.opml'),
+          ),
+          hasLength(1),
         );
-        expect(
-          records.singleWhere(
-            (record) => record['exportId'] == folder.id,
-          )['archiveDirectory'],
-          '文件夹',
-        );
-        expect(
-          records.singleWhere(
-            (record) => record['exportId'] == folder.id,
-          )['parentExportId'],
-          isNull,
-        );
+        expect(draft.candidates.single.parentDirectory, '文件夹');
       },
     );
 

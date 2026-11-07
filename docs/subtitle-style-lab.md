@@ -74,13 +74,13 @@
 | 昵称 | 实际字体 | 来源 / 授权 |
 |---|---|---|
 | 清幕黑 | Noto Sans CJK SC（项目名 Noto Sans SC） | [Noto Sans OFL](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE) |
-| 银幕宋 | Noto Serif CJK SC | [Noto Serif OFL](https://github.com/notofonts/noto-cjk/blob/main/Serif/LICENSE) |
+| 银幕宋 | Noto Serif SC（推荐下载；未安装时回退思源黑体） | [Noto Serif OFL](https://github.com/notofonts/noto-cjk/blob/main/Serif/LICENSE) |
 | 星际 | Inter | [Inter OFL](https://github.com/rsms/inter/blob/master/LICENSE.txt) |
 | 窄光 | Roboto Condensed（项目名 Roboto） | [Roboto Condensed OFL](https://github.com/google/fonts/blob/main/ofl/robotocondensed/OFL.txt) |
 | 漫语 | Comic Relief | [Comic Relief OFL](https://github.com/google/fonts/blob/main/ofl/comicrelief/OFL.txt) |
 | 书影 | Brawler | [Brawler OFL](https://github.com/google/fonts/blob/main/ofl/brawler/OFL.txt) |
 
-OFL 允许商业使用、内嵌及随软件分发，需保留版权和许可证，不能把字体本身单独出售。许可证已放在 `assets/fonts/licenses/` 并列入资源打包；逐文件版本、版权、授权声明与 SHA-256 存在同目录的 `subtitle-lab-fonts.json`。新增思源宋体 Regular 为上游原版，约 23.4 MiB，补足细宋体风格；Brawler 原来已在目录内，本次补登记资源。
+OFL 允许商业使用、内嵌及随软件分发，需保留版权和许可证，不能把字体本身单独出售。许可证已放在 `assets/fonts/licenses/`；逐文件版本、版权、授权声明与 SHA-256 存在同目录的 `subtitle-lab-fonts.json`。思源黑体使用可变字重文件，保留完整 CJK 常规字体作为字符后备；思源宋体放在字体选择页的推荐列表中，安装后电影宋体预设会使用该下载字体。Brawler、Comic Relief 和 Roboto Condensed 体积较小，继续内置。
 
 ## 验证
 
@@ -136,3 +136,35 @@ flutter test --no-pub test/subtitle_ghost_sizing_test.dart test/subtitle_preset_
 本轮扩大回归共 95 项，94 项通过，1 项原有页面回退源码计数检查失败：历史基线文件已包含直接返回字幕页的分支，与旧测试的零计数断言不一致。另跑音乐字幕对齐控件检查，7 项通过、2 项音乐歌词可见性检查失败，失败点在本轮未改动的音乐歌词视图。未为使这些旧检查通过而更改播放或歌词逻辑。新增功能及竖屏、字体真实渲染、预设与缩放相关检查通过；Windows 调试构建成功，新增与样式相关文件的静态检查无问题。
 
 收尾复测（含字体、竖屏与存储保护）61 项通过，2 项沿用原测试配置跳过；真实官方日文可变字体另完成在线文件指纹、字重范围、汉字/假名覆盖和 Flutter 动态加载检查。
+
+## 字体列表与可变字重
+
+“我的”列表先显示下载或导入的字体，按添加时间倒序排列，其后是内置字体；顺序随字体库记录保存。支持 `wght` 轴的可变字体按其实际范围显示连续滑块，固定字重字体仍显示已有字重选项。已经下载的旧字体在下次加载时读取字重轴，不需要重新下载。
+
+播放与精确合成把滑块值传递给字体渲染器。粗略合成会向 ASS 传递数值字重，但不同版本的字幕渲染器可能无法精确渲染可变字体的中间字重；应使用精确渲染保持画面一致。测试字体仅用于回归测试，不作为应用内置字体打包。
+
+## 在线字体下载前预览
+
+在线字体沿用已下载字体的单行紧凑预览设计，例如“字幕预览 Aa”。简体中文、繁体中文、日语和韩语使用各自的简短文字；支持拉丁字母时在同一行加上 Aa。阿拉伯语和希伯来语使用对应排版方向。预览保持原有小字号和文字颜色，较窄的侧栏省略超出部分；文字缩放受限，不额外添加双行样张、语言标题行或背景卡片。
+
+Google Fonts 字体通过官方 CSS API 的 `text` 参数仅请求固定样张需要的字形，不内置或安装完整字体，不发送当前字幕内容。预览沿用应用网络设置，延迟加载可见行附近的样张，最多同时处理三个请求；离开列表会取消请求。每次样张响应不超过 256 KiB，并验证字体格式和样张字形覆盖；失败时显示重试，不使用系统字体冒充预览。同一样张在本次运行中复用。
+
+样张来自 Google Fonts 当前在线版本，完整下载继续使用目录中固定提交的文件、原有指纹校验和许可证，预览不会改变字体库或合成任务。两者的上游版本可能不同。汉仪个人版等仅提供官网入口的条目保留“官网预览”，不自动获取受限字体。
+
+Noto Color Emoji 的在线接口没有返回足够小的子集，因此仅内置一张约 14 KiB 的官方表情图片样张，完整字体不随应用打包。图片的固定来源、修改记录和 Apache-2.0 许可位于 `assets/fonts/previews/NOTICE.txt` 及 `assets/fonts/licenses/NotoEmoji-Artwork-Apache-2.0.txt`，并登记到应用许可入口。
+
+本轮补充目录内九个字体的高棉语、老挝语、缅甸语、泰米尔语和吕基亚文标记，未更新下载提交、文件或指纹。原生样张复测可显式运行 `python tool/fetch_subtitle_font_preview_fixtures.py`，再以环境变量 `SUBTITLE_FONT_NATIVE_PREVIEWS=1` 运行 `test/subtitle_font_preview_native_test.dart`；下载仅写入构建目录。
+
+## 普通悬浮字幕的英文背景对齐
+
+普通样式的背景原来只包住字体行框；字体声明的上升部、下降部不等于可见字母的范围。英文小写正文、带下伸字母的句子与全大写句子的留白因此不同。双语又共用一个段落，主、副轨的字号和行高差会影响背景最外侧留白。
+
+普通样式现在按字体的 cap-height/x-height 和实际排版基线计算稳定的英文补偿，随字号缩放。内置字体的度量与原字体文件校验；导入字体在已有加载流程中读取 OS/2，旧 TrueType 字体可读取 H/x 轮廓边界。度量仅在内存中保存，不改变字体文件、字体库格式或任务设置；缺少可用度量时保持原有渲染。运行时不按每句字幕截图取样。
+
+主、副轨分别排版和校正，背景外侧按首、末行行高补齐留白；同一文件内非空的中英分行也采用各行校正。内部行距、字号和同一行中英混排的共同基线保持原有规则。纯中文字幕保持原有像素；预设沿用已有独立校准。播放、幽灵字幕及精确合成继续共用绘制组件。
+
+回归使用实际字体检查全大写、真正不含上伸字母的小写正文、上伸/下伸字母、中英主副轨互换、同文件分行及不同字号和缩放，同时检查基线不随英文句子变化。字形本身的自然差异不等同于每句紧贴墨迹边界的机械居中。
+
+Noto Color Emoji 的在线接口没有返回足够小的子集，因此仅内置一张约 14 KiB 的官方表情图片样张，完整字体不随应用打包。图片的固定来源、修改记录和 Apache-2.0 许可位于 `assets/fonts/previews/NOTICE.txt` 及 `assets/fonts/licenses/NotoEmoji-Artwork-Apache-2.0.txt`，并登记到应用许可入口。
+
+本轮补充目录内九个字体的高棉语、老挝语、缅甸语、泰米尔语和吕基亚文标记，未更新下载提交、文件或指纹。原生样张复测可显式运行 `python tool/fetch_subtitle_font_preview_fixtures.py`，再以环境变量 `SUBTITLE_FONT_NATIVE_PREVIEWS=1` 运行 `test/subtitle_font_preview_native_test.dart`；下载仅写入构建目录。

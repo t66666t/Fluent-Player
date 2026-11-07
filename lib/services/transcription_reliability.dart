@@ -8,20 +8,30 @@ import 'package:video_player_app/services/gongyi_asr_service.dart';
 /// 单次上传按时长切段；仍被拒绝时再对半切开。已经识别成功的
 /// 片段会记下来，重试时不再重新上传。
 class TranscriptionTiming {
-  /// 每 30 分钟切段，各段首尾相接，不重复提交切点附近的音频。
+  /// 每次上传最多 10 分钟；后续上传带少量前文，字幕归属范围首尾相接。
   /// 某一段若仍被拒绝，会再对半切开。
-  static const Duration safeSliceLength = Duration(minutes: 30);
+  static const Duration safeSliceLength = Duration(minutes: 10);
+  static const Duration leadingContext = Duration(seconds: 10);
   static const Duration sliceOverlap = Duration.zero;
-  static const Duration betweenSlices = Duration(seconds: 5);
+  static const Duration betweenSlices = Duration.zero;
   static const Duration tailAbsorb = Duration.zero;
 
   /// 对半切到这个长度以下就停止。再短只会增加请求次数，救不了服务端拒绝。
   static const Duration minimumSliceLength = Duration(seconds: 70);
 
-  static const int safeSliceMs = 30 * 60 * 1000;
+  static const int safeSliceMs = 10 * 60 * 1000;
   static const int overlapMs = 0;
   static const int minimumSliceMs = 70 * 1000;
   static const int tailAbsorbMs = 0;
+
+  static Duration contextBefore(Duration start, Duration sliceLength) {
+    var ms = leadingContext.inMilliseconds;
+    if (ms > sliceLength.inMilliseconds ~/ 2) {
+      ms = sliceLength.inMilliseconds ~/ 2;
+    }
+    if (ms > start.inMilliseconds) ms = start.inMilliseconds;
+    return Duration(milliseconds: ms > 0 ? ms : 0);
+  }
 
   static Duration durationFromProbe({double? seconds, required int fileBytes}) {
     if (seconds != null && seconds.isFinite && seconds >= 0.4) {
@@ -103,7 +113,11 @@ class TranscriptionTiming {
     var count = 0;
     while (cursor < end - 400 && count < 100) {
       var length = end - cursor;
-      final limit = sliceMs + (cursor == 0 ? 0 : overlapMs);
+      final context = contextBefore(
+        Duration(milliseconds: cursor),
+        sliceLength,
+      );
+      final limit = sliceMs - context.inMilliseconds;
       if (length > limit) {
         final tail = length - limit;
         length = tail < absorbTail.inMilliseconds ? length : limit;
@@ -129,13 +143,19 @@ class TranscriptionSlice {
   /// 旧任务开头与已完成片段重复的时长；新切出的片段始终为零。
   final Duration overlap;
 
+  /// Audio-only context; [start] and [length] still identify unique media work.
+  final Duration leadingContext;
+
   const TranscriptionSlice({
     required this.start,
     required this.length,
     required this.overlap,
+    this.leadingContext = Duration.zero,
   });
 
   Duration get end => start + length;
+  Duration get audioStart => start - leadingContext;
+  Duration get audioLength => length + leadingContext;
 
   String get taskKey =>
       '${start.inMilliseconds}:${length.inMilliseconds}:words';
@@ -188,6 +208,7 @@ class TranscriptionSlicePlanner {
             start: slice.start,
             length: slice.length,
             overlap: Duration(milliseconds: overlapMs > 0 ? overlapMs : 0),
+            leadingContext: slice.leadingContext,
           );
         }
       }
@@ -203,7 +224,11 @@ class TranscriptionSlicePlanner {
         }
       }
       final overlap = cursorMs == 0 ? 0 : TranscriptionTiming.overlapMs;
-      final limit = sliceLength.inMilliseconds + overlap;
+      final context = TranscriptionTiming.contextBefore(
+        Duration(milliseconds: cursorMs),
+        sliceLength,
+      );
+      final limit = sliceLength.inMilliseconds - context.inMilliseconds;
       var lengthMs = hardEnd - cursorMs;
       if (lengthMs > limit && lengthMs - limit >= tailAbsorb.inMilliseconds) {
         lengthMs = limit;
@@ -216,6 +241,7 @@ class TranscriptionSlicePlanner {
         start: Duration(milliseconds: cursorMs),
         length: Duration(milliseconds: lengthMs),
         overlap: Duration(milliseconds: overlap),
+        leadingContext: context,
       );
     }
     return null;
@@ -240,9 +266,34 @@ class TranscriptionSlicePlanner {
   ) {
     if (!canSplit(slice)) return null;
     final tooLong = error.kind == GongyiAsrFailureKind.tooLong;
+    if (tooLong && slice.audioLength > TranscriptionTiming.safeSliceLength) {
+      final replacements = <TranscriptionSlice>[];
+      var start = slice.start;
+      while (start < slice.end) {
+        final context = start == slice.start
+            ? slice.leadingContext
+            : TranscriptionTiming.contextBefore(
+                start,
+                TranscriptionTiming.safeSliceLength,
+              );
+        final limit = TranscriptionTiming.safeSliceLength - context;
+        final remaining = slice.end - start;
+        final length = remaining > limit ? limit : remaining;
+        replacements.add(
+          TranscriptionSlice(
+            start: start,
+            length: length,
+            overlap: start == slice.start ? slice.overlap : Duration.zero,
+            leadingContext: context,
+          ),
+        );
+        start += length;
+      }
+      return replacements;
+    }
     final vagueFullSlice =
         error.kind == GongyiAsrFailureKind.rejected &&
-        slice.length >= TranscriptionTiming.safeSliceLength &&
+        slice.audioLength >= TranscriptionTiming.safeSliceLength &&
         TranscriptionUserMessage.isVague(error.message);
     if (!tooLong && !vagueFullSlice) return null;
     return halve(slice);
@@ -263,6 +314,7 @@ class TranscriptionSlicePlanner {
         start: slice.start,
         length: Duration(milliseconds: firstMs),
         overlap: slice.overlap,
+        leadingContext: slice.leadingContext,
       ),
       TranscriptionSlice(
         start: safeSecondStart,
@@ -270,6 +322,10 @@ class TranscriptionSlicePlanner {
             ? secondLength
             : const Duration(seconds: 1),
         overlap: TranscriptionTiming.sliceOverlap,
+        leadingContext: TranscriptionTiming.contextBefore(
+          safeSecondStart,
+          TranscriptionTiming.safeSliceLength,
+        ),
       ),
     ];
   }
@@ -280,10 +336,15 @@ class TranscriptionPieceRecord {
   final int lengthMs;
   final List<SubtitleItem> cues;
 
+  /// Context is retained until chronological assembly when workers finish out
+  /// of order. Older records already contain their final, placed captions.
+  final Duration leadingContext;
+
   const TranscriptionPieceRecord({
     required this.startMs,
     required this.lengthMs,
     required this.cues,
+    this.leadingContext = Duration.zero,
   });
 
   int get endMs => startMs + lengthMs;
@@ -292,6 +353,8 @@ class TranscriptionPieceRecord {
     'startMs': startMs,
     'lengthMs': lengthMs,
     'cues': [for (final cue in cues) cue.toTimingJson()],
+    if (leadingContext > Duration.zero)
+      'leadingContextMs': leadingContext.inMilliseconds,
   };
 
   static TranscriptionPieceRecord? tryParse(Object? raw) {
@@ -319,6 +382,12 @@ class TranscriptionPieceRecord {
       startMs: startMs,
       lengthMs: lengthMs,
       cues: cues,
+      leadingContext:
+          raw['leadingContextMs'] is int &&
+              (raw['leadingContextMs'] as int) > 0 &&
+              (raw['leadingContextMs'] as int) <= 10000
+          ? Duration(milliseconds: raw['leadingContextMs'] as int)
+          : Duration.zero,
     );
   }
 }
@@ -367,7 +436,7 @@ class TranscriptionTaskCheckpoint {
 
   bool get hasProgress =>
       pieces.isNotEmpty ||
-      remoteTasks.values.any((task) => task.taskId != null);
+      remoteTasks.values.any((task) => task.hasPendingWork);
 
   void addPiece(TranscriptionPieceRecord piece) {
     pieces.removeWhere(
@@ -407,7 +476,7 @@ class TranscriptionTaskCheckpoint {
   List<TranscriptionSlice> pendingSlices(Duration duration) {
     final slices = <TranscriptionSlice>[];
     for (final entry in remoteTasks.entries) {
-      if (entry.value.taskId?.isNotEmpty != true) continue;
+      if (!entry.value.hasPendingWork) continue;
       final parts = entry.key.split(':');
       if (parts.length != 3 || parts[2] != 'words') continue;
       final startMs = int.tryParse(parts[0]);
@@ -426,6 +495,7 @@ class TranscriptionTaskCheckpoint {
           overlap: startMs == 0
               ? Duration.zero
               : TranscriptionTiming.sliceOverlap,
+          leadingContext: entry.value.leadingContext,
         ),
       );
     }
@@ -528,7 +598,27 @@ class SliceRecognitionSession {
     void Function(String message)? log,
     Duration sliceLength = TranscriptionTiming.safeSliceLength,
     Duration tailAbsorb = TranscriptionTiming.tailAbsorb,
+    int concurrency = 1,
+    void Function()? stopInFlight,
+    bool Function(Object error)? cancelPeersOnError,
   }) async {
+    if (concurrency > 1) {
+      return _runConcurrent(
+        duration: duration,
+        checkpoint: checkpoint,
+        transcribe: transcribe,
+        onProgress: onProgress,
+        onPiece: onPiece,
+        waitBetween: waitBetween,
+        checkCancelled: checkCancelled,
+        stopInFlight: stopInFlight,
+        cancelPeersOnError: cancelPeersOnError,
+        log: log,
+        sliceLength: sliceLength,
+        tailAbsorb: tailAbsorb,
+        concurrency: concurrency.clamp(1, 3),
+      );
+    }
     if (sliceLength <= TranscriptionTiming.sliceOverlap) {
       throw ArgumentError.value(sliceLength, 'sliceLength');
     }
@@ -562,7 +652,7 @@ class SliceRecognitionSession {
       checkCancelled();
       final saved = checkpoint.pieceStartingAt(cursorMs);
       if (saved != null) {
-        placed.addAll(saved.cues);
+        placed.addAll(_placeRecord(saved, placed));
         final nextCursor = TranscriptionSlicePlanner.cursorAfter(
           saved.startMs,
           saved.endMs,
@@ -601,7 +691,7 @@ class SliceRecognitionSession {
         onProgress(message, (cursor / endMs).clamp(0.0, 1.0));
       }
 
-      if (needWait) {
+      if (needWait && TranscriptionTiming.betweenSlices > Duration.zero) {
         await waitBetween(
           TranscriptionTiming.betweenSlices,
           '$label · 下一段开始前稍等几秒',
@@ -650,6 +740,213 @@ class SliceRecognitionSession {
     return TranscriptionSubtitleMerger.finish(placed);
   }
 
+  static Future<List<SubtitleItem>> _runConcurrent({
+    required Duration duration,
+    required TranscriptionTaskCheckpoint checkpoint,
+    required Future<List<SubtitleItem>> Function(
+      TranscriptionSlice,
+      String?,
+      void Function(double, String),
+    )
+    transcribe,
+    required void Function(String, double) onProgress,
+    required Future<void> Function(TranscriptionPieceRecord) onPiece,
+    required Future<void> Function(Duration, String) waitBetween,
+    required void Function() checkCancelled,
+    required int concurrency,
+    required Duration sliceLength,
+    required Duration tailAbsorb,
+    void Function()? stopInFlight,
+    bool Function(Object error)? cancelPeersOnError,
+    void Function(String)? log,
+  }) async {
+    if (sliceLength <= Duration.zero || duration <= Duration.zero) {
+      throw ArgumentError('Positive audio duration and slice length required');
+    }
+    final pending = <TranscriptionSlice>[];
+    final weights = <int>[];
+    var cursor = 0, completed = 0, covered = 0;
+    final end = duration.inMilliseconds;
+    while (cursor < end - 400) {
+      checkCancelled();
+      final saved = checkpoint.pieceStartingAt(cursor);
+      final slice = saved == null
+          ? TranscriptionSlicePlanner.nextUnfinished(
+              start: Duration(milliseconds: cursor),
+              duration: duration,
+              checkpoint: checkpoint,
+              sliceLength: sliceLength,
+              tailAbsorb: tailAbsorb,
+            )
+          : null;
+      if (saved == null && slice == null) break;
+      final next = TranscriptionSlicePlanner.cursorAfter(
+        saved?.startMs ?? slice!.start.inMilliseconds,
+        saved?.endMs ?? slice!.end.inMilliseconds,
+        end,
+      );
+      if (next <= cursor) throw StateError('识别片段没有向前推进');
+      if (saved != null) {
+        completed++;
+        covered += next - cursor;
+      } else {
+        pending.add(slice!);
+        weights.add(next - cursor);
+      }
+      cursor = next;
+      if (pending.length > 400) {
+        throw const GongyiAsrException(
+          GongyiAsrFailureKind.rejected,
+          '识别片段过多，请缩短媒体后重试',
+        );
+      }
+    }
+    final total = completed + pending.length;
+    final progress = List<double>.filled(pending.length, 0);
+    final stages = List<String>.filled(pending.length, '准备音频');
+    final active = <int>{};
+    var next = 0, stop = false;
+    var peersCancelled = false, firstErrorCancels = false;
+    int? pastEnd;
+    Object? firstError;
+    StackTrace? firstStack;
+    String? lastMessage;
+    double lastProgress = -1;
+    void fail(Object error, StackTrace stack, {bool forceCancel = false}) {
+      final cancel = forceCancel || (cancelPeersOnError?.call(error) ?? true);
+      if (firstError == null || (cancel && !firstErrorCancels)) {
+        firstError = error;
+        firstStack = stack;
+        firstErrorCancels = cancel;
+      }
+      stop = true;
+      if (cancel && !peersCancelled) {
+        peersCancelled = true;
+        stopInFlight?.call();
+      }
+    }
+
+    void report() {
+      var done = covered.toDouble();
+      for (var i = 0; i < progress.length; i++) {
+        done += weights[i] * progress[i];
+      }
+      final stage =
+          active.any(
+            (i) =>
+                progress[i] >= .65 ||
+                stages[i].contains('识别') ||
+                stages[i].contains('查询') ||
+                stages[i].contains('等待'),
+          )
+          ? '正在识别'
+          : active.any((i) => stages[i].contains('上传'))
+          ? '上传音频'
+          : '准备音频';
+      final message = '$stage · 已完成 $completed/$total 段';
+      final fraction = (done / end).clamp(0.0, 1.0);
+      if (message == lastMessage && fraction == lastProgress) return;
+      lastMessage = message;
+      lastProgress = fraction;
+      onProgress(message, fraction);
+    }
+
+    report();
+    Future<void> worker() async {
+      while (!stop &&
+          next < pending.length &&
+          (pastEnd == null || next < pastEnd!)) {
+        final index = next++;
+        final slice = pending[index];
+        active.add(index);
+        try {
+          checkCancelled();
+          await _adapt(
+            slice: slice,
+            label: '第 ${index + 1}/${pending.length} 段',
+            depth: 0,
+            checkpoint: checkpoint,
+            transcribe: transcribe,
+            onPiece: onPiece,
+            waitBetween: waitBetween,
+            checkCancelled: checkCancelled,
+            log: log,
+            deferContext: true,
+            report: (value, message) {
+              if (peersCancelled) return;
+              if (value > progress[index]) {
+                progress[index] = value.clamp(0.0, 1.0);
+              }
+              stages[index] = message;
+              report();
+            },
+          );
+          progress[index] = 1;
+          completed++;
+        } on TranscriptionSlicePastEnd catch (error, stack) {
+          if (slice.start == Duration.zero) {
+            fail(error, stack, forceCancel: true);
+          } else if (pastEnd == null || index < pastEnd!) {
+            pastEnd = index;
+          }
+        } catch (error, stack) {
+          fail(error, stack);
+        } finally {
+          active.remove(index);
+          if (!peersCancelled) report();
+        }
+      }
+    }
+
+    // Drain every worker before releasing shared source files or propagating
+    // an error. Completed out-of-order pieces have already been checkpointed.
+    await Future.wait([for (var i = 0; i < concurrency; i++) worker()]);
+    if (firstError != null) Error.throwWithStackTrace(firstError!, firstStack!);
+    checkCancelled();
+    final assembled = <SubtitleItem>[];
+    final stopAt = pastEnd == null
+        ? end
+        : pending[pastEnd!].start.inMilliseconds;
+    var assembledCursor = 0;
+    while (assembledCursor < stopAt - 400) {
+      final piece = checkpoint.pieceStartingAt(assembledCursor);
+      if (piece == null) break;
+      assembled.addAll(_placeRecord(piece, assembled));
+      assembledCursor = TranscriptionSlicePlanner.cursorAfter(
+        piece.startMs,
+        piece.endMs,
+        stopAt,
+      );
+    }
+    return TranscriptionSubtitleMerger.finish(assembled);
+  }
+
+  static List<SubtitleItem> _placeRecord(
+    TranscriptionPieceRecord piece,
+    Iterable<SubtitleItem> preceding,
+  ) {
+    if (piece.leadingContext <= Duration.zero) return piece.cues;
+    final offset = Duration(milliseconds: piece.startMs) - piece.leadingContext;
+    return TranscriptionSubtitleMerger.placeSlice(
+      relative: [
+        for (final cue in piece.cues)
+          cue.copyWith(
+            startTime: cue.startTime - offset,
+            endTime: cue.endTime - offset,
+            timedSpans: [
+              for (final span in cue.timedSpans) span.shifted(-offset),
+            ],
+          ),
+      ],
+      sliceStart: offset,
+      sliceLength:
+          Duration(milliseconds: piece.lengthMs) + piece.leadingContext,
+      overlap: Duration.zero,
+      leadingContext: piece.leadingContext,
+      preceding: preceding,
+    );
+  }
+
   static String _sliceLabel(
     int cursorMs,
     int endMs,
@@ -663,11 +960,11 @@ class SliceRecognitionSession {
       absorbTail: tailAbsorb,
     );
     if (total <= 1) return '第 1/1 段';
-    final index =
-        ((cursorMs + TranscriptionTiming.overlapMs) /
-                sliceLength.inMilliseconds)
-            .floor() +
-        1;
+    final context = TranscriptionTiming.contextBefore(sliceLength, sliceLength);
+    final step = sliceLength.inMilliseconds - context.inMilliseconds;
+    final index = cursorMs < sliceLength.inMilliseconds
+        ? 1
+        : 2 + (cursorMs - sliceLength.inMilliseconds) ~/ step;
     final shown = index.clamp(1, total);
     return '第 $shown/$total 段';
   }
@@ -688,20 +985,24 @@ class SliceRecognitionSession {
     required Future<void> Function(Duration delay, String message) waitBetween,
     required void Function() checkCancelled,
     void Function(String message)? log,
+    bool deferContext = false,
   }) async {
     checkCancelled();
     try {
       final relative = await transcribe(slice, label, report);
       final placed = TranscriptionSubtitleMerger.placeSlice(
         relative: relative,
-        sliceStart: slice.start,
+        sliceStart: slice.audioStart,
         overlap: slice.overlap,
-        sliceLength: slice.length,
+        sliceLength: slice.audioLength,
+        leadingContext: deferContext ? Duration.zero : slice.leadingContext,
+        preceding: checkpoint.pieces.expand((piece) => piece.cues),
       );
       final record = TranscriptionPieceRecord(
         startMs: slice.start.inMilliseconds,
         lengthMs: slice.length.inMilliseconds,
         cues: placed,
+        leadingContext: deferContext ? slice.leadingContext : Duration.zero,
       );
       checkpoint.addPiece(record);
       await onPiece(record);
@@ -730,6 +1031,7 @@ class SliceRecognitionSession {
           waitBetween: waitBetween,
           checkCancelled: checkCancelled,
           log: log,
+          deferContext: deferContext,
         );
       }
       final halves = depth >= 4
@@ -743,7 +1045,7 @@ class SliceRecognitionSession {
       final out = <SubtitleItem>[];
       for (var i = 0; i < halves.length; i++) {
         checkCancelled();
-        if (i > 0) {
+        if (i > 0 && TranscriptionTiming.betweenSlices > Duration.zero) {
           await waitBetween(TranscriptionTiming.betweenSlices, '改成更短的片段后稍等几秒');
         }
         final childLabel = '较短片段 ${i + 1}/${halves.length}';
@@ -765,6 +1067,7 @@ class SliceRecognitionSession {
             waitBetween: waitBetween,
             checkCancelled: checkCancelled,
             log: log,
+            deferContext: deferContext,
           ),
         );
         report(
@@ -788,11 +1091,20 @@ class TranscriptionSubtitleMerger {
     required Duration sliceStart,
     required Duration overlap,
     required Duration sliceLength,
+    Duration leadingContext = Duration.zero,
+    Iterable<SubtitleItem> preceding = const [],
   }) {
     final dropBefore = overlap * 0.8;
     final maxEnd = sliceStart + sliceLength + const Duration(milliseconds: 250);
     final placed = <SubtitleItem>[];
-    for (final item in relative) {
+    for (final original in relative) {
+      final item = _withoutContext(
+        original,
+        leadingContext,
+        sliceStart,
+        preceding,
+      );
+      if (item == null) continue;
       final text = item.text.trim();
       if (text.isEmpty) continue;
       final localMid = Duration(
@@ -806,16 +1118,130 @@ class TranscriptionSubtitleMerger {
       if (start >= maxEnd) continue;
       if (end > maxEnd) end = maxEnd;
       if (end <= start) continue;
+      final shift = sliceStart.inMicroseconds;
       placed.add(
         item.trimmed().copyWith(
           index: 0,
           startTime: start,
           endTime: end,
           timedSpans: item.trimmed().shiftedSpans(sliceStart, start, end),
+          asrInfo: item.asrInfo.pauses.isEmpty
+              ? null
+              : item.asrInfo.copyWith(
+                  pauses: [
+                    for (final pause in item.asrInfo.pauses)
+                      [pause[0] + shift, pause[1] + shift],
+                  ],
+                ),
         ),
       );
     }
     return placed;
+  }
+
+  static SubtitleItem? _withoutContext(
+    SubtitleItem item,
+    Duration context,
+    Duration offset,
+    Iterable<SubtitleItem> preceding,
+  ) {
+    if (context <= Duration.zero) return item;
+    if (item.endTime <= context) return null;
+    if (item.startTime >= context) return item;
+    if (item.timedSpans.isNotEmpty) {
+      final kept = item.timedSpans.where((span) {
+        if (span.endTime <= context) return false;
+        if (span.startTime >= context) return true;
+        final from = offset + span.startTime;
+        final to = offset + span.endTime;
+        final word = _norm(item.text.substring(span.textStart, span.textEnd));
+        for (final prior in preceding) {
+          if (prior.endTime <= from || prior.startTime >= to) continue;
+          if (prior.timedSpans.isEmpty) {
+            if (_norm(prior.text).endsWith(word)) return false;
+          } else {
+            for (final old in prior.timedSpans) {
+              if (old.endTime > from &&
+                  old.startTime < to &&
+                  _norm(prior.text.substring(old.textStart, old.textEnd)) ==
+                      word) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      }).toList();
+      if (kept.isEmpty) return null;
+      final cut = kept.first.textStart;
+      return item
+          .copyWith(
+            text: item.text.substring(cut),
+            startTime: kept.first.startTime < context
+                ? context
+                : kept.first.startTime,
+            timedSpans: [
+              for (final span in kept)
+                span.shifted(Duration.zero, textOffset: -cut),
+            ],
+          )
+          .trimmed();
+    }
+    // Without word timings, trim only a matching prefix whose time overlaps
+    // preceding speech. Repeated speech at a later time remains separate.
+    var cut = 0;
+    final absoluteStart = offset + item.startTime;
+    final boundary = offset + context;
+    for (final prior in preceding) {
+      if (prior.endTime <= absoluteStart ||
+          prior.startTime >= boundary ||
+          prior.endTime < offset) {
+        continue;
+      }
+      final amount = _matchingPrefix(prior.text, item.text);
+      if (amount > cut) cut = amount;
+    }
+    if (cut >= item.text.length) return null;
+    return item
+        .copyWith(text: item.text.substring(cut), startTime: context)
+        .trimmed();
+  }
+
+  static int _matchingPrefix(String prior, String current) {
+    final left = _norm(prior).runes.toList();
+    final right = <int>[];
+    final ends = <int>[];
+    var offset = 0;
+    for (final rune in current.runes) {
+      final char = String.fromCharCode(rune);
+      offset += char.length;
+      final normalized = _norm(char);
+      if (normalized.isEmpty) continue;
+      right.add(normalized.runes.first);
+      ends.add(offset);
+    }
+    var size = left.length < right.length ? left.length : right.length;
+    while (size > 0) {
+      var same = true;
+      for (var i = 0; i < size; i++) {
+        if (left[left.length - size + i] != right[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same && (size >= 2 || size == right.length)) {
+        if (size == right.length) return current.length;
+        var cut = ends[size - 1];
+        for (final rune in current.substring(cut).runes) {
+          final char = String.fromCharCode(rune);
+          if (_norm(char).isNotEmpty) break;
+          cut += char.length;
+        }
+        return cut;
+      }
+      size--;
+    }
+    return 0;
   }
 
   static List<SubtitleItem> finish(List<SubtitleItem> absolute) {
@@ -947,11 +1373,7 @@ class TranscriptionRetryPolicy {
     Duration(seconds: 12),
     Duration(seconds: 30),
   ];
-  static const List<Duration> riskDelays = [
-    Duration(seconds: 15),
-    Duration(seconds: 45),
-    Duration(seconds: 90),
-  ];
+  static const List<Duration> riskDelays = [Duration(seconds: 15)];
 
   static const String batchPausedMessage =
       '服务端持续拒绝请求，已暂停后面的任务。请查看当前任务的错误详情，已完成的片段会接着用';
@@ -1014,9 +1436,21 @@ class TranscriptionAttemptRunner {
           '[transcription] asr failure kind=${error.kind} count=$failures retry=${advice.shouldRetry} message=${error.message}',
         );
         if (!advice.shouldRetry) rethrow;
+        final retryAfter = error.retryAfter;
+        // A long server cooldown belongs to a later user retry, rather than
+        // holding the current operation open past its automatic retry budget.
+        if (error.isAccessDenied &&
+            retryAfter != null &&
+            retryAfter > advice.delay) {
+          rethrow;
+        }
         final message = advice.waitingMessage(sliceLabel);
         onWaiting(message);
-        await delay(advice.delay);
+        await delay(
+          retryAfter != null && retryAfter > advice.delay
+              ? retryAfter
+              : advice.delay,
+        );
       }
     }
   }

@@ -10,7 +10,7 @@ Iterable<StableAsrBatch> cloudTranslationBatches(
   int maxRunes = 800,
   Duration maxSpan = const Duration(seconds: 30),
 }) sync* {
-  final limit = maxCues.clamp(1, 12);
+  final limit = maxCues.clamp(1, 50);
   var batch = <SubtitleItem>[];
   var runes = 0;
   for (final cue in cues) {

@@ -43,7 +43,7 @@ SubtitleItem cue(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'new task and component preparation freeze the same v2 Qwen dependencies',
+    'new task and component preparation freeze the current Qwen dependencies',
     () async {
       final center = ModelCenterService()..catalog = await loadModelCatalog();
       try {
@@ -61,7 +61,7 @@ void main() {
           center.asrProfileId = 'test';
           center.selectedLanguage = 'en';
           final en = center.transcriptionConfiguration;
-          expect(en.asrTextProcessingVersion, 2);
+          expect(en.asrTextProcessingVersion, currentAsrTextProcessingVersion);
           expect(en.enhancementModels.keys, [
             AsrEnhancementOptions.alignmentEnglishId,
           ]);

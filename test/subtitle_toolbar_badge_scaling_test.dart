@@ -92,7 +92,11 @@ void main() {
         final badgeScale = badgeRect.width / badge.size.width;
         expect(badgeScale, closeTo(iconScale, 0.000001));
         expect(iconScale, lessThanOrEqualTo(1.000001));
-        if (width <= 280) expect(iconScale, lessThan(1));
+        expect(
+          iconScale,
+          1,
+          reason: 'Narrow panels wrap before glyphs become illegible.',
+        );
         if (previousIconHeight != null) {
           expect(
             badgeRect.height / previousBadgeHeight!,

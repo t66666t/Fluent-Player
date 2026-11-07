@@ -7,9 +7,12 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/app_wakelock_coordinator.dart';
 import 'package:video_player_app/widgets/processing_screen_protection.dart';
+import 'package:video_player_app/widgets/processing_screen_protection_settings.dart';
+import 'package:video_player_app/platform/app_video_player_controller.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 class _Wake extends WakelockPlusWindowsPlugin {
@@ -25,6 +28,8 @@ void main() {
   late ProtectionNavigatorObserver observer;
   late GlobalKey<NavigatorState> navigator;
   late ValueNotifier<bool> enabled;
+  late ValueNotifier<bool> playbackActive;
+  late SettingsService settings;
   var actions = 0;
   var percent = 63;
   final preview = Platform.environment['PROTECTION_PREVIEW'] == '1';
@@ -32,16 +37,23 @@ void main() {
   setUpAll(() async {
     if (preview) {
       await (FontLoader(
+        'MaterialIcons',
+      )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
+      await (FontLoader(
             'Noto Sans SC',
           )..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf')))
           .load();
     }
   });
-  setUp(() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    settings = SettingsService()..resetForTest();
+    await settings.init();
     wakelockPlusPlatformInstance = _Wake();
     observer = ProtectionNavigatorObserver();
     navigator = GlobalKey<NavigatorState>();
     enabled = ValueNotifier(true);
+    playbackActive = ValueNotifier(false);
     actions = 0;
     percent = 63;
     AppWakelockCoordinator.setActive(
@@ -58,9 +70,10 @@ void main() {
     );
     wakelockPlusPlatformInstance = original;
     enabled.dispose();
+    playbackActive.dispose();
   });
 
-  Future<void> mount(WidgetTester tester) async {
+  Future<void> mount(WidgetTester tester, {Widget? home}) async {
     await tester.pumpWidget(
       RepaintBoundary(
         key: const ValueKey('preview'),
@@ -69,21 +82,35 @@ void main() {
           theme: ThemeData(fontFamily: 'Noto Sans SC'),
           navigatorKey: navigator,
           navigatorObservers: [observer],
-          builder: (context, child) => ValueListenableBuilder<bool>(
-            valueListenable: enabled,
-            builder: (context, value, _) => ProcessingScreenProtection(
-              enabled: value,
+          builder: (context, child) => ListenableBuilder(
+            listenable: Listenable.merge([enabled, playbackActive, settings]),
+            builder: (context, _) => ProcessingScreenProtection(
+              enabled: enabled.value && settings.processingScreenProtection,
+              playbackActive: playbackActive.value,
+              idleDelay: Duration(
+                seconds: settings.processingScreenProtectionWaitSeconds,
+              ),
+              onDisableRequested: (context) =>
+                  showProcessingScreenProtectionSettings(
+                    context,
+                    settings,
+                    confirmDisable: true,
+                  ),
               observer: observer,
               child: child!,
             ),
           ),
-          home: Scaffold(
-            body: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => actions++,
-              child: const SizedBox.expand(child: Center(child: Text('任务页面'))),
-            ),
-          ),
+          home:
+              home ??
+              Scaffold(
+                body: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => actions++,
+                  child: const SizedBox.expand(
+                    child: Center(child: Text('任务页面')),
+                  ),
+                ),
+              ),
         ),
       ),
     );
@@ -91,8 +118,11 @@ void main() {
   }
 
   Future<void> enter(WidgetTester tester) async {
-    await tester.pump(const Duration(seconds: 10));
+    await tester.pump(
+      Duration(seconds: settings.processingScreenProtectionWaitSeconds),
+    );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 650));
     expect(protection, findsOneWidget);
   }
 
@@ -103,14 +133,15 @@ void main() {
   }
 
   testWidgets(
-    'ten second idle; first tap exits without passing through; re-entry',
+    'fifteen second idle; first tap exits without passing through; re-entry',
     (tester) async {
       await mount(tester);
-      await tester.pump(const Duration(seconds: 9));
+      await tester.pump(const Duration(seconds: 14));
       expect(protection, findsNothing);
       await tester.pump(const Duration(seconds: 1));
       await tester.pump();
       expect(protection, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 650));
       await tester.tapAt(const Offset(100, 100));
       await tester.pump();
       expect(protection, findsNothing);
@@ -292,6 +323,17 @@ void main() {
       expect(rect.left, greaterThanOrEqualTo(0));
       expect(rect.right, lessThanOrEqualTo(size.width));
       expect(rect.bottom, lessThanOrEqualTo(size.height));
+      final icon = tester.getRect(
+        find.byKey(const ValueKey('processing-protection-disable-icon')),
+      );
+      final label = tester.getRect(
+        find.byKey(const ValueKey('processing-protection-disable-label')),
+      );
+      expect(
+        icon.expandToInclude(label).center.dx,
+        closeTo(rect.center.dx, .1),
+      );
+      expect(icon.center.dy, closeTo(label.center.dy, .1));
       if (preview) {
         await tester.runAsync(() async {
           final boundary = tester.renderObject<RenderRepaintBoundary>(
@@ -381,11 +423,224 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('entry fades and slides in; reduced motion enters immediately', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
+    final transition = find.byKey(
+      const ValueKey('processing-protection-entrance'),
+    );
+    double opacity() => tester.widget<FadeTransition>(transition).opacity.value;
+    expect(opacity(), 0);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(opacity(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(opacity(), 1);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
+    expect(opacity(), 1);
+    await finish(tester);
+  });
+
+  testWidgets(
+    'OCR with native preview playback or buffering never covers media',
+    (tester) async {
+      AppWakelockCoordinator.setActive(reason, false);
+      AppWakelockCoordinator.setActive(
+        AppWakelockCoordinator.ocrProcessingReason,
+        true,
+      );
+      addTearDown(
+        () => AppWakelockCoordinator.setActive(
+          AppWakelockCoordinator.ocrProcessingReason,
+          false,
+        ),
+      );
+      final controller = AppVideoPlayerController.file(File('preview.mp4'));
+      controller.value = const VideoPlayerValue(
+        duration: Duration(minutes: 2),
+        isInitialized: true,
+        isPlaying: true,
+      );
+      await mount(tester);
+      await tester.pump(const Duration(minutes: 2));
+      expect(protection, findsNothing);
+      controller.value = controller.value.copyWith(
+        isPlaying: false,
+        isBuffering: true,
+      );
+      await tester.pump(const Duration(minutes: 2));
+      expect(protection, findsNothing);
+      controller.value = controller.value.copyWith(isBuffering: false);
+      await tester.pump(const Duration(seconds: 14));
+      expect(protection, findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(protection, findsOneWidget);
+      controller.value = controller.value.copyWith(isPlaying: true);
+      await tester.pump();
+      expect(protection, findsNothing);
+      await controller.dispose();
+      await finish(tester);
+    },
+  );
+
+  testWidgets(
+    'transport loading and a changed delay restart the complete wait',
+    (tester) async {
+      await mount(tester);
+      await tester.pump(const Duration(seconds: 14));
+      playbackActive.value = true;
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 1));
+      expect(protection, findsNothing);
+      playbackActive.value = false;
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 14));
+      expect(protection, findsNothing);
+      await settings.updateSetting('processingScreenProtectionWaitSeconds', 25);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 24));
+      expect(protection, findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(protection, findsOneWidget);
+      await finish(tester);
+    },
+  );
+
+  testWidgets('focused desktop input and popup routes suspend protection', (
+    tester,
+  ) async {
+    final focus = FocusNode();
+    await mount(
+      tester,
+      home: Scaffold(body: TextField(focusNode: focus)),
+    );
+    focus.requestFocus();
+    await tester.pump();
+    await tester.pump(const Duration(minutes: 1));
+    expect(protection, findsNothing);
+    focus.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 14));
+    expect(protection, findsNothing);
+    final dialog = showDialog<void>(
+      context: navigator.currentState!.overlay!.context,
+      builder: (context) => const AlertDialog(title: Text('保持弹窗')),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(minutes: 1));
+    expect(protection, findsNothing);
+    navigator.currentState!.pop();
+    await dialog;
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 14));
+    expect(protection, findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(protection, findsOneWidget);
+    await finish(tester);
+    focus.dispose();
+  });
+
+  testWidgets('programmatic scrolling finishes before a fresh idle period', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    await mount(
+      tester,
+      home: Scaffold(
+        body: ListView.builder(
+          controller: scroll,
+          itemExtent: 50,
+          itemCount: 100,
+          itemBuilder: (_, index) => Text('条目 $index'),
+        ),
+      ),
+    );
+    scroll.animateTo(
+      2000,
+      duration: const Duration(seconds: 30),
+      curve: Curves.linear,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 20));
+    expect(protection, findsNothing);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 14));
+    expect(protection, findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(protection, findsOneWidget);
+    await finish(tester);
+    scroll.dispose();
+  });
+
+  testWidgets(
+    'checkbox exits before confirmation; cancel and save preserve protection',
+    (tester) async {
+      await mount(tester);
+      await enter(tester);
+      final checkbox = find.byKey(
+        const ValueKey('processing-protection-disable'),
+      );
+      await tester.tap(checkbox);
+      await tester.pumpAndSettle();
+      expect(protection, findsNothing);
+      expect(find.text('关闭防烧屏？'), findsOneWidget);
+      expect(actions, 0);
+      expect(settings.processingScreenProtection, isTrue);
+      await tester.pump(const Duration(minutes: 1));
+      expect(protection, findsNothing);
+      final seconds = find.byKey(
+        const ValueKey('processing-protection-seconds'),
+      );
+      await tester.enterText(seconds, '22');
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(settings.processingScreenProtectionWaitSeconds, 15);
+      await enter(tester);
+      await tester.tap(checkbox);
+      await tester.pumpAndSettle();
+      await tester.enterText(seconds, '22');
+      await tester.tap(find.text('保存等待时间'));
+      await tester.pumpAndSettle();
+      expect(settings.processingScreenProtection, isTrue);
+      expect(settings.processingScreenProtectionWaitSeconds, 22);
+      await tester.pump(const Duration(seconds: 21));
+      expect(protection, findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 650));
+      await tester.tap(checkbox);
+      await tester.pumpAndSettle();
+      await tester.enterText(seconds, '35');
+      await tester.tap(find.text('确认关闭'));
+      await tester.pumpAndSettle();
+      expect(settings.processingScreenProtection, isFalse);
+      expect(settings.processingScreenProtectionWaitSeconds, 35);
+      expect(AppWakelockCoordinator.isReasonActive(reason), isTrue);
+      await tester.pump(const Duration(minutes: 2));
+      expect(protection, findsNothing);
+      await finish(tester);
+    },
+  );
+
   test('protection preference persists and is exported', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsService()..resetForTest();
     await settings.init();
     expect(settings.processingScreenProtection, isTrue);
+    expect(settings.processingScreenProtectionWaitSeconds, 15);
+    await settings.updateSetting('processingScreenProtectionWaitSeconds', 47);
     await settings.updateSetting('processingScreenProtection', false);
     expect(settings.processingScreenProtection, isFalse);
     expect(
@@ -399,5 +654,33 @@ void main() {
           .exportSettingsSnapshot()['general']['processingScreenProtection'],
       isFalse,
     );
+    settings.resetForTest();
+    await settings.init();
+    expect(settings.processingScreenProtection, isFalse);
+    expect(settings.processingScreenProtectionWaitSeconds, 47);
+    expect(
+      settings
+          .exportSettingsSnapshot()['general']['processingScreenProtectionWaitSeconds'],
+      47,
+    );
   });
+
+  test(
+    'invalid persisted delay is normalized without resetting other preferences',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'processingScreenProtection': false,
+        'processingScreenProtectionWaitSeconds': 0,
+      });
+      settings.resetForTest();
+      await settings.init();
+      expect(settings.processingScreenProtection, isFalse);
+      expect(settings.processingScreenProtectionWaitSeconds, 1);
+      await settings.updateSetting(
+        'processingScreenProtectionWaitSeconds',
+        100000000,
+      );
+      expect(settings.processingScreenProtectionWaitSeconds, 86400);
+    },
+  );
 }

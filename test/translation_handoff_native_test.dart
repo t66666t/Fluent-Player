@@ -18,8 +18,9 @@ import 'package:video_player_app/services/app_storage_service.dart';
 import 'package:video_player_app/services/streaming_subtitle_store.dart';
 
 import 'local_translation_benchmark_test.dart' show translationBenchmarkTexts;
+import 'support/prepared_local_models.dart';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center(this.model, this.directory, {required super.storage});
   final ModelArtifact model;
   final Directory directory;

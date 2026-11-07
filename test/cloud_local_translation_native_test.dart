@@ -21,8 +21,9 @@ import 'package:video_player_app/services/local_transcription_stream.dart';
 import 'package:video_player_app/services/streaming_subtitle_store.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
 import 'package:video_player_app/services/subtitle_translation_service.dart';
+import 'support/prepared_local_models.dart';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center({required super.storage});
   @override
   Future<void> initialize() async {}

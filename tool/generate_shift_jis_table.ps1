@@ -25,6 +25,6 @@ foreach ($lead in $leads) {
   [void]$sb.AppendLine("',")
 }
 [void]$sb.AppendLine("};")
-$path = "D:\1spbfq\video_player_app\lib\features\subtitle_search\subtitle_shift_jis_table.dart"
+$path = (Join-Path $PSScriptRoot '../lib/features/subtitle_search/subtitle_shift_jis_table.dart')
 [System.IO.File]::WriteAllText($path, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
 Write-Output ("bytes=" + (Get-Item $path).Length)

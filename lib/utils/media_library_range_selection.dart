@@ -85,12 +85,15 @@ class MediaLibrarySelectionAutoScroll {
     if (viewportBottom <= viewportTop) return 0;
     if (pointerY <= viewportTop) return -maxSpeedPxPerSecond;
     if (pointerY >= viewportBottom) return maxSpeedPxPerSecond;
-    if (pointerY < viewportTop + edgeExtent) {
-      final t = (viewportTop + edgeExtent - pointerY) / edgeExtent;
+    // Landscape and large-text layouts can leave less than two edge bands.
+    // Keep the upper/lower bands separate so the bottom never scrolls upward.
+    final edge = ((viewportBottom - viewportTop) / 2).clamp(0.0, edgeExtent);
+    if (pointerY < viewportTop + edge) {
+      final t = (viewportTop + edge - pointerY) / edge;
       return -maxSpeedPxPerSecond * t.clamp(0.0, 1.0);
     }
-    if (pointerY > viewportBottom - edgeExtent) {
-      final t = (pointerY - (viewportBottom - edgeExtent)) / edgeExtent;
+    if (pointerY > viewportBottom - edge) {
+      final t = (pointerY - (viewportBottom - edge)) / edge;
       return maxSpeedPxPerSecond * t.clamp(0.0, 1.0);
     }
     return 0;

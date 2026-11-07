@@ -2,8 +2,9 @@ import 'model_adapters.dart';
 
 enum AsrAudioChannel { mix, left, right }
 
-const currentAsrTextProcessingVersion = 2;
-bool usesAsrTextProcessing(int? version) => version == 1 || version == 2;
+const currentAsrTextProcessingVersion = 3;
+bool usesAsrTextProcessing(int? version) =>
+    version == 1 || version == 2 || version == 3;
 // No longer offered by the player. Ignore these dependencies in saved jobs.
 const retiredAsrModelIds = {
   'asr-speaker-segmentation-int8',
@@ -179,7 +180,7 @@ class AsrEnhancementOptions {
       // New Qwen jobs use the existing lightweight English CTC aligner. Old
       // frozen jobs retain their Qwen-only dependencies and routing.
       if (alignment &&
-          (!qwen || textProcessingVersion == 2) &&
+          (!qwen || (textProcessingVersion ?? 0) >= 2) &&
           supported.contains('en'))
         alignmentEnglishId,
       if (alignment &&
@@ -187,7 +188,8 @@ class AsrEnhancementOptions {
           (recognitionEngine != 'parakeet-ja' || alwaysAlign) &&
           (qwen
               ? supported.any(qwenAlignmentLanguages.contains) &&
-                    !(textProcessingVersion == 2 && selectedLanguage == 'en')
+                    !((textProcessingVersion ?? 0) >= 2 &&
+                        selectedLanguage == 'en')
               : japaneseKorean))
         alignmentQwenId,
       // Bilingual/European ASR exports may omit a native language tag too.

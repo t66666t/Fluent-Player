@@ -47,7 +47,7 @@ def main():
         runtime = digest(args.windows / 'onnxruntime.dll')
         original = digest(args.project / 'windows/runtime/onnxruntime.dll')
         assert runtime == original
-        result['windows'] = {'executableSha256': digest(args.windows / 'video_player_app.exe'),
+        result['windows'] = {'executableSha256': digest(args.windows / 'fluent-player.exe'),
                              'appSha256': digest(args.windows / 'data/app.so'),
                              'bundledOcrWeights': weights, 'ocrCatalog': True,
                              'runtimeSha256': runtime, 'originalRuntimeSha256': original}

@@ -8,10 +8,12 @@ The application-owned ASR and subtitle extraction helpers in native/asr/ and
 native/subtitle_archive/ use MIT; see the LICENSE in each directory.
 DirectML and UnRAR are separately licensed components, not GPL-licensed code.
 
-The community edition bundles Noto Sans CJK, Inter, Roboto Condensed,
-Brawler and Comic Relief under SIL OFL 1.1; see assets/fonts/licenses/.
-MiSans is not bundled. Legacy MiSans/large CJK typeface choices fall back to
-Noto Sans CJK in this small source distribution.
+The community edition bundles Swei Gothic, Noto Sans CJK, Inter, Roboto
+Condensed, Brawler and Comic Relief under SIL OFL 1.1; see assets/fonts/licenses/.
+Earlier versions used MiSans, copyright Beijing Xiaomi Mobile Software Co.,
+Ltd.; the historical license is retained in assets/fonts/licenses/MiSans-License.txt
+and assets/licenses/MiSans-License.pdf. The current application does not bundle
+MiSans. Legacy MiSans and Noto Serif subtitle choices fall back to Noto Sans.
 
 ASR adapter reference: SocialSisterYi/bcut-asr (MIT); historical downloader
 reference: jiji262/douyin-downloader (MIT). Full notices are included under

@@ -11,6 +11,11 @@ export 'cloud_asr_types.dart';
 
 enum ModelPurpose { transcription, translation, enhancement, acceleration, ocr }
 
+// Fixed shared dependency; it used to be bundled with exactly these bytes.
+// Keep it outside job snapshots so existing ASR checkpoints remain compatible.
+const asrVadModelId = 'silero-vad-16k';
+const asrVadFileName = 'silero_vad.onnx';
+
 enum AsrExecutionMode { auto, lowMemory, pipeline }
 
 class ModelFile {
@@ -107,7 +112,16 @@ Future<List<ModelArtifact>> loadModelCatalog({
   final ocr =
       jsonDecode(await rootBundle.loadString('assets/models/ocr_catalog.json'))
           as Map;
-  return [...json['models'] as List, ...ocr['components'] as List]
+  final dependencies =
+      jsonDecode(
+            await rootBundle.loadString('assets/models/asr_dependencies.json'),
+          )
+          as Map;
+  return [
+        ...json['models'] as List,
+        ...dependencies['models'] as List,
+        ...ocr['components'] as List,
+      ]
       .map((e) => ModelArtifact.fromJson(Map<String, dynamic>.from(e as Map)))
       .where((model) => includeRetired || !model.retired)
       .toList(growable: false);
@@ -211,7 +225,8 @@ class ModelServiceProfile {
   final CloudAsrOptions? cloudOptions;
   final CloudAsrCapabilities? cloudCapabilities;
   CloudAsrProvider? get cloudProvider => CloudAsrProvider.values
-      .where((value) => value.name == kind.name).firstOrNull;
+      .where((value) => value.name == kind.name)
+      .firstOrNull;
   bool get local => kind == TranscriptionServiceKind.local;
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -221,8 +236,10 @@ class ModelServiceProfile {
     'model': model,
     'language': language,
     'appId': appId,
-    if (cloudProvider != null && cloudOptions != null) 'cloudOptions': cloudOptions!.toJson(),
-    if (cloudProvider != null && cloudCapabilities != null) 'cloudCapabilities': cloudCapabilities!.toJson(),
+    if (cloudProvider != null && cloudOptions != null)
+      'cloudOptions': cloudOptions!.toJson(),
+    if (cloudProvider != null && cloudCapabilities != null)
+      'cloudCapabilities': cloudCapabilities!.toJson(),
   };
   factory ModelServiceProfile.fromJson(Map<String, dynamic> json) {
     final endpoint = json['endpoint'] as String? ?? '';
@@ -246,10 +263,16 @@ class ModelServiceProfile {
       model: model,
       language: json['language'] as String? ?? 'auto',
       appId: json['appId'] as String? ?? '',
-      cloudOptions: json['cloudOptions'] is Map ? CloudAsrOptions.fromJson(
-        Map<String, dynamic>.from(json['cloudOptions'] as Map)) : null,
-      cloudCapabilities: json['cloudCapabilities'] is Map ? CloudAsrCapabilities.fromJson(
-        Map<String, dynamic>.from(json['cloudCapabilities'] as Map)) : null,
+      cloudOptions: json['cloudOptions'] is Map
+          ? CloudAsrOptions.fromJson(
+              Map<String, dynamic>.from(json['cloudOptions'] as Map),
+            )
+          : null,
+      cloudCapabilities: json['cloudCapabilities'] is Map
+          ? CloudAsrCapabilities.fromJson(
+              Map<String, dynamic>.from(json['cloudCapabilities'] as Map),
+            )
+          : null,
     );
   }
 }
@@ -333,8 +356,13 @@ class ModelJobSpec {
     this.asrExecution = AsrExecutionMode.auto,
     this.asrAcceleration,
     this.asrAccelerationModels = const {},
+    this.allowModelDownload = true,
   });
   final ModelServiceProfile profile;
+
+  /// Restricted automation must use already prepared weights. Omitted for old
+  /// jobs so their serialized contracts and recognition identities stay intact.
+  final bool allowModelDownload;
   final String artifactIdentity;
   final int threads;
 
@@ -362,6 +390,7 @@ class ModelJobSpec {
   final Map<String, String> asrAccelerationModels;
   Map<String, dynamic> toJson() => {
     ..._recognitionJson(),
+    if (!allowModelDownload) 'allowModelDownload': false,
     if (profile.local && asrCpuThreads != null) 'asrCpuThreads': asrCpuThreads,
     if (profile.local && asrTokenTiming != null)
       'asrTokenTiming': asrTokenTiming,
@@ -447,6 +476,7 @@ class ModelJobSpec {
         }),
   }.toList(growable: false);
   factory ModelJobSpec.fromJson(Map<String, dynamic> json) => ModelJobSpec(
+    allowModelDownload: json['allowModelDownload'] != false,
     profile: ModelServiceProfile.fromJson(
       Map<String, dynamic>.from(json['profile'] as Map),
     ),

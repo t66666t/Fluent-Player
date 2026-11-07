@@ -194,7 +194,7 @@ void main() {
     );
 
     test(
-      'unfinished retired downloads pause and preserve byte checkpoints',
+      'unfinished retired downloads pause and preserve checkpoints and the selected public profile',
       () async {
         final dir = await center.modelDirectory(old);
         await dir.create(recursive: true);
@@ -212,7 +212,7 @@ void main() {
           selected: false,
         );
         await center.initialize();
-        expect(center.asrProfileId, 'gongyi');
+        expect(center.asrProfileId, ModelCenterService.legacyProfile.id);
         expect(center.downloads[old.id]!.phase, ModelDownloadPhase.paused);
         expect(center.downloads[old.id]!.received, 2);
         expect(
@@ -226,6 +226,7 @@ void main() {
           throwsStateError,
         );
         final saved = jsonDecode(await record.readAsString()) as Map;
+        expect(saved['asrProfileId'], ModelCenterService.legacyProfile.id);
         expect((saved['downloads'] as List).single['phase'], 'paused');
       },
     );

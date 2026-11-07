@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/services/home_search_preferences.dart';
-import 'package:video_player_app/widgets/categorized_settings_page.dart';
-import 'package:video_player_app/widgets/experimental_layout_widgets.dart';
+import 'package:video_player_app/widgets/media_library_settings_page.dart';
 import 'package:video_player_app/widgets/media_library_search_prompt.dart';
 
 void main() {
@@ -73,7 +72,7 @@ void main() {
     },
   );
 
-  testWidgets('narrow settings reserve the scaled search field height', (
+  testWidgets('narrow settings keep large text visible without a search row', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -87,27 +86,18 @@ void main() {
           ).copyWith(textScaler: const TextScaler.linear(2)),
           child: child!,
         ),
-        home: const CategorizedSettingsPage(
-          items: [
-            SettingsCategoryBoundary(
-              ExperimentalSettingsCategory.playback,
-              label: '媒体通知',
-              keywords: '通知 权限',
-            ),
-            ListTile(title: Text('显示媒体通知')),
-          ],
+        home: const MediaLibrarySettingsPage(
+          items: [ListTile(title: Text('显示媒体通知'))],
         ),
       ),
     );
-    final field = find.byKey(const ValueKey('settings-search'));
+    expect(find.byType(TextField), findsNothing);
+    expect(tester.widget<AppBar>(find.byType(AppBar)).bottom, isNull);
     expect(
-      tester.getBottomRight(field).dy,
-      lessThanOrEqualTo(tester.getBottomRight(find.byType(AppBar)).dy),
+      tester.getTopLeft(find.text('显示媒体通知')).dy,
+      greaterThanOrEqualTo(tester.getBottomRight(find.byType(AppBar)).dy),
     );
-    expect(tester.takeException(), isNull);
-    await tester.enterText(field, '通知');
-    await tester.pumpAndSettle();
-    expect(find.text('显示媒体通知'), findsOneWidget);
+    expect(find.text('显示媒体通知').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

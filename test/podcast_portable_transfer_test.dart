@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -30,7 +31,7 @@ class _Paths extends PathProviderPlatform {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'podcast folder transfer restores subscription, progress, settings and opted-in media',
+    'podcast folder transfer restores RSS and episode progress without cached audio',
     () async {
       final temporary = await Directory.systemTemp.createTemp(
         'podcast-portable-',
@@ -87,7 +88,11 @@ void main() {
         sourceStore.setSetting(null, 'includeDownloadsInExport', true);
         await PodcastRuntime.instance.itemFor(episode);
         final mediaFile = File(p.join(temporary.path, 'episode.mp3'));
-        await mediaFile.writeAsBytes(List.generate(10240, (i) => i % 251));
+        const audioMarker = 'PODCAST-NETWORK-ORIGINAL-AUDIO-BYTES';
+        await mediaFile.writeAsBytes([
+          ...utf8.encode('ID3$audioMarker'),
+          ...List.generate(10240, (i) => i % 251),
+        ]);
         await sourceController.mediaStore.importFile(
           episode,
           episode.media.first,
@@ -98,12 +103,57 @@ void main() {
           collectionId: card!.id,
           outputPath: p.join(temporary.path, 'podcast.fluentpack'),
         );
+        final archive = ZipDecoder().decodeBytes(
+          await File(prepared.path).readAsBytes(),
+        );
+        final files = archive.files.where((entry) => entry.isFile).toList();
+        expect(
+          files.any(
+            (entry) => latin1.decode(entry.content).contains(audioMarker),
+          ),
+          isFalse,
+          reason:
+              'Even an old includeDownloadsInExport preference must not '
+              'send podcast audio over LAN.',
+        );
+        expect(
+          files.where(
+            (entry) => p.extension(entry.name).toLowerCase() == '.mp3',
+          ),
+          isEmpty,
+        );
+        final manifestEntry = files.singleWhere(
+          (entry) => p.basename(entry.name) == 'manifest.json',
+        );
+        final manifest = jsonDecode(utf8.decode(manifestEntry.content)) as Map;
+        final snapshot = manifest['snapshot'] as Map;
+        final bundle = (snapshot['podcasts'] as List).single as Map;
+        expect((bundle['channel'] as Map)['feedUrl'], feed.channel.feedUrl);
+        expect(
+          (bundle['episodes'] as List).map((value) => (value as Map)['id']),
+          contains(episode.id),
+        );
+        expect(
+          ((bundle['states'] as Map)[episode.id] as Map)['positionMs'],
+          12345,
+        );
+        expect(
+          sourceController.mediaStore.isDownloaded(
+            episode.id,
+            episode.media.first.url,
+          ),
+          isTrue,
+          reason:
+              'Preparing a metadata-only transfer must retain the source download.',
+        );
         library.resetLibraryForTesting();
         library.skipImportSidecarWorkForTesting = true;
         PodcastRuntime.debugOverride = PodcastRuntime.forTesting(
           receiverController,
           library: library,
         );
+        receiverStore.setSetting(feed.channel.id, 'speed', 2.0);
+        receiverStore.setSetting(feed.channel.id, 'autoDownload', false);
         final received = await transfer.importReceivedFolder(
           library: library,
           packagePath: prepared.path,
@@ -115,14 +165,22 @@ void main() {
           feed.channel.id,
         );
         expect(receiverStore.state(episode.id).positionMs, 12345);
-        expect(receiverStore.state(episode.id).favorite, isTrue);
-        expect(receiverStore.effective(feed.channel.id).number('speed'), 1.5);
+        expect(receiverStore.state(episode.id).favorite, isFalse);
+        expect(
+          receiverStore.episode(episode.id)?.sourceFeedUrl,
+          feed.channel.feedUrl,
+        );
+        expect(receiverStore.effective(feed.channel.id).number('speed'), 2.0);
+        expect(
+          receiverStore.effective(feed.channel.id).flag('autoDownload'),
+          isFalse,
+        );
         expect(
           receiverController.mediaStore.isDownloaded(
             episode.id,
             episode.media.first.url,
           ),
-          isTrue,
+          isFalse,
         );
         expect(
           library
@@ -132,6 +190,24 @@ void main() {
               .podcast!
               .episodeId,
           episode.id,
+        );
+        receiverController.updateState(episode.id, (state) {
+          state.positionMs = 9000;
+          state.played = true;
+        }, project: false);
+        await transfer.importReceivedFolder(
+          library: library,
+          packagePath: prepared.path,
+          originDeviceId: 'sender',
+          sourceCollectionId: card.id,
+          existingTargetCollectionId: received.collectionId,
+        );
+        expect(receiverStore.state(episode.id).positionMs, 9000);
+        expect(receiverStore.state(episode.id).played, isTrue);
+        expect(receiverStore.effective(feed.channel.id).number('speed'), 2.0);
+        expect(
+          receiverStore.effective(feed.channel.id).flag('autoDownload'),
+          isFalse,
         );
       } finally {
         PodcastRuntime.debugOverride = null;

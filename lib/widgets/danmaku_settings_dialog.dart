@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -132,21 +133,59 @@ class _DanmakuDialogMetrics {
 }
 
 class _DanmakuDialogScope extends InheritedWidget {
-  const _DanmakuDialogScope({required this.metrics, required super.child});
+  const _DanmakuDialogScope({
+    required this.metrics,
+    required this.activeAdjustments,
+    required this.onAdjustmentStart,
+    required super.child,
+  });
 
   final _DanmakuDialogMetrics metrics;
+  final Set<String> activeAdjustments;
+  bool get adjusting => activeAdjustments.isNotEmpty;
+  final void Function(PointerDownEvent event, String control) onAdjustmentStart;
 
-  static _DanmakuDialogMetrics of(BuildContext context) {
+  static _DanmakuDialogScope of(BuildContext context) {
     final scope = context
         .dependOnInheritedWidgetOfExactType<_DanmakuDialogScope>();
     assert(scope != null, 'Danmaku settings widgets need dialog metrics');
-    return scope!.metrics;
+    return scope!;
   }
 
   @override
   bool updateShouldNotify(_DanmakuDialogScope oldWidget) =>
-      metrics != oldWidget.metrics;
+      metrics != oldWidget.metrics ||
+      activeAdjustments.length != oldWidget.activeAdjustments.length ||
+      !activeAdjustments.containsAll(oldWidget.activeAdjustments);
 }
+
+/// Keep the adjusted row clear while other controls reveal the live video.
+/// Opacity changes painting only, so mouse/touch targets and layout stay stable.
+class _AdjustmentEmphasis extends StatelessWidget {
+  const _AdjustmentEmphasis({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = _DanmakuDialogScope.of(context);
+    final control = switch (child) {
+      _SliderRow row => row.label,
+      _FineAdjustment row => row.label,
+      _ => null,
+    };
+    return Opacity(
+      opacity: !scope.adjusting || scope.activeAdjustments.contains(control)
+          ? 1
+          : .25,
+      child: child,
+    );
+  }
+}
+
+List<Widget> _emphasizeControls(List<Widget> controls) => [
+  for (final control in controls) _AdjustmentEmphasis(child: control),
+];
 
 Future<void> showDanmakuSettingsDialog(
   BuildContext context, {
@@ -156,7 +195,7 @@ Future<void> showDanmakuSettingsDialog(
 }) {
   return showDialog<void>(
     context: context,
-    barrierColor: Colors.black54,
+    barrierColor: Colors.transparent,
     builder: (context) => _DanmakuSettingsDialog(
       initialMode: initialMode,
       videoItem: videoItem,
@@ -185,6 +224,21 @@ class _DanmakuSettingsDialogState extends State<_DanmakuSettingsDialog> {
   bool _updating = false;
   String? _status;
   bool _statusIsError = false;
+  bool _advancedSettingsOpen = false;
+
+  Future<void> _openAdvancedSettings() async {
+    if (_advancedSettingsOpen) return;
+    setState(() => _advancedSettingsOpen = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (_) => const _DanmakuAdvancedSettingsDialog(),
+      );
+    } finally {
+      if (mounted) setState(() => _advancedSettingsOpen = false);
+    }
+  }
 
   Future<void> _updateDanmaku() async {
     if (_updating) return;
@@ -238,6 +292,7 @@ class _DanmakuSettingsDialogState extends State<_DanmakuSettingsDialog> {
     );
     return _SettingsDialogFrame(
       title: '弹幕设置',
+      visible: !_advancedSettingsOpen,
       maxWidth: metrics.compact ? 560 : 640,
       metrics: metrics,
       headerAction: Row(
@@ -245,11 +300,7 @@ class _DanmakuSettingsDialogState extends State<_DanmakuSettingsDialog> {
         children: [
           DesktopButtonClickRegion(
             child: TextButton.icon(
-              onPressed: () => showDialog<void>(
-                context: context,
-                barrierColor: Colors.black54,
-                builder: (_) => const _DanmakuAdvancedSettingsDialog(),
-              ),
+              onPressed: _openAdvancedSettings,
               icon: Icon(
                 Icons.tune_rounded,
                 size: metrics.headerButtonIconSize,
@@ -286,7 +337,7 @@ class _DanmakuSettingsDialogState extends State<_DanmakuSettingsDialog> {
           key: const ValueKey('danmaku-settings-scroll'),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
+            children: _emphasizeControls([
               Row(
                 children: [
                   for (final mode in DanmakuPresentationMode.values)
@@ -344,7 +395,7 @@ class _DanmakuSettingsDialogState extends State<_DanmakuSettingsDialog> {
               const Divider(color: Colors.white12, height: 1),
               SizedBox(height: metrics.extraCompact ? 6 : 12),
               ..._updateControls(metrics),
-            ],
+            ]),
           ),
         ),
       ),
@@ -680,7 +731,7 @@ class _DanmakuAdvancedSettingsDialogState
           key: const ValueKey('danmaku-advanced-settings-scroll'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+            children: _emphasizeControls([
               _DanmakuPreview(settings: settings),
               SizedBox(height: metrics.compact ? 6 : 12),
               Row(
@@ -918,7 +969,7 @@ class _DanmakuAdvancedSettingsDialogState
                   ),
                 ),
               ),
-            ],
+            ]),
           ),
         ),
       ),
@@ -943,80 +994,87 @@ class _FineAdjustment extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 42,
-    child: Row(
-      children: [
-        SizedBox(
-          width: 64,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: enabled ? Colors.white : Colors.white38,
-              fontSize: 14,
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: enabled
+        ? (event) =>
+              _DanmakuDialogScope.of(context).onAdjustmentStart(event, label)
+        : null,
+    child: SizedBox(
+      height: 42,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: enabled ? Colors.white : Colors.white38,
+                fontSize: 14,
+              ),
             ),
           ),
-        ),
-        DesktopButtonClickRegion(
-          child: IconButton(
-            tooltip: '减小$label',
-            onPressed: enabled && value > min
-                ? () => onChanged((value - step).clamp(min, max))
-                : null,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 32),
-            padding: EdgeInsets.zero,
-            icon: const Icon(
-              Icons.remove_rounded,
-              size: 16,
-              color: Colors.white70,
+          DesktopButtonClickRegion(
+            child: IconButton(
+              tooltip: '减小$label',
+              onPressed: enabled && value > min
+                  ? () => onChanged((value - step).clamp(min, max))
+                  : null,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 32),
+              padding: EdgeInsets.zero,
+              icon: const Icon(
+                Icons.remove_rounded,
+                size: 16,
+                color: Colors.white70,
+              ),
             ),
           ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 4,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              activeTrackColor: _accent,
-              thumbColor: Colors.white,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-            ),
-            child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              divisions: ((max - min) / step).round(),
-              onChanged: enabled ? onChanged : null,
-            ),
-          ),
-        ),
-        DesktopButtonClickRegion(
-          child: IconButton(
-            tooltip: '增大$label',
-            onPressed: enabled && value < max
-                ? () => onChanged((value + step).clamp(min, max))
-                : null,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 32),
-            padding: EdgeInsets.zero,
-            icon: const Icon(
-              Icons.add_rounded,
-              size: 16,
-              color: Colors.white70,
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 4,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                activeTrackColor: _accent,
+                inactiveTrackColor: const Color(0xFF777777),
+                thumbColor: Colors.white,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                divisions: ((max - min) / step).round(),
+                onChanged: enabled ? onChanged : null,
+              ),
             ),
           ),
-        ),
-        SizedBox(
-          width: 54,
-          child: Text(
-            valueText,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              color: enabled ? _accent : Colors.white38,
-              fontSize: 13,
+          DesktopButtonClickRegion(
+            child: IconButton(
+              tooltip: '增大$label',
+              onPressed: enabled && value < max
+                  ? () => onChanged((value + step).clamp(min, max))
+                  : null,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 32),
+              padding: EdgeInsets.zero,
+              icon: const Icon(
+                Icons.add_rounded,
+                size: 16,
+                color: Colors.white70,
+              ),
             ),
           ),
-        ),
-      ],
+          SizedBox(
+            width: 54,
+            child: Text(
+              valueText,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: enabled ? _accent : Colors.white38,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -1040,12 +1098,13 @@ class _FitSettingsContent extends StatelessWidget {
   }
 }
 
-class _SettingsDialogFrame extends StatelessWidget {
+class _SettingsDialogFrame extends StatefulWidget {
   final String title;
   final double maxWidth;
   final _DanmakuDialogMetrics metrics;
   final Widget? headerAction;
   final Widget child;
+  final bool visible;
 
   const _SettingsDialogFrame({
     required this.title,
@@ -1053,95 +1112,176 @@ class _SettingsDialogFrame extends StatelessWidget {
     required this.metrics,
     this.headerAction,
     required this.child,
+    this.visible = true,
   });
 
   @override
+  State<_SettingsDialogFrame> createState() => _SettingsDialogFrameState();
+}
+
+class _SettingsDialogFrameState extends State<_SettingsDialogFrame>
+    with WidgetsBindingObserver {
+  // Track pointers independently: ending one touch must not cover another drag.
+  final Map<int, String> _adjustmentPointers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didUpdateWidget(_SettingsDialogFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.visible) _adjustmentPointers.clear();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _adjustmentPointers.isNotEmpty) {
+      setState(_adjustmentPointers.clear);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _startAdjustment(PointerDownEvent event, String control) {
+    if (!mounted || event.buttons != kPrimaryButton) return;
+    setState(() => _adjustmentPointers[event.pointer] = control);
+  }
+
+  void _endAdjustment(PointerEvent event) {
+    if (!mounted || !_adjustmentPointers.containsKey(event.pointer)) return;
+    setState(() => _adjustmentPointers.remove(event.pointer));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final metrics = widget.metrics;
     final screen = MediaQuery.sizeOf(context);
     final maxHeight = (screen.height - metrics.insetPadding.vertical).clamp(
       0.0,
       screen.height,
     );
-    return Dialog(
-      backgroundColor: const Color(0xFF222222),
-      insetPadding: metrics.insetPadding,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: _DanmakuDialogScope(
-        metrics: metrics,
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            materialTapTargetSize: metrics.compact
-                ? MaterialTapTargetSize.shrinkWrap
-                : Theme.of(context).materialTapTargetSize,
-            visualDensity: metrics.extraCompact
-                ? const VisualDensity(horizontal: -4, vertical: -4)
-                : metrics.compact
-                ? const VisualDensity(horizontal: -2, vertical: -3)
-                : VisualDensity.compact,
-          ),
-          child: ConstrainedBox(
-            key: const ValueKey('danmaku-dialog-surface'),
-            constraints: BoxConstraints(
-              maxWidth: maxWidth,
-              maxHeight: maxHeight,
+    return Offstage(
+      offstage: !widget.visible,
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: metrics.insetPadding,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Listener(
+          // This ancestor retains the pointer-up/cancel path even if a control
+          // disappears during a drag. The transparent panel still blocks taps.
+          behavior: HitTestBehavior.opaque,
+          onPointerUp: _endAdjustment,
+          onPointerCancel: _endAdjustment,
+          child: DecoratedBox(
+            key: const ValueKey('danmaku-dialog-background'),
+            decoration: BoxDecoration(
+              color: _adjustmentPointers.isEmpty
+                  ? const Color(0xEB222222)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Padding(
-              padding: metrics.contentPadding,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: metrics.titleSize,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (headerAction != null)
-                        Expanded(
-                          flex: 3,
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerRight,
-                              child: headerAction,
+            child: _DanmakuDialogScope(
+              metrics: metrics,
+              activeAdjustments: Set.unmodifiable(_adjustmentPointers.values),
+              onAdjustmentStart: _startAdjustment,
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(
+                  shadows: [
+                    Shadow(color: Colors.black, blurRadius: 3),
+                    Shadow(color: Colors.black, blurRadius: 1),
+                  ],
+                ),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    materialTapTargetSize: metrics.compact
+                        ? MaterialTapTargetSize.shrinkWrap
+                        : Theme.of(context).materialTapTargetSize,
+                    visualDensity: metrics.extraCompact
+                        ? const VisualDensity(horizontal: -4, vertical: -4)
+                        : metrics.compact
+                        ? const VisualDensity(horizontal: -2, vertical: -3)
+                        : VisualDensity.compact,
+                  ),
+                  child: ConstrainedBox(
+                    key: const ValueKey('danmaku-dialog-surface'),
+                    constraints: BoxConstraints(
+                      maxWidth: widget.maxWidth,
+                      maxHeight: maxHeight,
+                    ),
+                    child: Padding(
+                      padding: metrics.contentPadding,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _AdjustmentEmphasis(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    widget.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: metrics.titleSize,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (widget.headerAction != null)
+                                  Expanded(
+                                    flex: 3,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerRight,
+                                        child: widget.headerAction,
+                                      ),
+                                    ),
+                                  ),
+                                DesktopButtonClickRegion(
+                                  child: IconButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    icon: Icon(
+                                      Icons.close,
+                                      color: Colors.white70,
+                                      size: 22,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: metrics.extraCompact
+                                        ? const EdgeInsets.all(4)
+                                        : null,
+                                    constraints: metrics.extraCompact
+                                        ? const BoxConstraints(
+                                            minWidth: 28,
+                                            minHeight: 28,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      DesktopButtonClickRegion(
-                        child: IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: Icon(
-                            Icons.close,
-                            color: Colors.white70,
-                            size: 22,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          padding: metrics.extraCompact
-                              ? const EdgeInsets.all(4)
-                              : null,
-                          constraints: metrics.extraCompact
-                              ? const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                )
-                              : null,
-                        ),
+                          SizedBox(height: metrics.headerGap),
+                          widget.child,
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                  SizedBox(height: metrics.headerGap),
-                  child,
-                ],
+                ),
               ),
             ),
           ),
@@ -1158,17 +1298,20 @@ class _DanmakuPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = _DanmakuDialogScope.of(context);
+    final scope = _DanmakuDialogScope.of(context);
+    final metrics = scope.metrics;
     return Container(
       height: metrics.previewHeight,
       width: double.infinity,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF172C3A), Color(0xFF576675)],
-        ),
+        gradient: scope.adjusting
+            ? null
+            : const LinearGradient(
+                colors: [Color(0xFF172C3A), Color(0xFF576675)],
+              ),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: Colors.white12),
+        border: scope.adjusting ? null : Border.all(color: Colors.white12),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1203,7 +1346,7 @@ class _OutlineOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = _DanmakuDialogScope.of(context);
+    final metrics = _DanmakuDialogScope.of(context).metrics;
     return Material(
       color: selected ? _accent : const Color(0xFF555555),
       borderRadius: BorderRadius.circular(7),
@@ -1330,7 +1473,7 @@ class _CheckboxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = _DanmakuDialogScope.of(context);
+    final metrics = _DanmakuDialogScope.of(context).metrics;
     // Compact trailing checkbox so the extra setting can sit under the speed
     // slider without growing the dialog past a small phone viewport.
     return InkWell(
@@ -1396,7 +1539,8 @@ class _SliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = _DanmakuDialogScope.of(context);
+    final scope = _DanmakuDialogScope.of(context);
+    final metrics = scope.metrics;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: metrics.sliderVerticalPadding),
       child: Row(
@@ -1415,42 +1559,45 @@ class _SliderRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: _accent,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                overlayColor: const Color(0x33FF6699),
-                trackHeight: metrics.sliderTrackHeight,
-                padding: metrics.sliderPadding,
-                // Overlay padding is the main height sink on Material sliders.
-                overlayShape: metrics.compact
-                    ? SliderComponentShape.noOverlay
-                    : RoundSliderOverlayShape(
-                        overlayRadius: metrics.sliderThumbRadius + 8,
-                      ),
-                thumbShape: RoundSliderThumbShape(
-                  enabledThumbRadius: metrics.sliderThumbRadius,
+            child: Listener(
+              onPointerDown: (event) => scope.onAdjustmentStart(event, label),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: _accent,
+                  inactiveTrackColor: const Color(0xFF777777),
+                  thumbColor: Colors.white,
+                  overlayColor: const Color(0x33FF6699),
+                  trackHeight: metrics.sliderTrackHeight,
+                  padding: metrics.sliderPadding,
+                  // Overlay padding is the main height sink on Material sliders.
+                  overlayShape: metrics.compact
+                      ? SliderComponentShape.noOverlay
+                      : RoundSliderOverlayShape(
+                          overlayRadius: metrics.sliderThumbRadius + 8,
+                        ),
+                  thumbShape: RoundSliderThumbShape(
+                    enabledThumbRadius: metrics.sliderThumbRadius,
+                  ),
                 ),
-              ),
-              child: metrics.compact
-                  ? SizedBox(
-                      height: metrics.extraCompact ? 25 : 32,
-                      child: Slider(
+                child: metrics.compact
+                    ? SizedBox(
+                        height: metrics.extraCompact ? 25 : 32,
+                        child: Slider(
+                          value: value.clamp(min, max),
+                          min: min,
+                          max: max,
+                          divisions: divisions,
+                          onChanged: onChanged,
+                        ),
+                      )
+                    : Slider(
                         value: value.clamp(min, max),
                         min: min,
                         max: max,
                         divisions: divisions,
                         onChanged: onChanged,
                       ),
-                    )
-                  : Slider(
-                      value: value.clamp(min, max),
-                      min: min,
-                      max: max,
-                      divisions: divisions,
-                      onChanged: onChanged,
-                    ),
+              ),
             ),
           ),
           SizedBox(

@@ -25,14 +25,13 @@ abstract final class RecommendedSubtitleDefaults {
     backgroundOpacity: .9,
   );
 
-  // The reference primary size also keeps the settings panel's outline/blur/
-  // distance values exactly 4.0 / 3.5 / 2.5 in both modes. Actual glyph sizes
-  // follow the viewport; subsequent user changes remain multiplicative.
+  // Both modes start with the same 30/25 size pair. Actual glyph sizes follow
+  // the viewport; subsequent user changes remain multiplicative.
   static const layout = SubtitleLayoutStyle(
     balancedScreenSizing: true,
     overallScale: 1,
-    fontSize: kSubtitleTextMetricReferenceFontSize,
-    secondaryFontSize: kSubtitleTextMetricReferenceFontSize * .85,
+    fontSize: kDefaultSubtitleFontSize,
+    secondaryFontSize: kDefaultSecondarySubtitleFontSize,
     lineSpacing: 2,
     letterSpacing: 0,
   );

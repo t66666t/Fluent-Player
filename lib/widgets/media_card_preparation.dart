@@ -1,6 +1,8 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import 'media_cover_reveal.dart';
+
 /// Each asynchronous part owns one lease. Readiness affects paint, not layout:
 /// the real image can decode while the fixed-size card placeholder is visible.
 /// There is no second widget tree, opacity layer, ticker, or polling timer.
@@ -55,6 +57,7 @@ class _MediaCardPreparationHostState extends State<MediaCardPreparationHost> {
     child: _PreparedCardPaint(
       preparation: _preparation,
       radius: widget.radius,
+      showCardWhilePreparing: MediaCoverRevealStamp.maybeOf(context) != null,
       child: widget.child,
     ),
   );
@@ -78,26 +81,41 @@ class _PreparedCardPaint extends SingleChildRenderObjectWidget {
   const _PreparedCardPaint({
     required this.preparation,
     required this.radius,
+    required this.showCardWhilePreparing,
     required super.child,
   });
   final MediaCardPreparation preparation;
   final double radius;
+  final bool showCardWhilePreparing;
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderPreparedCard(preparation, radius);
+      _RenderPreparedCard(preparation, radius, showCardWhilePreparing);
   @override
   void updateRenderObject(
     BuildContext context,
     _RenderPreparedCard renderObject,
   ) {
     renderObject.radius = radius;
+    renderObject.showCardWhilePreparing = showCardWhilePreparing;
   }
 }
 
 class _RenderPreparedCard extends RenderProxyBox {
-  _RenderPreparedCard(this.preparation, this.radius);
+  _RenderPreparedCard(
+    this.preparation,
+    this.radius,
+    this._showCardWhilePreparing,
+  );
   final MediaCardPreparation preparation;
   double radius;
+  bool _showCardWhilePreparing;
+  set showCardWhilePreparing(bool value) {
+    if (value == _showCardWhilePreparing) return;
+    _showCardWhilePreparing = value;
+    _changed();
+  }
+
+  bool get _showChild => _showCardWhilePreparing || preparation.isReady;
   void _changed() {
     markNeedsPaint();
     markNeedsSemanticsUpdate();
@@ -117,7 +135,7 @@ class _RenderPreparedCard extends RenderProxyBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (preparation.isReady) {
+    if (_showChild) {
       super.paint(context, offset);
     } else {
       context.canvas.drawRRect(
@@ -129,9 +147,9 @@ class _RenderPreparedCard extends RenderProxyBox {
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) =>
-      preparation.isReady && super.hitTest(result, position: position);
+      _showChild && super.hitTest(result, position: position);
   @override
   void visitChildrenForSemantics(RenderObjectVisitor visitor) {
-    if (preparation.isReady) super.visitChildrenForSemantics(visitor);
+    if (_showChild) super.visitChildrenForSemantics(visitor);
   }
 }

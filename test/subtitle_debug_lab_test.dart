@@ -167,12 +167,12 @@ void main() {
   );
 
   test(
-    '48 distinct presets use bundled licensed families and actual weights',
+    '48 distinct presets use available or recommended licensed families',
     () {
       expect(subtitleDebugPresets.length, 48);
       expect(subtitleDebugPresets.map((p) => p.id).toSet().length, 48);
       const weights = {
-        'Noto Sans SC': [100, 200, 300, 400, 500, 700, 900],
+        'Noto Sans SC': [100, 200, 300, 400, 500, 600, 700, 800, 900],
         'Noto Serif CJK SC': [400, 700],
         'Inter': [100, 200, 300, 400, 500, 600, 700, 800, 900],
         'Roboto': [100, 200, 300, 400, 500, 600, 700, 800, 900],

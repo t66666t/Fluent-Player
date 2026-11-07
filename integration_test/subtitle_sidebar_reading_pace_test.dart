@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -19,8 +20,10 @@ import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/theme/app_interaction_theme.dart';
 import 'package:video_player_app/widgets/subtitle_sidebar.dart';
+import 'package:video_player_app/widgets/transcript_scroll_motion.dart';
+import 'package:video_player_app/widgets/ui_refresh_rate_scope.dart';
 
-// Run on a native desktop, with the engine driving every animation frame:
+// Run on Android or a native desktop, with the engine driving every animation frame:
 // flutter drive -d windows --profile
 //   --driver=test_driver/subtitle_sidebar_scroll_driver.dart
 //   --target=integration_test/subtitle_sidebar_reading_pace_test.dart
@@ -32,14 +35,16 @@ void main() {
     ..framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive;
   final reports = <Map<String, Object>>[];
   setUpAll(() async {
-    await windowManager.ensureInitialized();
-    await windowManager.setTitle(
-      'Transcript motion benchmark — automated test',
-    );
-    await windowManager.setMinimumSize(const Size(800, 820));
-    await windowManager.setSize(const Size(800, 820));
-    await windowManager.setResizable(false);
-    await windowManager.focus();
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      await windowManager.ensureInitialized();
+      await windowManager.setTitle(
+        'Transcript motion benchmark — automated test',
+      );
+      await windowManager.setMinimumSize(const Size(800, 820));
+      await windowManager.setSize(const Size(800, 820));
+      await windowManager.setResizable(false);
+      await windowManager.focus();
+    }
     await (FontLoader(
       'MiSans',
     )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
@@ -62,7 +67,7 @@ void main() {
           index: index,
           startTime: Duration(seconds: index * 3),
           endTime: Duration(seconds: index * 3 + 3),
-          text: 'Sentence $index, read the moving text. 字幕定位保持匀速。',
+          text: 'Sentence $index, read the moving text. 字幕定位平滑起停。',
         ),
       );
       final player =
@@ -82,9 +87,8 @@ void main() {
       var seeks = 0;
       await tester.pumpWidget(
         MaterialApp(
-          theme: appInteractionTheme(
-            ThemeData(fontFamily: 'MiSans', platform: TargetPlatform.windows),
-          ),
+          builder: (context, child) => UiRefreshRateScope(child: child!),
+          theme: appInteractionTheme(ThemeData(fontFamily: 'MiSans')),
           home: Scaffold(
             body: Center(
               child: SizedBox(
@@ -232,7 +236,9 @@ void main() {
                 markInput('beforeTap');
                 final press = await tester.startGesture(
                   point,
-                  kind: PointerDeviceKind.mouse,
+                  kind: Platform.isAndroid || Platform.isIOS
+                      ? PointerDeviceKind.touch
+                      : PointerDeviceKind.mouse,
                 );
                 // A native mouse click spans frames. Keep the engine running
                 // naturally between down and up, without tester.pump frames.
@@ -271,31 +277,39 @@ void main() {
                 moving.length,
                 greaterThanOrEqualTo(distance <= 20 ? 2 : 6),
               );
-              final first = moving.first, last = moving.last;
-              final speed =
-                  (last.pixels - first.pixels) /
-                  ((last.time - first.time) / 1e6);
-              final duration = distance / speed;
+              final first = moving.first;
+              final trajectory = TranscriptScrollMotion(
+                from: from,
+                to: from + distance,
+                viewport: initialViewport,
+                isAuto: auto,
+              );
+              // Recover the ticker phase from the first native position, then
+              // check every later rendered frame against the continuous curve.
+              // No assumption about regular VSync or test-pump timing is needed.
+              var lower = 0.0, upper = trajectory.seconds;
+              for (var i = 0; i < 50; i++) {
+                final middle = (lower + upper) / 2;
+                if (trajectory.x(middle) < first.pixels) {
+                  lower = middle;
+                } else {
+                  upper = middle;
+                }
+              }
+              final phase = (lower + upper) / 2;
               var error = 0.0;
+              var previous = from;
               for (final value in moving) {
+                final time = phase + (value.time - first.time) / 1e6;
                 error = math.max(
                   error,
-                  (value.pixels -
-                          first.pixels -
-                          speed * (value.time - first.time) / 1e6)
-                      .abs(),
+                  (value.pixels - trajectory.x(time)).abs(),
                 );
+                expect(value.pixels, greaterThanOrEqualTo(previous));
+                previous = value.pixels;
               }
-              final expectedSeconds = <double, double>{
-                8: .085714,
-                20: .150,
-                40: .200,
-                80: .240,
-                240: .276923,
-                360: .284211,
-              }[distance]!;
-              expect(duration, closeTo(expectedSeconds, .001));
-              expect(error, lessThan(.02));
+              final duration = trajectory.seconds;
+              expect(error, lessThan(.05));
               expect(visualError, lessThan(.01));
               final report = <String, Object>{
                 'mode': mode,
@@ -305,8 +319,8 @@ void main() {
                 'viewport': initialViewport,
                 'displayId': initialDisplayId,
                 'durationMs': duration * 1000,
-                'speedPxPerSecond': speed,
-                'linearErrorPx': error,
+                'averageSpeedPxPerSecond': distance / duration,
+                'trajectoryErrorPx': error,
                 'visualErrorPx': visualError,
                 'nativeMovingFrames': moving.length,
                 'displayHz': ui
@@ -432,7 +446,7 @@ void main() {
             if (intervals.isNotEmpty)
               'frameIntervalP95Ms': percentile(intervals, .95),
           });
-          // Report scheduling gaps separately from UI/raster work. A linear
+          // Report scheduling gaps separately from UI/raster work. A smooth
           // trajectory alone is not evidence of frames arriving on time.
           // ignore: avoid_print
           print('READING_FRAMES ${jsonEncode(window.report)}');

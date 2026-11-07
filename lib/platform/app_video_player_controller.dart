@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
 import 'windows_video_player_media_kit.dart';
+import '../services/app_wakelock_coordinator.dart';
 
 /// Keeps video_player's one-shot initialization size in sync with native
 /// presentation changes (late video tracks, rotation and adaptive streams).
@@ -14,7 +15,9 @@ class AppVideoPlayerController extends VideoPlayerController {
     super.videoPlayerOptions,
     super.httpHeaders,
     super.viewType,
-  }) : super.file();
+  }) : super.file() {
+    addListener(_syncProtectionActivity);
+  }
 
   AppVideoPlayerController.networkUrl(
     super.url, {
@@ -23,10 +26,22 @@ class AppVideoPlayerController extends VideoPlayerController {
     super.videoPlayerOptions,
     super.httpHeaders,
     super.viewType,
-  }) : super.networkUrl();
+  }) : super.networkUrl() {
+    addListener(_syncProtectionActivity);
+  }
 
   ValueListenable<Size?>? _displaySize;
   bool _disposing = false;
+  bool _initializing = false;
+
+  void _syncProtectionActivity() {
+    AppWakelockCoordinator.setProtectionBlocked(
+      this,
+      !_disposing &&
+          !value.hasError &&
+          (_initializing || value.isPlaying || value.isBuffering),
+    );
+  }
 
   @protected
   ValueListenable<Size?>? get nativeDisplaySize =>
@@ -35,7 +50,14 @@ class AppVideoPlayerController extends VideoPlayerController {
 
   @override
   Future<void> initialize() async {
-    await super.initialize();
+    _initializing = true;
+    _syncProtectionActivity();
+    try {
+      await super.initialize();
+    } finally {
+      _initializing = false;
+      _syncProtectionActivity();
+    }
     if (_disposing) return;
     _displaySize = nativeDisplaySize;
     _displaySize?.addListener(_updateDisplaySize);
@@ -60,6 +82,8 @@ class AppVideoPlayerController extends VideoPlayerController {
   @override
   Future<void> dispose() {
     _disposing = true;
+    removeListener(_syncProtectionActivity);
+    AppWakelockCoordinator.setProtectionBlocked(this, false);
     _displaySize?.removeListener(_updateDisplaySize);
     _displaySize = null;
     return super.dispose();

@@ -12,7 +12,7 @@ void main() {
   setUpAll(() async {
     for (final font in {
       'Inter': 'assets/fonts/Inter-ExtraBold.otf',
-      'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Medium.otf',
+      'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
     }.entries) {
       await (FontLoader(font.key)..addFont(rootBundle.load(font.value))).load();
     }

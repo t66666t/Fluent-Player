@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:video_player_app/features/cloud_drive/models/cloud_drive_models.dart';
-import 'package:video_player_app/features/cloud_drive/presentation/cloud_drive_screen.dart';
 import 'package:video_player_app/features/podcasts/podcast_episode_press.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
@@ -18,8 +16,6 @@ import 'package:video_player_app/widgets/media_library_grid_card.dart';
 import 'package:video_player_app/widgets/media_library_item_interaction_wrapper.dart';
 import 'package:video_player_app/widgets/media_library_list_tile.dart';
 import 'package:video_player_app/widgets/mini_playback_card.dart';
-
-import 'support/cloud_drive_fixture.dart';
 
 const _light = 'HapticFeedbackType.lightImpact';
 const _selection = 'HapticFeedbackType.selectionClick';
@@ -314,49 +310,5 @@ void main() {
     }),
   );
 
-  testWidgets(
-    'cloud browser folders and files share the single card pulse',
-    (tester) async {
-      final runtime = await cloudRuntime([
-        FixtureCloudProvider('baidu', {
-          '/': [
-            cloudEntry(
-              '/folder',
-              name: 'Cloud folder',
-              kind: CloudDriveEntryKind.folder,
-            ),
-          ],
-          '/folder': [
-            cloudEntry(
-              'document',
-              name: 'Cloud document',
-              kind: CloudDriveEntryKind.unsupported,
-            ),
-          ],
-        }),
-      ]);
-      addTearDown(runtime.shutdown);
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(430, 932);
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(
-        host(CloudDriveScreen(embedded: true, runtime: runtime)),
-      );
-      await tester.pumpAndSettle();
-      expect(feedback, isEmpty);
-      await tester.tap(find.text('Cloud folder'));
-      await tester.pumpAndSettle();
-      expect(feedback, [_light]);
-      feedback.clear();
-      await tester.tap(find.text('Cloud document'));
-      await tester.pumpAndSettle();
-      expect(feedback, [_light]);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-    variant: TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.iOS,
-    }),
-  );
+  // 社区版已退役云盘浏览 UI；CloudDriveScreen 若仍留在 lib/ 也不维护交互触觉测试。
 }

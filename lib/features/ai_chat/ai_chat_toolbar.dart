@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'ai_capsule_menu.dart';
+import 'ai_chat_typography.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 /// A compact command band shared by sidebar, portrait panel and fullscreen.
@@ -28,6 +29,7 @@ class AiChatToolbar extends StatelessWidget {
     this.backLabel = '返回字幕',
     this.onClose,
     this.fullscreenReturnLabel,
+    this.leadingCommand,
   });
 
   final double availableHeight;
@@ -48,6 +50,10 @@ class AiChatToolbar extends StatelessWidget {
   final VoidCallback? onSettings;
   final VoidCallback? onContext;
   final VoidCallback? onFullscreen;
+
+  /// Fullscreen-only command rendered before the history button. The host
+  /// decides whether the surface it controls currently exists.
+  final Widget? leadingCommand;
   final Widget Function(bool compact) contextMeter;
   final Widget Function({
     required bool history,
@@ -66,6 +72,7 @@ class AiChatToolbar extends StatelessWidget {
       final scaler = MediaQuery.textScalerOf(context);
       final textFactor = math.max(1.0, scaler.scale(13) / 13);
       final width = constraints.maxWidth;
+      final leftInset = AiChatTypography.of(context).horizontalInset;
       // Wide enough that a short panel can still keep the status line.
       // The line itself is never placed beside the command buttons.
       final wide = width >= 820 * textFactor;
@@ -74,7 +81,9 @@ class AiChatToolbar extends StatelessWidget {
       final showSettings = !tiny;
       final showMetadata = !minimal && (wide || availableHeight >= 440);
       final showModel = width >= 320 * textFactor;
-      final showFullscreen = isFullscreen ? fullscreenReturnLabel == null : !tiny;
+      final showFullscreen = isFullscreen
+          ? fullscreenReturnLabel == null
+          : !tiny;
       final showClose = onClose != null && onBack == null && !isFullscreen;
 
       // Own row, same width as the command row. A side slot capped under the
@@ -86,33 +95,35 @@ class AiChatToolbar extends StatelessWidget {
           // button grow 2px past the space left for the meter.
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: math.max(120, (width - 12) * .55),
+              maxWidth: math.max(120, (width - leftInset - 6) * .55),
             ),
-            child: DesktopButtonClickRegion(child: TextButton(
-              key: const ValueKey('ai-chat-context'),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 28),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.standard,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-              ),
-              onPressed: onContext,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.subtitles_outlined, size: 15),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      '${tiny ? '资料' : sourcesLabel} · $selectedSources/$sourceCount',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+            child: DesktopButtonClickRegion(
+              child: TextButton(
+                key: const ValueKey('ai-chat-context'),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.standard,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                onPressed: onContext,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.subtitles_outlined, size: 15),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '${tiny ? '资料' : sourcesLabel} · $selectedSources/$sourceCount',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            )),
+            ),
           ),
           if (showModel && model.isNotEmpty)
             Expanded(
@@ -144,7 +155,7 @@ class AiChatToolbar extends StatelessWidget {
           border: Border(bottom: BorderSide(color: colors.outlineVariant)),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: EdgeInsets.fromLTRB(leftInset, 2, 6, 2),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -166,18 +177,9 @@ class AiChatToolbar extends StatelessWidget {
                       fit: FlexFit.tight,
                       child: Row(
                         children: [
-                          if (isFullscreen
-                              ? fullscreenReturnLabel != null
-                              : onBack != null)
-                            aiToolbarIcon(
-                              tooltip: isFullscreen
-                                  ? fullscreenReturnLabel!
-                                  : backLabel,
-                              icon: Icons.arrow_back,
-                              onPressed: isFullscreen ? onFullscreen : onBack,
-                            ),
                           Expanded(
                             child: Tooltip(
+                              key: const ValueKey('ai-chat-toolbar-title'),
                               message: title,
                               child:
                                   width < 560 * textFactor && textFactor <= 1.25
@@ -242,6 +244,7 @@ class AiChatToolbar extends StatelessWidget {
                     Wrap(
                       alignment: WrapAlignment.end,
                       children: [
+                        ?leadingCommand,
                         aiToolbarIcon(
                           tooltip: '对话历史',
                           icon: Icons.history,
@@ -279,6 +282,16 @@ class AiChatToolbar extends StatelessWidget {
                             tooltip: '关闭 AI 对话',
                             icon: Icons.close,
                             onPressed: onClose,
+                          ),
+                        if (isFullscreen
+                            ? fullscreenReturnLabel != null
+                            : onBack != null)
+                          aiToolbarIcon(
+                            tooltip: isFullscreen
+                                ? fullscreenReturnLabel!
+                                : backLabel,
+                            icon: Icons.arrow_back,
+                            onPressed: isFullscreen ? onFullscreen : onBack,
                           ),
                       ],
                     ),

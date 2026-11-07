@@ -18,7 +18,7 @@ class PodcastArticleView extends StatelessWidget {
 
   static const _prose = TextStyle(
     fontFamily: PodcastType.reading,
-    fontFamilyFallback: <String>[PodcastType.ui],
+    fontFamilyFallback: <String>[PodcastType.ui, ...PodcastType.uiFallback],
     fontWeight: FontWeight.w400,
     color: Color(0xC7FFFFFF),
     fontSize: 15,
@@ -26,7 +26,7 @@ class PodcastArticleView extends StatelessWidget {
   );
   static const _heading = TextStyle(
     fontFamily: PodcastType.reading,
-    fontFamilyFallback: <String>[PodcastType.ui],
+    fontFamilyFallback: <String>[PodcastType.ui, ...PodcastType.uiFallback],
     fontWeight: FontWeight.w700,
     color: Color(0xF2FFFFFF),
     fontSize: 15,
@@ -34,7 +34,7 @@ class PodcastArticleView extends StatelessWidget {
   );
   static const _cue = TextStyle(
     fontFamily: PodcastType.reading,
-    fontFamilyFallback: <String>[PodcastType.ui],
+    fontFamilyFallback: <String>[PodcastType.ui, ...PodcastType.uiFallback],
     fontWeight: FontWeight.w500,
     color: Color(0xE6FFFFFF),
     fontSize: 15,

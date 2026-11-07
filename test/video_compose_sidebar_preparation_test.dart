@@ -57,6 +57,8 @@ void main() {
     Map<String, String> options = const {},
     Future<Map<String, String>> Function()? prepare,
     bool active = true,
+    double panelWidth = 460,
+    double textScale = 1,
   }) async {
     await tester.pumpWidget(
       MultiProvider(
@@ -65,6 +67,12 @@ void main() {
           ChangeNotifierProvider<VideoComposeManager>.value(value: manager),
         ],
         child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child!,
+          ),
           home: Scaffold(
             body: TickerMode(
               enabled: active,
@@ -72,7 +80,7 @@ void main() {
                 offstage: !active,
                 child: Center(
                   child: SizedBox(
-                    width: 460,
+                    width: panelWidth,
                     child: VideoComposePanel(
                       key: const ValueKey('compose'),
                       videoItem: VideoItem(
@@ -96,6 +104,43 @@ void main() {
       ),
     );
     await tester.pump();
+  }
+
+  for (final (screen, width, scale) in [
+    (const Size(320, 568), 320.0, 1.0),
+    (const Size(844, 390), 248.0, 1.6),
+    (const Size(600, 960), 600.0, 1.0),
+    (const Size(1440, 900), 420.0, 1.6),
+  ]) {
+    testWidgets(
+      'compose controls fit $screen at $scale without changing selections',
+      (tester) async {
+        tester.view.physicalSize = screen;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        previews.clear();
+        await show(
+          tester,
+          panelWidth: width,
+          textScale: scale,
+          options: {'a.srt': '字幕 A', 'b.srt': '字幕 B'},
+        );
+        await tester.pumpAndSettle();
+        final primary = find.byKey(const ValueKey('primary_dropdown'));
+        await tester.ensureVisible(primary);
+        await tester.tap(primary);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('字幕 B').last);
+        await tester.pumpAndSettle();
+        expect(previews.last.primarySubtitlePath, 'b.srt');
+        final enqueue = find.byKey(const ValueKey('compose-enqueue'));
+        await tester.ensureVisible(enqueue);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(enqueue).height, greaterThanOrEqualTo(44));
+        expect(previews.last.primarySubtitlePath, 'b.srt');
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 
   for (final closing in [false, true]) {

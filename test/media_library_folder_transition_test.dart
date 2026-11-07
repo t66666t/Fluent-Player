@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/theme/app_page_transitions.dart';
 import 'package:video_player_app/widgets/media_library_folder_route.dart';
@@ -106,6 +107,9 @@ Future<GlobalKey<NavigatorState>> _host(
 }
 
 void main() {
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
+
   testWidgets(
     'folder scale uses the platform filter policy and artwork stays live',
     (tester) async {

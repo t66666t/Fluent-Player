@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:cryptography/cryptography.dart';
+import '../../utils/app_branding.dart';
 import 'podcast_models.dart';
 import 'podcast_store.dart';
 
@@ -9,7 +10,7 @@ class PodcastSyncCodec {
   static final _cipher = AesGcm.with256bits();
   static const chunkBytes = 150 * 1024;
   static String _aad(Map<String, dynamic> record) =>
-      'podcast|${record['groupId']}|${record['digest']}|${record['index']}|${record['count']}|${record['nodeId']}|${record['channelId']}';
+      'podcast|$kApplicationId|${record['groupId']}|${record['digest']}|${record['index']}|${record['count']}|${record['nodeId']}|${record['channelId']}';
   static Future<List<Map<String, dynamic>>> encode({
     required Map<String, dynamic> data,
     required String groupId,
@@ -27,6 +28,7 @@ class PodcastSyncCodec {
       final record = <String, dynamic>{
         'kind': 'podcast-event',
         'version': 1,
+        'edition': kApplicationId,
         'eventId':
             'pc-${podcastHash('$groupId|$digest').substring(0, 48)}-$index',
         'groupId': groupId,
@@ -63,6 +65,7 @@ class PodcastSyncCodec {
         count = record['count'],
         digest = record['digest'];
     if (record['version'] != 1 ||
+        record['edition'] != kApplicationId ||
         index is! int ||
         count is! int ||
         count < 1 ||
@@ -75,7 +78,7 @@ class PodcastSyncCodec {
         record['channelId'] is! String) {
       throw const FormatException('播客同步分片无效');
     }
-    final prefix = '${record['groupId']}:$digest';
+    final prefix = '$kApplicationId:${record['groupId']}:$digest';
     if (store.read('syncApplied', prefix) != null) return null;
     final plaintext = await _cipher.decrypt(
       SecretBox(
@@ -106,6 +109,7 @@ class PodcastSyncCodec {
     }
     store.transaction(() {
       store.write('syncPending', prefix, {
+        'edition': kApplicationId,
         'id': prefix,
         'groupId': record['groupId'],
         'nodeId': record['nodeId'],

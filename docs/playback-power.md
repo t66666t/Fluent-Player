@@ -69,7 +69,7 @@ python tool/verify_model_integration.py
 | 平台 | 环境与已完成工作 | 当前验证边界 |
 | --- | --- | --- |
 | Windows | Windows 11 小米 Book 14 Pro X7 主机；隔离快照 `D:/1spbfq/pwr1` 的前轮修改前后 Release 探针构建及真实播放 A/B 通过；V6 探针另已编译成功 | 前轮正常、暂停、seek、2 倍速、无订阅播放、氛围背景和纯音频中继通过，结果限定当时版本。V6 启动被自动审批策略阻止，未原生运行；未验证正常退出或整机电池放电 |
-| Android | USB 设备 `983d4e11`，型号 `23046RP50C`，Android 15；独立 Before/After V2 本地视频基础 A/B 完成，修改版通过，基线复现返回前台误暂停；V6 本地及网络后台 seek、定向媒体暂停/播放、实际息屏 60 秒及唤醒后播放检查通过 | 本地 MP4 使用原有 ExoPlayer 委托路径；按需 Ticker 停止后仍有原生 SurfaceProducer 驱动的帧，不能声称 Android 离页总帧清零。V6 可见截图期间位置采样正常推进，但未验收整段图片尺寸；USB 充电不作为电池放电测量 |
+| Android | USB 测试设备，Android 15；独立 Before/After V2 本地视频基础 A/B 完成，修改版通过，基线复现返回前台误暂停；V6 本地及网络后台 seek、定向媒体暂停/播放、实际息屏 60 秒及唤醒后播放检查通过 | 本地 MP4 使用原有 ExoPlayer 委托路径；按需 Ticker 停止后仍有原生 SurfaceProducer 驱动的帧，不能声称 Android 离页总帧清零。V6 可见截图期间位置采样正常推进，但未验收整段图片尺寸；USB 充电不作为电池放电测量 |
 | iOS、macOS、Linux 及其他目标 | 检查共享代码与平台分支，保持已有适配与默认行为 | 当前设备没有完成对应原生构建及实机运行，不声称这些系统已通过 |
 
 最终已在隔离快照恢复正式 `lib/main.dart` 入口，完成 Android ARM64 和 Windows Release 构建。已核对 Android applicationId / 名称为 `com.example.video_player_app` / `Fluent_Player`、依赖锁与工作区一致，且两个平台的生产插件注册均不含 `integration_test`。本轮被测文件与当前工作区的哈希逐项一致，见 `final-source-consistency.json`；独立快照冻结构建输入，工作区其他并行修改继续保留。探针 APK 另存，不作为正式软件分发；正式包没有覆盖安装到用户设备。

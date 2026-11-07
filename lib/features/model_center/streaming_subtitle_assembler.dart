@@ -7,9 +7,14 @@ import 'asr_window_ownership.dart';
 /// Only the overlap and the last possible continuation remain mutable. All
 /// other cues are assigned permanent ordinals before translation/publication.
 class StreamingSubtitleAssembler {
-  StreamingSubtitleAssembler(this.options, {this.version = 3});
+  StreamingSubtitleAssembler(
+    this.options, {
+    this.version = 3,
+    this.textProcessingVersion,
+  });
   final SubtitleSegmentationOptions? options;
   final int version;
+  final int? textProcessingVersion;
   List<SubtitleItem> _tail = [];
   int _ordinal = 0;
   Duration? _windowEnd;
@@ -79,7 +84,11 @@ class StreamingSubtitleAssembler {
     final stable = merged.take(split).toList();
     _tail = merged.skip(split).toList();
     final segmented = options?.enabled == true
-        ? await segmentAsrSubtitlesAsync(stable, options!)
+        ? await segmentAsrSubtitlesAsync(
+            stable,
+            options!,
+            textProcessingVersion: textProcessingVersion,
+          )
         : stable;
     final output = version == 2
         ? normalizeLocalAsrTimeline(segmented)

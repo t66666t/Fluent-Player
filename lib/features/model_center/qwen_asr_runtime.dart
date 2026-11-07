@@ -44,6 +44,30 @@ class QwenAsrRuntime {
   bool get hasLoadedModel => _identity != null;
   bool get isOpen => _transport != null;
 
+  /// Size and mtime only. Content hashing would reread multi-gigabyte weights
+  /// on every task just to decide whether an old GPU record still applies.
+  static String? desktopRuntimeStamp({String component = 'qwen_asr'}) {
+    if (Platform.isAndroid || Platform.isIOS) return null;
+    final file = File(desktopExecutable(component: component));
+    if (!file.existsSync()) return null;
+    final stat = file.statSync();
+    return '${stat.size}:${stat.modified.toUtc().toIso8601String()}';
+  }
+
+  /// Android records a native crash or a hung GPU fence on the bridge. A
+  /// low-memory process kill must not be stored as a broken GPU.
+  static Future<bool> gpuFaultConfirmed(String component) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final value = await MethodChannel(
+        'com.example.video_player_app/$component',
+      ).invokeMapMethod<String, dynamic>('gpuStatus');
+      return value?['gpuNativeCrash'] == true || value?['gpuTimedOut'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static String desktopExecutable({
     String? executable,
     String component = 'qwen_asr',
@@ -284,26 +308,51 @@ class QwenAsrDecoder {
     this.runtimeDirectory,
     this.profiles = const [],
     this.runtimeFactory,
-  });
+    this.conservativeGpu = false,
+    this.component = 'qwen_asr',
+    this.accelerationEnvironment,
+    this.runtimeStamp,
+    DateTime Function()? now,
+    this.confirmGpuFault,
+  }) : _now = now ?? DateTime.now;
   final String model, identity, language, hotwords, mode;
   final String? executable, runtimeDirectory;
   final List<AsrPerformanceProfile> profiles;
   final QwenAsrRuntime Function()? runtimeFactory;
   final void Function() onLoad;
   final void Function(Map<String, dynamic>) onState;
+
+  /// Phones skip an unproven GPU. Desktop keeps the existing eager probe.
+  final bool conservativeGpu;
+  final String component;
+  final Object? accelerationEnvironment, runtimeStamp;
+  final DateTime Function() _now;
+  final Future<bool> Function()? confirmGpuFault;
   int threads;
   QwenAsrRuntime? _runtime;
   bool _cpuFallback = false;
   bool _lastForcedCpu = false;
   int _generation = 0;
   bool get hasLoadedModel => _runtime?.hasLoadedModel == true;
+  bool get usingGpu =>
+      hasLoadedModel && !(_runtime!.backend.toLowerCase().startsWith('cpu'));
+
+  Map<String, dynamic> get _availability => {
+    'accelerationEnvironment': accelerationEnvironment,
+    'identity': identity,
+    'language': language,
+    'hotwords': hotwords,
+    'runtimeStamp': runtimeStamp,
+  };
   Future<Map<String, dynamic>> decode(
     Float32List audio,
     void Function() check, {
     bool forceCpu = false,
   }) async {
     if (_lastForcedCpu != forceCpu) {
-      await release();
+      // A CPU session can serve a later forced-CPU probe. Reloading it only
+      // spends another full weight read.
+      if (forceCpu && usingGpu) await release();
       _lastForcedCpu = forceCpu;
     }
     final generation = _generation;
@@ -321,23 +370,57 @@ class QwenAsrDecoder {
             QwenAsrRuntime(
               executable: executable,
               runtimeDirectory: runtimeDirectory,
+              component: component,
             );
         if (!runtime.hasLoadedModel) {
           if (!forceCpu && mode != 'cpu' && !_cpuFallback) {
-            selected = 'gpu';
-            selected = await runtime.preferredBackend();
-            if (mode == 'auto') {
-              final signature = runtime.performanceSignature(
-                identity,
-                threads,
-                language,
-                hotwords,
-              );
-              final profile = profiles
-                  .where((p) => p.matches(signature, DateTime.now()))
-                  .firstOrNull;
-              if (profile != null && !profile.useGpu(audio.length / 16000)) {
-                selected = 'cpu';
+            final now = _now();
+            final seconds = audio.length / 16000;
+            final availability = qwenAvailabilitySignature(
+              _availability,
+              component: component,
+            );
+            final failed = profiles.any(
+              (profile) => profile.failed && profile.matches(availability, now),
+            );
+            final fresh = profiles.any(
+              (profile) => freshGpuWin(
+                profile,
+                weights: {identity},
+                threads: threads,
+                seconds: seconds,
+                now: now,
+              ),
+            );
+            // No driver init and no weight load when the phone has nothing
+            // that already proved GPU is faster for these exact threads.
+            if (failed || (conservativeGpu && mode == 'auto' && !fresh)) {
+              selected = 'cpu';
+              if (failed) _cpuFallback = true;
+            } else {
+              selected = 'gpu';
+              onState({
+                'backend': 'GPU',
+                'reason': '正在检查 GPU 能力',
+                'weights': identity,
+                'selecting': true,
+              });
+              selected = await runtime.preferredBackend();
+              if (mode == 'auto') {
+                final signature = runtime.performanceSignature(
+                  identity,
+                  threads,
+                  language,
+                  hotwords,
+                );
+                final profile = profiles
+                    .where((p) => p.matches(signature, now))
+                    .firstOrNull;
+                if (profile != null && !profile.useGpu(seconds)) {
+                  selected = 'cpu';
+                } else if (conservativeGpu && profile == null) {
+                  selected = 'cpu';
+                }
               }
             }
           }
@@ -378,9 +461,42 @@ class QwenAsrDecoder {
         }
         return {...result, '_backend': runtime.backend, '_weights': identity};
       } catch (error) {
+        final gpuAttempt = selected != 'cpu';
         await _runtime?.close();
         _runtime = null;
-        valid();
+        final cancelled =
+            '$error'.contains('转录已取消') || generation != _generation;
+        if (!cancelled) valid();
+        if (gpuAttempt && !cancelled && !isTransientInferencePressure(error)) {
+          final exited = isQwenWorkerUnavailable(error);
+          final confirmed =
+              !exited ||
+              await (confirmGpuFault ??
+                  () => QwenAsrRuntime.gpuFaultConfirmed(component))();
+          if (confirmed && generation == _generation) {
+            onState({
+              'backend': 'CPU',
+              'reason': 'GPU 不可用，已回退 CPU',
+              'weights': identity,
+              'profile': AsrPerformanceProfile(
+                signature: qwenAvailabilitySignature(
+                  _availability,
+                  component: component,
+                ),
+                testedAt: _now(),
+                backend: 'GPU',
+                device: 'preflight',
+                weights: identity,
+                sampleSeconds: 1,
+                cpuMs: 0,
+                gpuMs: 0,
+                failed: true,
+                failureReason: '$error',
+              ).toJson(),
+            });
+          }
+        }
+        if (cancelled) throw StateError('转录已取消');
         if (attempt == 1 ||
             selected == 'cpu' && !isQwenWorkerUnavailable(error)) {
           rethrow;

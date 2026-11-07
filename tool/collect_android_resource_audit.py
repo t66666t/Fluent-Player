@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import argparse
 import json
+import os
 from pathlib import Path
 import struct
 import zipfile
@@ -36,7 +37,7 @@ def main() -> None:
     parser.add_argument('--variant', choices=('v2', 'high-refresh-v2'), required=True)
     args = parser.parse_args()
     report = {"variant": args.variant, "package": "com.example.video_player_app.android_resource_audit",
-              "deviceSerial": "983d4e11", "arms": {}, "historicalLogsRetained": True,
+              "deviceSerial": os.environ.get("ANDROID_SERIAL", "unspecified"), "arms": {}, "historicalLogsRetained": True,
               "diagnosticOnly": "Same counters/deadlines and synthetic 60s/720p/60fps/no-audio fixture in both snapshots. No production identity, preferences, models or limits changed.",
               "compatibilityFixtureSha256": sha(ROOT / "test/fixtures/local_model_compatibility.json"),
               "limitations": ["USB-powered measurements are work/RAM counters, not energy or battery-life measurements.",

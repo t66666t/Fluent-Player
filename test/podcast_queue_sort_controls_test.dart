@@ -87,7 +87,7 @@ void main() {
       await tester.runAsync(() async {
         await (FontLoader(
           'MiSans',
-        )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+        )..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'))).load();
         await (FontLoader(
           'MaterialIcons',
         )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();

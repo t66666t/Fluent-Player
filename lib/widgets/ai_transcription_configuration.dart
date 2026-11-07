@@ -12,9 +12,12 @@ import 'transcription_language_selector.dart';
 import '../services/transcription_hotword_store.dart';
 import '../utils/app_toast.dart';
 import 'model_center_button.dart';
+import 'subtitle_settings_layout.dart';
 import 'transcript_translate_settings_sheet.dart';
 import 'transcription_hotword_editor.dart';
-import 'translation_language_controls.dart';
+import 'subtitle_optimization_control.dart';
+import 'subtitle_processing_stage.dart';
+import 'subtitle_translation_model_sheet.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 /// One compact group for the settings used by the next subtitle generation.
@@ -27,11 +30,17 @@ class AiTranscriptionConfiguration extends StatefulWidget {
     required this.mediaKey,
     required this.mediaTitle,
     this.translation,
+    this.translationEnabled = false,
+    this.onTranslationChanged,
+    this.backgroundPreview,
   });
   final ModelCenterService center;
   final TranscriptionHotwordStore hotwords;
   final String mediaKey, mediaTitle;
   final SubtitleTranslateSettings? translation;
+  final bool translationEnabled;
+  final ValueChanged<bool>? onTranslationChanged;
+  final Future<String> Function()? backgroundPreview;
   @override
   State<AiTranscriptionConfiguration> createState() =>
       _AiTranscriptionConfigurationState();
@@ -40,11 +49,17 @@ class AiTranscriptionConfiguration extends StatefulWidget {
 class _AiTranscriptionConfigurationState
     extends State<AiTranscriptionConfiguration> {
   bool _ready = false;
+  bool _translationOptionsExpanded = false;
+  SubtitleTranslateSettings? _fallbackTranslation;
+  SubtitleTranslateSettings get _translation =>
+      widget.translation ??
+      (_fallbackTranslation ??= SubtitleTranslateSettings());
   String? _error, _wordsError;
   @override
   void initState() {
     super.initState();
     unawaited(_load());
+    unawaited(_act(() => _translation.ensureLoaded()));
   }
 
   @override
@@ -55,6 +70,15 @@ class _AiTranscriptionConfigurationState
       _ready = false;
       unawaited(_load());
     }
+    if (oldWidget.translation != widget.translation) {
+      unawaited(_act(() => _translation.ensureLoaded()));
+    }
+  }
+
+  @override
+  void dispose() {
+    _fallbackTranslation?.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -163,7 +187,7 @@ class _AiTranscriptionConfigurationState
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([widget.center, widget.hotwords]),
+    animation: Listenable.merge([widget.center, widget.hotwords, _translation]),
     builder: (context, _) {
       final center = widget.center, profile = center.asrProfile;
       final model = profile.local ? center.artifact(profile.model) : null;
@@ -174,162 +198,135 @@ class _AiTranscriptionConfigurationState
       final identity = profile.local
           ? model?.name ?? profile.name
           : '${profile.name}${profile.model.isEmpty ? '' : ' · ${profile.model}'}';
-      const foreground = Colors.white;
-      return Column(
-        key: const ValueKey('ai-transcription-configuration'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ModelCenterButton(
-              foregroundColor: Colors.lightBlueAccent,
-              service: center,
-              translateSettings: widget.translation,
-            ),
-          ),
-          Container(
-            key: const ValueKey('ai-subtitle-methods'),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .035),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white12),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                DesktopButtonClickRegion(
-                  child: TextButton(
+      return SubtitleSettingsTheme(
+        child: Column(
+          key: const ValueKey('ai-transcription-configuration'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SubtitleSettingsGroup(
+              key: const ValueKey('ai-subtitle-methods'),
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ModelCenterButton(
+                    key: const ValueKey('transcription-model-settings'),
+                    settingsRow: true,
+                    transcriptionOnly: true,
+                    service: center,
+                    translateSettings: _translation,
+                  ),
+                  const Divider(),
+                  SubtitleSettingsRow(
                     key: const ValueKey('transcription-method-summary'),
-                    onPressed: _ready ? _chooseService : null,
-                    style: TextButton.styleFrom(
-                      foregroundColor: foreground,
-                      alignment: Alignment.centerLeft,
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                    ),
-                    child: Row(
+                    title: '转录方式',
+                    description: _ready
+                        ? '${_kind(profile)} · $identity${model != null && !center.installed(model.id) ? ' · 未安装' : ''}'
+                        : '正在读取设置…',
+                    onTap: _ready ? _chooseService : null,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 2,
                       children: [
-                        const Icon(Icons.record_voice_over_outlined, size: 17),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '转录方式',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                _ready
-                                    ? '${_kind(profile)} · $identity${model != null && !center.installed(model.id) ? ' · 未安装' : ''}'
-                                    : '正在读取设置…',
-                                key: const ValueKey(
-                                  'transcription-current-method',
-                                ),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
+                        TranscriptionLanguageSelector(
+                          center: center,
+                          foregroundColor: SubtitleSettingsTheme.foreground,
                         ),
-                        const SizedBox(width: 6),
-                        const Text('设置', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 3),
-                        const Icon(Icons.edit_outlined, size: 14),
+                        if (_ready && supportsWords)
+                          DesktopButtonClickRegion(
+                            child: TextButton(
+                              key: const ValueKey('video-hotwords-button'),
+                              onPressed: widget.hotwords.loaded
+                                  ? () => showTranscriptionHotwords(
+                                      context,
+                                      store: widget.hotwords,
+                                      mediaKey: widget.mediaKey,
+                                      mediaTitle: widget.mediaTitle,
+                                      enhancementsEnabled:
+                                          center.asrEnhancements.enabled,
+                                    )
+                                  : _loadWords,
+                              child: Text(
+                                count == 0 ? '热词 / 预设' : '热词 · $count 条',
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 25),
-                  child: Wrap(
-                    spacing: 4,
-                    runSpacing: 2,
-                    children: [
-                      TranscriptionLanguageSelector(
-                        center: center,
-                        foregroundColor: foreground,
-                      ),
-                      if (_ready && supportsWords)
-                        DesktopButtonClickRegion(
-                          child: TextButton.icon(
-                            key: const ValueKey('video-hotwords-button'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.lightBlueAccent,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                            ),
-                            onPressed: widget.hotwords.loaded
-                                ? () => showTranscriptionHotwords(
-                                    context,
-                                    store: widget.hotwords,
-                                    mediaKey: widget.mediaKey,
-                                    mediaTitle: widget.mediaTitle,
-                                    enhancementsEnabled:
-                                        center.asrEnhancements.enabled,
-                                  )
-                                : _loadWords,
-                            icon: const Icon(
-                              Icons.text_fields_rounded,
-                              size: 15,
-                            ),
-                            label: Text(
-                              count == 0 ? '热词 / 预设' : '热词 · $count 条',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (_error != null)
-                  DesktopButtonClickRegion(
-                    child: TextButton(
-                      onPressed: _load,
-                      child: Text('$_error · 重试'),
-                    ),
-                  ),
-                if (_wordsError != null && supportsWords)
-                  DesktopButtonClickRegion(
-                    child: TextButton(
+                  if (_error != null)
+                    TextButton(onPressed: _load, child: Text('$_error · 重试')),
+                  if (_wordsError != null && supportsWords)
+                    TextButton(
                       onPressed: _loadWords,
                       child: const Text('热词未能读取，点击重试'),
                     ),
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SubtitleOptimizationControl(
+                          // Share the row layout, keeping transcription's preference.
+                          filePanel: true,
+                          backgroundPreview: widget.backgroundPreview,
+                        ),
+                        const Divider(
+                          height: 16,
+                          color: SubtitleSettingsTheme.divider,
+                        ),
+                        SubtitleProcessingStage(
+                          title: '翻译字幕',
+                          summary: _translation.summary,
+                          value: widget.translationEnabled,
+                          onChanged: widget.onTranslationChanged,
+                          onModel: () => showSubtitleTranslationModelSettings(
+                            context,
+                            settings: _translation,
+                            center: widget.center,
+                          ),
+                          modelKey: const ValueKey(
+                            'ai-transcription-translation-model',
+                          ),
+                          onConfigure: () => setState(
+                            () => _translationOptionsExpanded =
+                                !_translationOptionsExpanded,
+                          ),
+                          expanded: _translationOptionsExpanded,
+                          toggleKey: const ValueKey(
+                            'ai-transcription-translation-toggle',
+                          ),
+                          settingsKey: const ValueKey(
+                            'ai-transcription-translation-settings',
+                          ),
+                          expansionKey: const ValueKey(
+                            'ai-transcription-translation-expand',
+                          ),
+                        ),
+                        if (_translationOptionsExpanded)
+                          Padding(
+                            key: const ValueKey(
+                              'ai-transcription-translation-options',
+                            ),
+                            padding: const EdgeInsets.only(top: 12, bottom: 6),
+                            child: TranscriptTranslateSettingsSheet(
+                              key: ObjectKey(_translation),
+                              settings: _translation,
+                              embedded: true,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                const Divider(
-                  height: 9,
-                  indent: 8,
-                  endIndent: 8,
-                  color: Colors.white12,
-                ),
-                TranslationDirectionSummary(
-                  settings: widget.translation,
-                  label: '翻译方式',
-                  maxLines: 3,
-                  foregroundColor: foreground,
-                  onOpen: (settings) => showTranscriptTranslateSettings(
-                    context,
-                    settings: settings,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     },
   );

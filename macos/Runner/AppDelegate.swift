@@ -365,7 +365,7 @@ class AppDelegate: FlutterAppDelegate {
     let fileManager = FileManager.default
     let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-    return base.appendingPathComponent("video_player_app", isDirectory: true)
+    return base.appendingPathComponent(Bundle.main.bundleIdentifier ?? "cn.teezy.fluentplayer.standard", isDirectory: true)
   }
 }
 

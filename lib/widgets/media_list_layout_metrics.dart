@@ -104,6 +104,46 @@ class MediaListLayoutMetrics {
     );
   }
 
+  /// Geometry for a resolved row style. Pixel styles (rows/table) use their
+  /// explicit extent and spacings; legacy proportional styles fall back to
+  /// [forGrid] so old fixtures keep their measurements.
+  static MediaListGridMetrics forStyle({
+    required MediaListStyleSettings style,
+    required double screenShortestSide,
+    required double availableWidth,
+  }) {
+    final extent = style.rowExtent;
+    if (extent == null) {
+      return forGrid(
+        screenShortestSide: screenShortestSide,
+        availableWidth: availableWidth,
+        crossAxisCount: style.crossAxisCount,
+        heightSetting: style.heightScale,
+        titleSetting: style.titleScale,
+        mainSpacingSetting: style.mainSpacingScale,
+        crossSpacingSetting: style.crossSpacingScale,
+      );
+    }
+    final columns = style.isTable
+        ? 1
+        : MediaLibraryLayoutDefaults.clampColumns(style.crossAxisCount);
+    final width = math.max(0.001, availableWidth);
+    // Padding can never eat more than a quarter of the pane on each side.
+    final padding = (style.outerPadding ?? 0).clamp(0.0, width / 4);
+    final cross = columns == 1 ? 0.0 : (style.crossSpacing ?? 0);
+    final cellWidth = math.max(
+      0.001,
+      (width - padding * 2 - cross * (columns - 1)) / columns,
+    );
+    return MediaListGridMetrics(
+      rowHeight: math.max(1.0, extent),
+      cellWidth: cellWidth,
+      outerPadding: padding,
+      mainSpacing: style.isTable ? 0 : (style.mainSpacing ?? 0),
+      crossSpacing: cross,
+    );
+  }
+
   static double screenScale(double shortestSide) {
     return math.max(0.001, shortestSide / referenceShortestSide);
   }
@@ -187,19 +227,16 @@ MediaLibraryFlowSpacing mediaLibraryFlowSpacingFor({
   required MediaListStyleSettings listStyle,
 }) {
   if (useList) {
-    final metrics = MediaListLayoutMetrics.forGrid(
+    final metrics = MediaListLayoutMetrics.forStyle(
+      style: listStyle,
       screenShortestSide: screenSize.shortestSide,
       availableWidth: screenSize.width,
-      crossAxisCount: listStyle.crossAxisCount,
-      heightSetting: listStyle.heightScale,
-      titleSetting: listStyle.titleScale,
-      mainSpacingSetting: listStyle.mainSpacingScale,
-      crossSpacingSetting: listStyle.crossSpacingScale,
     );
-    return MediaLibraryFlowSpacing(
-      row: metrics.mainSpacing,
-      outer: metrics.outerPadding,
-    );
+    // Tables have no gap between rows; section rhythm still needs one.
+    final row = listStyle.isTable
+        ? math.max(6.0, listStyle.rowExtent! * 0.2)
+        : metrics.mainSpacing;
+    return MediaLibraryFlowSpacing(row: row, outer: metrics.outerPadding);
   }
   final metrics = MediaLibraryLayoutDefaults.cardGrid(
     screenSize: screenSize,

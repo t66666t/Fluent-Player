@@ -1,3 +1,4 @@
+import '../../utils/app_branding.dart';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../services/app_haptics.dart';
 import '../../services/library_service.dart';
 import '../../utils/app_toast.dart';
 import '../../utils/select_all_on_acquire.dart';
@@ -48,7 +50,6 @@ class _PortableExportSettingsPageState
   var _sidecars = true;
   var _checksums = true;
   var _includeDanmaku = true;
-  var _includeBilibiliCache = true;
   var _embedSubtitles = true;
   var _externalSubtitles = false;
   var _starting = false;
@@ -69,7 +70,7 @@ class _PortableExportSettingsPageState
     // Switches and compression are restored per format below.
     _nameController = TextEditingController(
       text:
-          'Fluent Player ${DateFormat('yyyy-MM-dd HH-mm').format(DateTime.now())}',
+          '$kAppDisplayName ${DateFormat('yyyy-MM-dd HH-mm').format(DateTime.now())}',
     );
     _nameFocus = FocusNode();
     _restoreRememberedSettings();
@@ -86,7 +87,6 @@ class _PortableExportSettingsPageState
       _embedSubtitles = remembered.zipEmbedSubtitles;
       _externalSubtitles = remembered.zipExternalSubtitles;
       _includeDanmaku = remembered.includeDanmaku;
-      _includeBilibiliCache = remembered.includeBilibiliCache;
       _settingsReady = true;
     });
   }
@@ -100,7 +100,7 @@ class _PortableExportSettingsPageState
       zipEmbedSubtitles: _embedSubtitles,
       zipExternalSubtitles: _externalSubtitles,
       includeDanmaku: _includeDanmaku,
-      includeBilibiliCache: _includeBilibiliCache,
+      includeBilibiliCache: false,
     );
   }
 
@@ -170,7 +170,7 @@ class _PortableExportSettingsPageState
           zipEmbedSubtitles: _embedSubtitles,
           zipExternalSubtitles: _externalSubtitles,
           includeDanmaku: _includeDanmaku,
-          includeBilibiliCache: _includeBilibiliCache,
+          includeBilibiliCache: false,
         ),
       );
       if (!mounted) return;
@@ -216,17 +216,8 @@ class _PortableExportSettingsPageState
                             ? Icons.folder_zip_outlined
                             : Icons.cloud_done_outlined,
                         text: _zip
-                            ? '视频按卡片标题命名，重名自动加序号。哔哩哔哩和网盘媒体使用完整缓存，网盘未缓存时可先选择画质。没有完整缓存的哔哩哔哩在线卡片会跳过。播客只导出卡片和来源链接，不携带节目媒体。字幕与弹幕可以内嵌；无法内嵌时保留外挂文件并在任务中说明。封面和章节按需写入，不重新编码视频，需要预留约等于媒体大小的临时空间。'
-                            : '哔哩哔哩下载页下载并导入的视频始终携带本地文件；在线卡片的完整缓存由下方开关控制。网盘媒体需要先完成缓存，可选择画质。播客只迁移卡片、来源链接和播放信息，不携带节目媒体。开启附属文件可原样保留字幕、弹幕和预览图；播放分片与未完成下载不随包迁移。',
-                      ),
-                      const SizedBox(height: 10),
-                      _note(
-                        icon: Icons.high_quality_outlined,
-                        text: _zip
-                            ? '每张卡片选取一份完整缓存，按原画、最高可用画质选择。'
-                            : _includeBilibiliCache
-                            ? '下载页导入的视频优先携带其原下载文件；其他哔哩哔哩在线卡片携带一份已有的最高可用完整缓存。'
-                            : '已关闭哔哩哔哩在线缓存迁移：在线卡片导回后需要原来源仍可访问。下载页导入的视频仍携带本地文件。',
+                            ? '本地媒体按卡片标题命名，重名自动加序号。字幕与本地弹幕文件可以内嵌；无法内嵌时保留外挂文件并在任务中说明。封面和章节按需写入，不重新编码视频，需要预留约等于媒体大小的临时空间。'
+                            : '将本地媒体随包携带到另一台设备，保留文件夹、字幕、笔记与播放信息。开启附属文件可原样保留本地字幕、弹幕和预览图。缺失的媒体需要先重新定位或导入本地文件。',
                       ),
                       if (mobile) ...[
                         const SizedBox(height: 10),
@@ -278,10 +269,10 @@ class _PortableExportSettingsPageState
                         ],
                         onChanged: _starting
                             ? null
-                            : (value) {
+                            : AppHaptics.wrapValue((value) {
                                 setState(() => _compression = value!);
                                 _rememberCurrentSettings();
-                              },
+                              }),
                       ),
                       if (_zip) ...[
                         const SizedBox(height: 18),
@@ -303,10 +294,10 @@ class _PortableExportSettingsPageState
                           value: _embedSubtitles,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _embedSubtitles = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('软字幕内嵌'),
                           subtitle: const Text(
                             '写进媒体，播放器里可以切换；ASS 弹幕使用 MKV 保留滚动效果。多数播放器一次显示一条。',
@@ -317,10 +308,10 @@ class _PortableExportSettingsPageState
                           value: _externalSubtitles,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _externalSubtitles = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('外挂字幕'),
                           subtitle: const Text('在视频旁边再放一份字幕文件。只有一条时使用同名文件。'),
                         ),
@@ -329,10 +320,10 @@ class _PortableExportSettingsPageState
                           value: _includeDanmaku,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _includeDanmaku = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('包含弹幕'),
                           subtitle: Text(
                             _danmakuSubtitle(
@@ -343,29 +334,14 @@ class _PortableExportSettingsPageState
                         ),
                       ] else ...[
                         SwitchListTile.adaptive(
-                          key: const ValueKey('export-include-bilibili-cache'),
-                          contentPadding: EdgeInsets.zero,
-                          value: _includeBilibiliCache,
-                          onChanged: _starting
-                              ? null
-                              : (value) {
-                                  setState(() => _includeBilibiliCache = value);
-                                  _rememberCurrentSettings();
-                                },
-                          title: const Text('携带哔哩哔哩在线缓存'),
-                          subtitle: const Text(
-                            '默认开启：将已有完整缓存随包保存，原链接失效后仍可离线播放。关闭后在线卡片只保留来源和所选附件；不影响下载页下载并导入的视频。不会自动下载。',
-                          ),
-                        ),
-                        SwitchListTile.adaptive(
                           contentPadding: EdgeInsets.zero,
                           value: _wrap,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _wrap = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('最外层包一层文件夹'),
                           subtitle: const Text('解压后桌面不会突然“下文件雨”'),
                         ),
@@ -374,10 +350,10 @@ class _PortableExportSettingsPageState
                           value: _sidecars,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _sidecars = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('包含字幕与附属文件'),
                           subtitle: const Text('保留外挂字幕、弹幕和已管理字幕'),
                         ),
@@ -386,10 +362,10 @@ class _PortableExportSettingsPageState
                           value: _checksums,
                           onChanged: _starting
                               ? null
-                              : (value) {
+                              : AppHaptics.wrapValue((value) {
                                   setState(() => _checksums = value);
                                   _rememberCurrentSettings();
-                                },
+                                }),
                           title: const Text('生成完整性校验'),
                           subtitle: const Text('导出前多看一眼，跨设备更安心'),
                         ),
@@ -397,10 +373,12 @@ class _PortableExportSettingsPageState
                       const SizedBox(height: 12),
                       DesktopButtonClickRegion(
                         child: FilledButton.icon(
-                          onPressed:
-                              _nameController.text.trim().isEmpty || _starting
-                              ? null
-                              : _start,
+                          onPressed: AppHaptics.wrap(
+                            _nameController.text.trim().isEmpty || _starting
+                                ? null
+                                : _start,
+                            light: true,
+                          ),
                           icon: _starting
                               ? const SizedBox(
                                   width: 18,

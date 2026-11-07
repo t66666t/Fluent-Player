@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import '../services/app_haptics.dart';
 import '../services/app_storage_service.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
@@ -91,7 +92,10 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
         actions: [
           DesktopButtonClickRegion(
             child: TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: AppHaptics.wrap(
+                () => Navigator.pop(context),
+                light: true,
+              ),
               child: const Text('关闭'),
             ),
           ),
@@ -143,24 +147,27 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
             ? [
                 DesktopButtonClickRegion(
                   child: FilledButton(
-                    onPressed: _busy
-                        ? null
-                        : () async {
-                            setState(() => _busy = true);
-                            try {
-                              await restartAfterStorageChange();
-                            } catch (error) {
-                              if (mounted) {
-                                setState(() {
-                                  _error = error;
-                                  _message =
-                                      '无法自动重新打开应用。请关闭应用后手动重新打开，数据和原文件已保留。';
-                                });
+                    onPressed: AppHaptics.wrap(
+                      _busy
+                          ? null
+                          : () async {
+                              setState(() => _busy = true);
+                              try {
+                                await restartAfterStorageChange();
+                              } catch (error) {
+                                if (mounted) {
+                                  setState(() {
+                                    _error = error;
+                                    _message =
+                                        '无法自动重新打开应用。请关闭应用后手动重新打开，数据和原文件已保留。';
+                                  });
+                                }
+                              } finally {
+                                if (mounted) setState(() => _busy = false);
                               }
-                            } finally {
-                              if (mounted) setState(() => _busy = false);
-                            }
-                          },
+                            },
+                      light: true,
+                    ),
                     child: const Text('重启并重新加载'),
                   ),
                 ),
@@ -168,7 +175,10 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
             : [
                 DesktopButtonClickRegion(
                   child: TextButton(
-                    onPressed: _busy ? null : () => Navigator.pop(context),
+                    onPressed: AppHaptics.wrap(
+                      _busy ? null : () => Navigator.pop(context),
+                      light: true,
+                    ),
                     child: const Text('关闭'),
                   ),
                 ),
@@ -177,6 +187,7 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
                     onPressed: _busy
                         ? null
                         : () async {
+                            AppHaptics.pulse(light: true);
                             final selected = await FilePicker.platform
                                 .getDirectoryPath(dialogTitle: '选择数据目录');
                             if (selected != null && mounted) {
@@ -191,6 +202,7 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
                     onPressed: _busy
                         ? null
                         : () async {
+                            AppHaptics.pulse(light: true);
                             final dir = await storage.defaultDataDirectory();
                             if (mounted) setState(() => _selected = dir.path);
                           },
@@ -199,7 +211,10 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
                 ),
                 DesktopButtonClickRegion(
                   child: OutlinedButton(
-                    onPressed: _busy ? null : () => _run(organize: true),
+                    onPressed: AppHaptics.wrap(
+                      _busy ? null : () => _run(organize: true),
+                      light: true,
+                    ),
                     child: const Text('整理旧文件'),
                   ),
                 ),
@@ -210,7 +225,10 @@ class _StorageSettingsDialogState extends State<_StorageSettingsDialog> {
                     ))
                   DesktopButtonClickRegion(
                     child: FilledButton(
-                      onPressed: _busy ? null : () => _run(organize: false),
+                      onPressed: AppHaptics.wrap(
+                        _busy ? null : () => _run(organize: false),
+                        light: true,
+                      ),
                       child: const Text('迁移到所选目录'),
                     ),
                   ),
@@ -326,7 +344,10 @@ class _StorageRecoveryScreenState extends State<StorageRecoveryScreen> {
                         child: TextButton.icon(
                           onPressed: _busy
                               ? null
-                              : () => _recover(directory.path),
+                              : AppHaptics.wrap(
+                                  () => _recover(directory.path),
+                                  light: true,
+                                ),
                           icon: const Icon(Icons.folder_open),
                           label: Text(directory.path),
                         ),
@@ -340,7 +361,10 @@ class _StorageRecoveryScreenState extends State<StorageRecoveryScreen> {
                   ),
                   DesktopButtonClickRegion(
                     child: TextButton(
-                      onPressed: _busy ? null : () => _recover(_path.text),
+                      onPressed: AppHaptics.wrap(
+                        _busy ? null : () => _recover(_path.text),
+                        light: true,
+                      ),
                       child: const Text('使用此目录'),
                     ),
                   ),
@@ -354,6 +378,7 @@ class _StorageRecoveryScreenState extends State<StorageRecoveryScreen> {
                           onPressed: _busy
                               ? null
                               : () async {
+                                  AppHaptics.pulse(light: true);
                                   setState(() => _busy = true);
                                   try {
                                     await widget.onRetry();
@@ -371,7 +396,10 @@ class _StorageRecoveryScreenState extends State<StorageRecoveryScreen> {
                           Platform.isLinux)
                         DesktopButtonClickRegion(
                           child: OutlinedButton(
-                            onPressed: _busy ? null : _pick,
+                            onPressed: AppHaptics.wrap(
+                              _busy ? null : _pick,
+                              light: true,
+                            ),
                             child: const Text('选择原目录'),
                           ),
                         ),

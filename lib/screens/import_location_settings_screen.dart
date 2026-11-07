@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/import_card_placement.dart';
+import '../services/app_haptics.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_tokens.dart';
@@ -186,7 +187,10 @@ class _ImportLocationSettingsScreenState
         actions: [
           DesktopButtonClickRegion(
             child: TextButton(
-              onPressed: _saving ? null : () => setState(_reset),
+              onPressed: AppHaptics.wrap(
+                _saving ? null : () => setState(_reset),
+                light: true,
+              ),
               child: const Text('还原修改'),
             ),
           ),
@@ -208,7 +212,10 @@ class _ImportLocationSettingsScreenState
               DesktopButtonClickRegion(
                 child: FilledButton(
                   key: const ValueKey('import-location-save'),
-                  onPressed: _saving ? null : _save,
+                  onPressed: AppHaptics.wrap(
+                    _saving ? null : _save,
+                    light: true,
+                  ),
                   child: const Text('保存设置'),
                 ),
               ),
@@ -244,16 +251,22 @@ class _ImportLocationSettingsScreenState
                     const SizedBox(height: 8),
                     DesktopButtonClickRegion(
                       child: OutlinedButton.icon(
-                        onPressed: _saving
-                            ? null
-                            : () async {
-                                final pick = await _pick(_rules.fixedFolderId);
-                                if (pick != null && mounted) {
-                                  setState(
-                                    () => _rules.fixedFolderId = pick.folderId,
+                        onPressed: AppHaptics.wrap(
+                          _saving
+                              ? null
+                              : () async {
+                                  final pick = await _pick(
+                                    _rules.fixedFolderId,
                                   );
-                                }
-                              },
+                                  if (pick != null && mounted) {
+                                    setState(
+                                      () =>
+                                          _rules.fixedFolderId = pick.folderId,
+                                    );
+                                  }
+                                },
+                          light: true,
+                        ),
                         icon: const Icon(Icons.folder_outlined, size: 18),
                         label: Text(_folderPath(_rules.fixedFolderId)),
                       ),
@@ -276,9 +289,12 @@ class _ImportLocationSettingsScreenState
                         ),
                         DesktopButtonClickRegion(
                           child: TextButton(
-                            onPressed: overrides == 0 || _saving
-                                ? null
-                                : () => setState(_rules.overrides.clear),
+                            onPressed: AppHaptics.wrap(
+                              overrides == 0 || _saving
+                                  ? null
+                                  : () => setState(_rules.overrides.clear),
+                              light: true,
+                            ),
                             child: const Text(
                               '清除单独设置',
                               style: TextStyle(fontSize: 12),
@@ -401,7 +417,12 @@ class _ImportLocationSettingsScreenState
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     key: ValueKey('importCardPlacement-${mode.storageValue}'),
-                    onTap: _saving ? null : () => _selectPreset(mode),
+                    onTap: _saving
+                        ? null
+                        : AppHaptics.wrap(
+                            () => _selectPreset(mode),
+                            light: true,
+                          ),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(minHeight: 76),
                       child: Padding(
@@ -478,6 +499,7 @@ class _ImportLocationSettingsScreenState
             key: PageStorageKey('import-location-group-${group.name}'),
             initiallyExpanded: _expanded.contains(group),
             onExpansionChanged: (open) {
+              AppHaptics.pulse();
               if (open) {
                 _expanded.add(group);
               } else {
@@ -585,9 +607,9 @@ class _ImportLocationSettingsScreenState
                   ],
                   onChanged: _saving
                       ? null
-                      : (value) {
+                      : AppHaptics.wrapValue((value) {
                           if (value != null) _changeRule(key, value);
-                        },
+                        }),
                 ),
               ),
             ],
@@ -598,12 +620,15 @@ class _ImportLocationSettingsScreenState
             alignment: Alignment.centerRight,
             child: DesktopButtonClickRegion(
               child: TextButton.icon(
-                onPressed: _saving
-                    ? null
-                    : () => _changeRule(
-                        key,
-                        ImportCardPlacement.fixedFolder.storageValue,
-                      ),
+                onPressed: AppHaptics.wrap(
+                  _saving
+                      ? null
+                      : () => _changeRule(
+                          key,
+                          ImportCardPlacement.fixedFolder.storageValue,
+                        ),
+                  light: true,
+                ),
                 icon: const Icon(Icons.folder_outlined, size: 16),
                 label: Text(
                   _folderPath(rule!.folderId),
@@ -697,7 +722,7 @@ class _ImportLocationSettingsScreenState
               child: Text('已有网盘条目下载离线', style: TextStyle(fontSize: 13)),
             ),
           ],
-          onChanged: (value) {
+          onChanged: AppHaptics.wrapValue((value) {
             if (value != null) {
               setState(() {
                 _preview = value;
@@ -708,7 +733,7 @@ class _ImportLocationSettingsScreenState
                 }
               });
             }
-          },
+          }),
         ),
         const SizedBox(height: 12),
         if (!existing) ...[
@@ -739,9 +764,9 @@ class _ImportLocationSettingsScreenState
                   child: Text('拖入「课程 / 第三章」', style: TextStyle(fontSize: 13)),
                 ),
             ],
-            onChanged: (value) {
+            onChanged: AppHaptics.wrapValue((value) {
               if (value != null) setState(() => _launch = value);
-            },
+            }),
           ),
           const SizedBox(height: 12),
         ],

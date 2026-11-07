@@ -2,8 +2,8 @@
   "version": 1,
   "platform": "android",
   "arch": "arm64",
-  "backend": "vulkan",
-  "build": "a19a36484149d9d9546ed015e63cc68a9960740e9c08fc39d981d558f436a8f7",
+  "backend": "cpu",
+  "build": "b6a9621b157e81cf7ac8644113f34615151dc9a3c7217bc15702792b32c8c275",
   "sources": {
     "native/qwen_asr/CMakeLists.txt": "9e710a6bb43bacaec40b1b59320a6cb0e255729fbbd42cbc48fb651061574932",
     "native/qwen_asr/fluent_qwen_asr.podspec": "0393fa2094f5e571134bfc4b26b8d2f744786754ae58e04ded2e813bc263e708",
@@ -14,7 +14,7 @@
     "native/qwen_asr/text/Cargo.lock": "7d8414939cc1f87ab55b836cf3fef1622f95af22e44910679e1a555ca142ebe2",
     "native/qwen_asr/text/Cargo.toml": "2a87663da6bc2417d3e567d192757df07199248eee3e9797f02c981842488cfa",
     "native/qwen_asr/text/src/lib.rs": "f0302632490fcf1f3711b2d77a8967bfb5ac3204efc0b947d3c2425b3863f127",
-    "tool/build_qwen_asr.py": "534b1a642c66526e46131b1d8348ede5af4833b640e0a4e6049ed7fae5f93073",
+    "tool/build_qwen_asr.py": "8081b8711f913b3e5e44cff43bcf99d20c9462f9e8a8b8ec8f76efd63401d171",
     "tool/prepare_qwen_native.py": "9e0c870afbe2402b46cad894713fc3c1e4b545dd4f8ffce215f7652abc045484",
     "tool/qwen_licenses.py": "bad510d787246c354816ebdef79aa3dacb392150227b191228f6d4a457ad535b"
   },
@@ -42,7 +42,7 @@
     }
   },
   "files": {
-    "libfluent_qwen_asr.so": "5c350f7dab93ca8756b4a0fccfe45bb8948403b08759a920b121c6e0c0add0d8",
+    "libfluent_qwen_asr.so": "25c10907da020fdc5f5dd776daf7918a5056bd1269b9abf1dac671c6bef4ccce",
     "licenses/Apache-2.0.txt": "6223c6d6f06d7b0336505416124d9aa427545441a03eb9a8fb94370a9d0a8522",
     "licenses/CrispASR-MIT.txt": "aa918fb53ff1948e12cdae8136e045210fb6db222a1f6f0c14bad48e6de2100e",
     "licenses/ggml-MIT.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
@@ -51,12 +51,6 @@
   },
   "textProcessingVersion": 1,
   "rustTarget": "aarch64-linux-android",
-  "cmakeArguments": [
-    "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
-    "-DSPIRV-Headers_DIR=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Lib/cmake/SPIRV-Headers",
-    "-DVulkan_INCLUDE_DIR=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Include",
-    "-DVulkan_LIBRARY=C:/Users/11/AppData/Local/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/aarch64-linux-android/24/libvulkan.so",
-    "-DVulkan_GLSLC_EXECUTABLE=D:/1spbfq/video_player_app/.artifacts/qwen-integration/deps/vulkan-sdk/Bin/glslc.exe"
-  ],
+  "cmakeArguments": [],
   "batchSize": 1
 }

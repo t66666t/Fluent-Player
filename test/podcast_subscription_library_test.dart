@@ -53,8 +53,8 @@ void main() {
   setUpAll(() async {
     if (preview == null) return;
     for (final font in [
-      ('MiSans', 'assets/fonts/MiSans-Regular.otf'),
       ('Noto Sans SC', 'assets/fonts/NotoSansCJKsc-Regular.otf'),
+      ('Noto Sans CJK Fallback', 'assets/fonts/NotoSansCJKsc-Regular.otf'),
       ('MaterialIcons', 'fonts/MaterialIcons-Regular.otf'),
     ]) {
       await (FontLoader(font.$1)..addFont(rootBundle.load(font.$2))).load();
@@ -162,7 +162,7 @@ void main() {
           theme: ThemeData(
             brightness: Brightness.dark,
             useMaterial3: true,
-            fontFamily: preview == null ? null : 'MiSans',
+            fontFamily: preview == null ? null : 'Noto Sans SC',
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
@@ -366,6 +366,7 @@ void main() {
           id: 'episode-$index',
           channelId: 'channel-$index',
           title: '节目 $index',
+          sourceFeedUrl: 'https://publisher.test/rss-$index',
           media: [
             PodcastMedia(
               url: 'https://example.test/episode-$index.mp3',

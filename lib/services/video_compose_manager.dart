@@ -487,8 +487,12 @@ class VideoComposeManager extends ChangeNotifier {
     while (_systemInterruption != null) {
       await _systemInterruption;
     }
-    final String taskId =
-        '${request.videoId}_${DateTime.now().millisecondsSinceEpoch}';
+    final taskBase = '${request.videoId}_${DateTime.now().millisecondsSinceEpoch}';
+    var taskId = taskBase;
+    var suffix = 1;
+    while (_taskMap.containsKey(taskId)) {
+      taskId = '${taskBase}_${suffix++}';
+    }
     const String stageMessage = '排队中';
     final VideoComposeTaskState state = VideoComposeTaskState(
       taskId: taskId,

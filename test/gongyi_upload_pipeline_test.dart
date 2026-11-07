@@ -18,6 +18,7 @@ void main() {
   Dio fakeService({
     required void Function(RequestOptions, RequestInterceptorHandler) upload,
     required void Function(String etags) committed,
+    bool rejectCommit = false,
   }) {
     final dio = Dio();
     dio.interceptors.add(
@@ -29,6 +30,10 @@ void main() {
           }
           Object data;
           if (options.path.endsWith('/resource/create')) {
+            expect(
+              (jsonDecode(options.data as String) as Map)['model_id'],
+              '8',
+            );
             data = {
               'code': 0,
               'data': {
@@ -44,11 +49,14 @@ void main() {
             };
           } else if (options.path.endsWith('/resource/create/complete')) {
             committed((options.data as Map)['Etags'] as String);
-            data = {
-              'code': 0,
-              'data': {'download_url': 'https://storage.test/audio'},
-            };
+            data = rejectCommit
+                ? {'code': 139201, 'message': '第三方服务异常'}
+                : {
+                    'code': 0,
+                    'data': {'download_url': 'https://storage.test/audio'},
+                  };
           } else if (options.path.endsWith('/task/result')) {
+            expect(options.queryParameters['model_id'], 7);
             data = {
               'data': {
                 'state': 4,
@@ -60,6 +68,10 @@ void main() {
               },
             };
           } else {
+            if (rejectCommit) {
+              fail('A failed upload commit must not create a task');
+            }
+            expect((options.data as Map)['model_id'], '8');
             data = {
               'code': 0,
               'data': {'task_id': 'task'},
@@ -75,11 +87,12 @@ void main() {
   }
 
   test(
-    'uploads two chunks at a time and commits ETags in file order',
+    'uploads one storage part at a time and commits ETags in file order',
     () async {
       final audio = await audioFile();
       final pending = <int, (RequestOptions, RequestInterceptorHandler)>{};
-      final firstTwo = Completer<void>();
+      final first = Completer<void>();
+      final second = Completer<void>();
       final third = Completer<void>();
       final bytes = <int, List<int>>{};
       final progress = <double>[];
@@ -92,9 +105,8 @@ void main() {
           bytes[i] = List<int>.of(options.data as Uint8List);
           pending[i] = (options, handler);
           if (pending.length > peak) peak = pending.length;
-          if (pending.containsKey(0) && pending.containsKey(1)) {
-            firstTwo.complete();
-          }
+          if (i == 0) first.complete();
+          if (i == 1) second.complete();
           if (i == 2) third.complete();
         },
       );
@@ -121,19 +133,57 @@ void main() {
         );
       }
 
-      await firstTwo.future.timeout(const Duration(seconds: 3));
-      expect(bytes.keys, unorderedEquals([0, 1]));
+      await first.future.timeout(const Duration(seconds: 3));
+      expect(bytes.keys, [0]);
+      complete(0);
+      await second.future.timeout(const Duration(seconds: 3));
+      expect(bytes.keys, [0, 1]);
       complete(1);
       await third.future.timeout(const Duration(seconds: 3));
-      expect(peak, 2);
+      expect(peak, 1);
       complete(2);
-      complete(0);
       expect((await result).single.text, '字幕');
-      expect(etags, 'etag-0,etag-1,etag-2');
+      expect(etags, '"etag-0","etag-1","etag-2"');
       expect(bytes[0], [0, 1, 2, 3]);
       expect(bytes[1], [4, 5, 6, 7]);
       expect(bytes[2], [8, 9]);
       expect(progress, orderedEquals([...progress]..sort()));
+    },
+  );
+
+  test(
+    'a storage commit error is reported without trying a second ETag format',
+    () async {
+      final audio = await audioFile();
+      final committed = <String>[];
+      final dio = fakeService(
+        rejectCommit: true,
+        committed: committed.add,
+        upload: (options, handler) => handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: '',
+            headers: Headers.fromMap({
+              'etag': ['"part"'],
+            }),
+          ),
+        ),
+      );
+      addTearDown(() => dio.close(force: true));
+      await expectLater(
+        GongyiAsrService(dio: dio).transcribeAudio(audio.path),
+        throwsA(
+          isA<GongyiAsrException>()
+              .having((e) => e.apiCode, 'commit code', 139201)
+              .having(
+                (e) => e.endpoint,
+                'commit endpoint',
+                endsWith('/resource/create/complete'),
+              ),
+        ),
+      );
+      expect(committed, ['"part","part","part"']);
     },
   );
 
@@ -174,7 +224,7 @@ void main() {
   );
 
   test(
-    'failed uploads settle their peers and never commit partial data',
+    'failed uploads never start later parts or commit partial data',
     () async {
       final audio = await audioFile();
       var committed = false;
@@ -218,7 +268,7 @@ void main() {
         throwsA(isA<GongyiAsrException>()),
       );
       expect(committed, isFalse);
-      expect(started, isNot(contains(2)));
+      expect(started, [0]);
       if (started.contains(1)) expect(settled.isCompleted, isTrue);
       // File handles have closed before the failed attempt returns.
       await audio.delete();
@@ -226,18 +276,18 @@ void main() {
   );
 
   test(
-    'cancelling parallel uploads releases both readers without committing',
+    'cancelling an upload closes its reader and never starts another part',
     () async {
       final audio = await audioFile();
       final token = CancelToken();
-      final bothStarted = Completer<void>();
+      final firstStarted = Completer<void>();
       var started = 0;
       var committed = false;
       final dio = fakeService(
         committed: (_) => committed = true,
         upload: (options, handler) {
           started++;
-          if (started == 2) bothStarted.complete();
+          if (started == 1) firstStarted.complete();
           options.cancelToken!.whenCancel.then(
             (error) => handler.reject(error),
           );
@@ -252,10 +302,10 @@ void main() {
           isA<DioException>().having(CancelToken.isCancel, 'cancelled', isTrue),
         ),
       );
-      await bothStarted.future.timeout(const Duration(seconds: 3));
+      await firstStarted.future.timeout(const Duration(seconds: 3));
       token.cancel('Pause transcription');
       await result;
-      expect(started, 2);
+      expect(started, 1);
       expect(committed, isFalse);
       await audio.delete();
     },

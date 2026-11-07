@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 export 'experimental_home_frame.dart';
+import '../services/app_haptics.dart';
 import '../services/experimental_layout.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -19,13 +20,19 @@ Future<void> showLayoutExperiment(BuildContext context) async {
       actions: [
         DesktopButtonClickRegion(
           child: TextButton(
-            onPressed: () => Navigator.pop(dialog),
+            onPressed: AppHaptics.wrap(
+              () => Navigator.pop(dialog),
+              light: true,
+            ),
             child: const Text('关闭'),
           ),
         ),
         DesktopButtonClickRegion(
           child: FilledButton(
-            onPressed: () => Navigator.pop(dialog, !layout.value),
+            onPressed: AppHaptics.wrap(
+              () => Navigator.pop(dialog, !layout.value),
+              light: true,
+            ),
             child: Text(layout.value ? '恢复原布局' : '体验新布局'),
           ),
         ),
@@ -126,7 +133,10 @@ class _ExperimentalSettingsPageState extends State<ExperimentalSettingsPage> {
               title: Text(category.label),
               subtitle: wide ? null : Text(category.description),
               trailing: wide ? null : const Icon(Icons.chevron_right),
-              onTap: () => setState(() => _selected = category),
+              onTap: () {
+                AppHaptics.pulse();
+                setState(() => _selected = category);
+              },
             ),
           ),
       ],
@@ -154,7 +164,10 @@ class _ExperimentalSettingsPageState extends State<ExperimentalSettingsPage> {
               ListTile(
                 leading: const Icon(Icons.undo),
                 title: const Text('恢复原布局'),
-                onTap: () => showLayoutExperiment(context),
+                onTap: AppHaptics.wrap(
+                  () => showLayoutExperiment(context),
+                  light: true,
+                ),
               ),
             const SizedBox(height: 96),
           ],
@@ -174,6 +187,7 @@ class _ExperimentalSettingsPageState extends State<ExperimentalSettingsPage> {
           leading: DesktopButtonClickRegion(
             child: BackButton(
               onPressed: () {
+                AppHaptics.pulse(light: true);
                 if (!wide && _selected != null) {
                   setState(() => _selected = null);
                 } else {
@@ -187,7 +201,10 @@ class _ExperimentalSettingsPageState extends State<ExperimentalSettingsPage> {
               child: IconButton(
                 tooltip: '布局实验室',
                 icon: const Icon(Icons.science_outlined),
-                onPressed: () => showLayoutExperiment(context),
+                onPressed: AppHaptics.wrap(
+                  () => showLayoutExperiment(context),
+                  light: true,
+                ),
               ),
             ),
           ],

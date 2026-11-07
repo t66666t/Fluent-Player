@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/subtitle_style.dart';
 import '../utils/subtitle_layout.dart';
+import '../utils/subtitle_optical_alignment.dart';
 import 'subtitle_position_surface.dart';
 
 export '../utils/subtitle_position_geometry.dart'
@@ -577,10 +578,16 @@ class _AnimatedSubtitlePositionState
 /// the plate. English values therefore center the cap/x-height body; CJK
 /// ideographs still use the fuller glyph-box correction.
 double subtitlePresetOpticalOffsetEm(String font, String text) {
+  final downloaded = SubtitleFontService.instance.find(font);
+  final isSerif = font == 'Noto Serif CJK SC' ||
+      downloaded?.name == 'Noto Serif SC' ||
+      downloaded?.internalFamily == 'Noto Serif SC' ||
+      downloaded?.internalFamily == 'Noto Serif CJK SC';
   final hasCjk = RegExp(
     r'[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]',
   ).hasMatch(text);
-  if (hasCjk) return font == 'Noto Serif CJK SC' ? -.104 : -.068;
+  if (hasCjk) return isSerif ? -.104 : -.068;
+  if (isSerif) return -.050;
   return switch (font) {
     'Noto Sans SC' => -.058,
     'Noto Serif CJK SC' => -.050,
@@ -613,11 +620,12 @@ class SubtitlePresetContent extends StatelessWidget {
           text: entry.text,
           style: preset.styleFor(),
           referenceHeight: referenceHeight,
-          fontFamilyFallback: const ['Noto Sans SC'],
+          fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
           opticalOffsetEm: subtitlePresetOpticalOffsetEm(
             preset.primaryFont,
             entry.text,
           ),
+          alignLatinBody: false,
           contentPadding: EdgeInsets.symmetric(
             horizontal: 12,
             vertical: preset.backgroundPadding,
@@ -630,11 +638,12 @@ class SubtitlePresetContent extends StatelessWidget {
           text: entry.secondaryText!,
           style: preset.styleFor(secondary: true),
           referenceHeight: referenceHeight,
-          fontFamilyFallback: const ['Noto Sans SC'],
+          fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
           opticalOffsetEm: subtitlePresetOpticalOffsetEm(
             preset.secondaryFont,
             entry.secondaryText!,
           ),
+          alignLatinBody: false,
           contentPadding: EdgeInsets.symmetric(
             horizontal: 12,
             vertical: preset.backgroundPadding,
@@ -674,6 +683,7 @@ class SubtitleOverlay extends StatelessWidget {
   /// Optical correction moves fill, outline and shadow together within the
   /// unchanged line box. It must scale with the resolved font size.
   final double opticalOffsetEm;
+  final bool alignLatinBody;
   final double? referenceHeight;
   final bool isDragging;
   final bool isGestureOnly; // Transparent content for a position surface.
@@ -689,6 +699,7 @@ class SubtitleOverlay extends StatelessWidget {
     this.style = const SubtitleStyle(),
     this.fontFamilyFallback,
     this.opticalOffsetEm = 0,
+    this.alignLatinBody = true,
     this.contentPadding = const EdgeInsets.symmetric(
       horizontal: 12,
       vertical: 6,
@@ -740,6 +751,17 @@ class SubtitleOverlay extends StatelessWidget {
               )
             : scaledStyle;
 
+        final trackLeading = image == null && alignLatinBody
+            ? _outerTrackLeading(
+                displayText,
+                effectiveStyle,
+                (constraints.maxWidth - contentPadding.horizontal * scale)
+                    .clamp(0.0, double.infinity),
+                direction: Directionality.of(context),
+                locale: Localizations.maybeLocaleOf(context),
+              )
+            : EdgeInsets.zero;
+
         Widget content = RepaintBoundary(
           child: image != null
               ? _ContainedSubtitleImage(
@@ -748,7 +770,7 @@ class SubtitleOverlay extends StatelessWidget {
                   maxHeight: constraints.maxHeight,
                 )
               : Container(
-                  padding: contentPadding * scale,
+                  padding: contentPadding * scale + trackLeading,
                   decoration: BoxDecoration(
                     color: effectiveStyle.backgroundColor.withValues(
                       alpha: effectiveStyle.backgroundEnabled
@@ -796,78 +818,80 @@ class SubtitleOverlay extends StatelessWidget {
     SubtitleStyle style, {
     required bool isStroke,
   }) {
-    // If we have explicit secondary text, we ignore the newline splitting logic for styling
-    // and render primary and secondary blocks distinctly.
+    // Each track retains its own baseline/line height and optical correction.
+    // A Latin secondary track must not translate the primary Chinese track.
     if (secondaryText != null && secondaryText!.isNotEmpty) {
-      List<InlineSpan> spans = [];
-
-      // 1. Primary Block
-      if (text.isNotEmpty) {
-        // Render all lines of primary text with primary style
-        final lines = text.split('\n');
-        for (int i = 0; i < lines.length; i++) {
-          if (i > 0) spans.add(const TextSpan(text: "\n"));
-          spans.add(
-            TextSpan(
-              // Use default line height for primary
-              children: _buildSpans(
-                lines[i],
-                style,
-                isStroke: isStroke,
-                language: language,
-              ),
-            ),
-          );
-        }
-      }
-
-      // 2. Secondary Block
-      if (text.isNotEmpty) spans.add(const TextSpan(text: "\n"));
-
-      final secLines = secondaryText!.split('\n');
       final secFontSize = style.secondaryFontSize ?? style.fontSize;
       final secStyle = style.copyWith(fontSize: secFontSize);
-
-      for (int i = 0; i < secLines.length; i++) {
-        if (i > 0) spans.add(const TextSpan(text: "\n"));
-
-        // Calculate height for secondary lines (same logic as before)
-        final double height = SubtitleResolvedStyleMetrics.resolveLineHeight(
-          lineSpacing: style.lineSpacing,
-          fontSize: secFontSize,
-        );
-
-        spans.add(
-          TextSpan(
-            style: TextStyle(height: height),
-            children: _buildSpans(
-              secLines[i],
-              secStyle,
-              isStroke: isStroke,
-              language: secondaryLanguage,
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (text.isNotEmpty)
+            _paragraph(text, style, isStroke: isStroke, language: language),
+          _paragraph(
+            secondaryText!,
+            secStyle,
+            isStroke: isStroke,
+            language: secondaryLanguage,
+            height: SubtitleResolvedStyleMetrics.resolveLineHeight(
+              lineSpacing: style.lineSpacing,
+              fontSize: secFontSize,
             ),
           ),
-        );
-      }
-
-      return _WrappedSubtitleRichText(
-        textAlign: TextAlign.center,
-        text: TextSpan(children: spans),
+        ],
       );
     }
+    if (_hasMixedSourceLines(text)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final line in text.split('\n'))
+            _paragraph(line, style, isStroke: isStroke, language: language),
+        ],
+      );
+    }
+    return _paragraph(text, style, isStroke: isStroke, language: language);
+  }
 
-    // Legacy Logic (Single text source)
-    // We treat it as all primary, UNLESS the caller already split it.
-    // Callers split primary/secondary tracks. When secondaryText is absent,
-    // all newline-separated text here uses the primary style.
+  bool _hasMixedSourceLines(String text) {
     final lines = text.split('\n');
-    if (lines.isEmpty) return const SizedBox.shrink();
+    return lines.length > 1 &&
+        lines.every((line) => line.trim().isNotEmpty) &&
+        lines.any(isLatinSubtitleText) &&
+        lines.any((line) => !isLatinSubtitleText(line));
+  }
 
-    // Render all lines as primary
-    List<InlineSpan> spans = [];
+  Widget _paragraph(
+    String text,
+    SubtitleStyle style, {
+    required bool isStroke,
+    String? language,
+    double? height,
+  }) {
+    return _WrappedSubtitleRichText(
+      textAlign: TextAlign.center,
+      text: _paragraphSpan(
+        text,
+        style,
+        isStroke: isStroke,
+        language: language,
+        height: height,
+      ),
+      alignLatinBody: alignLatinBody,
+    );
+  }
+
+  TextSpan _paragraphSpan(
+    String text,
+    SubtitleStyle style, {
+    required bool isStroke,
+    String? language,
+    double? height,
+  }) {
+    final lines = text.split('\n');
+    final spans = <InlineSpan>[];
     for (int i = 0; i < lines.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: "\n"));
-      // All lines use primary style (null height override)
       spans.add(
         TextSpan(
           children: _buildSpans(
@@ -880,10 +904,80 @@ class SubtitleOverlay extends StatelessWidget {
       );
     }
 
-    return _WrappedSubtitleRichText(
-      textAlign: TextAlign.center,
-      text: TextSpan(children: spans),
+    return TextSpan(
+      style: height == null ? null : TextStyle(height: height),
+      children: spans,
     );
+  }
+
+  EdgeInsets _outerTrackLeading(
+    String text,
+    SubtitleStyle style,
+    double maxWidth, {
+    required TextDirection direction,
+    Locale? locale,
+  }) {
+    var secondary = secondaryText;
+    final splitSource =
+        (secondary == null || secondary.isEmpty) && _hasMixedSourceLines(text);
+    if (splitSource) {
+      final lines = text.split('\n');
+      text = lines.first;
+      secondary = lines.last;
+    }
+    if (text.trim().isEmpty ||
+        secondary == null ||
+        secondary.trim().isEmpty ||
+        !(isLatinSubtitleText(text) || isLatinSubtitleText(secondary)) ||
+        maxWidth <= 0) {
+      return EdgeInsets.zero;
+    }
+    final secondarySize = splitSource
+        ? style.fontSize
+        : style.secondaryFontSize ?? style.fontSize;
+    final painters = [
+      TextPainter(
+        text: _paragraphSpan(text, style, isStroke: false, language: language),
+        textDirection: direction,
+        locale: locale,
+      ),
+      TextPainter(
+        text: _paragraphSpan(
+          secondary,
+          style.copyWith(fontSize: secondarySize),
+          isStroke: false,
+          language: splitSource ? language : secondaryLanguage,
+          height: splitSource
+              ? null
+              : SubtitleResolvedStyleMetrics.resolveLineHeight(
+                  lineSpacing: style.lineSpacing,
+                  fontSize: secondarySize,
+                ),
+        ),
+        textDirection: direction,
+        locale: locale,
+      ),
+    ];
+    try {
+      for (final painter in painters) {
+        painter.text = layoutSubtitleText(
+          painter.text!,
+          maxWidth: maxWidth,
+        ).text;
+        painter.layout(maxWidth: maxWidth);
+      }
+      final first = painters.first.computeLineMetrics().first.height;
+      final last = painters.last.computeLineMetrics().last.height;
+      // Only the outside leading is equalized. Internal line spacing, glyph
+      // size and the primary/secondary baseline separation remain intact.
+      return first >= last
+          ? EdgeInsets.only(bottom: (first - last) / 2)
+          : EdgeInsets.only(top: (last - first) / 2);
+    } finally {
+      for (final painter in painters) {
+        painter.dispose();
+      }
+    }
   }
 
   List<TextSpan> _buildSpans(
@@ -911,7 +1005,10 @@ class SubtitleOverlay extends StatelessWidget {
       overrideFontWeight: font.fontWeight,
     );
 
-    ts = ts.copyWith(fontFamilyFallback: fontFamilyFallback);
+    ts = ts.copyWith(
+      fontFamilyFallback: fontFamilyFallback,
+      fontVariations: font.fontVariations,
+    );
 
     if (isStroke) {
       final double effectiveBorderWidth = style.effectiveBorderWidth;
@@ -945,8 +1042,13 @@ class SubtitleOverlay extends StatelessWidget {
 class _WrappedSubtitleRichText extends StatelessWidget {
   final InlineSpan text;
   final TextAlign textAlign;
+  final bool alignLatinBody;
 
-  const _WrappedSubtitleRichText({required this.text, required this.textAlign});
+  const _WrappedSubtitleRichText({
+    required this.text,
+    required this.textAlign,
+    this.alignLatinBody = false,
+  });
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -959,12 +1061,32 @@ class _WrappedSubtitleRichText extends StatelessWidget {
         textDirection: direction,
         locale: locale,
       );
-      return RichText(
+      final child = RichText(
         text: layout.text,
         textAlign: textAlign,
         textDirection: direction,
         locale: locale,
       );
+      if (!alignLatinBody) return child;
+      final painter = TextPainter(
+        text: layout.text,
+        textDirection: direction,
+        textAlign: textAlign,
+        locale: locale,
+      );
+      try {
+        painter.layout(maxWidth: constraints.maxWidth);
+        final offset = subtitleLatinOpticalShift(
+          layout.text,
+          painter,
+          bodyCenter: SubtitleFontService.instance.latinBodyCenter,
+        );
+        return offset == 0
+            ? child
+            : Transform.translate(offset: Offset(0, offset), child: child);
+      } finally {
+        painter.dispose();
+      }
     },
   );
 }

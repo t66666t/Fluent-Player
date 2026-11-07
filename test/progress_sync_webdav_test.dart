@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player_app/utils/app_branding.dart';
 import 'package:video_player_app/features/progress_sync/progress_sync_webdav.dart';
 
 class _RealHttpOverrides extends HttpOverrides {}
@@ -61,7 +62,8 @@ class _DavServer {
   }
 
   String get url => 'http://127.0.0.1:${server.port}/dav/';
-  String get eventDirectory => '/dav/FluentPlayerProgress/v1/events/';
+  String get eventDirectory =>
+      '/dav/FluentPlayerProgress/v2/$kApplicationId/events/';
 
   ProgressSyncWebDav transport({
     String? url,
@@ -177,15 +179,18 @@ void main() {
 
       expect(
         dav.directories,
-        contains('/dav/player/backups/FluentPlayerProgress/v1/events/'),
+        contains(
+          '/dav/player/backups/FluentPlayerProgress/v2/$kApplicationId/events/',
+        ),
       );
       expect(dav.files, isEmpty);
       expect(dav.calls.where((c) => c.method == 'MKCOL').map((c) => c.path), [
         '/dav/player/',
         '/dav/player/backups/',
         '/dav/player/backups/FluentPlayerProgress/',
-        '/dav/player/backups/FluentPlayerProgress/v1/',
-        '/dav/player/backups/FluentPlayerProgress/v1/events/',
+        '/dav/player/backups/FluentPlayerProgress/v2/',
+        '/dav/player/backups/FluentPlayerProgress/v2/$kApplicationId/',
+        '/dav/player/backups/FluentPlayerProgress/v2/$kApplicationId/events/',
       ]);
       expect(dav.calls.where((c) => c.method == 'DELETE'), hasLength(1));
     },

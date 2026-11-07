@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/subtitle_translate_settings.dart';
 import '../services/subtitle_translation_languages.dart';
 import '../utils/app_toast.dart';
+import 'subtitle_settings_layout.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 /// The same visible direction and translator identity on single/batch pages.
@@ -18,6 +19,7 @@ class TranslationDirectionSummary extends StatefulWidget {
     this.enabled = true,
     this.label,
     this.maxLines = 1,
+    this.flat = false,
   });
   final SubtitleTranslateSettings? settings;
   final void Function(SubtitleTranslateSettings) onOpen;
@@ -25,6 +27,7 @@ class TranslationDirectionSummary extends StatefulWidget {
   final bool enabled;
   final String? label;
   final int maxLines;
+  final bool flat;
   @override
   State<TranslationDirectionSummary> createState() =>
       _TranslationDirectionSummaryState();
@@ -59,57 +62,69 @@ class _TranslationDirectionSummaryState
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: settings,
     builder: (_, _) {
+      if (widget.flat) {
+        return SubtitleSettingsRow(
+          key: const ValueKey('translation-direction-summary'),
+          title: widget.label ?? '翻译方式',
+          description:
+              '${settings.mode == SubtitleTranslationMode.smart ? settings.smartPolicy.compactSummary : settings.languageSummary} · ${settings.binding.label}',
+          enabled: widget.enabled,
+          onTap: () => widget.onOpen(settings),
+        );
+      }
       final color =
           widget.foregroundColor ?? Theme.of(context).colorScheme.onSurface;
       return Tooltip(
         message: '翻译设置：${settings.summary}',
-        child: DesktopButtonClickRegion(child: TextButton(
-          key: const ValueKey('translation-direction-summary'),
-          onPressed: widget.enabled ? () => widget.onOpen(settings) : null,
-          style: TextButton.styleFrom(
-            foregroundColor: color,
-            minimumSize: const Size(0, 44),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            alignment: Alignment.centerLeft,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.translate_rounded, size: 17),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${widget.label == null ? '' : '${widget.label} · '}${settings.mode == SubtitleTranslationMode.smart ? settings.smartPolicy.compactSummary : settings.languageSummary}',
-                      maxLines: widget.maxLines,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+        child: DesktopButtonClickRegion(
+          child: TextButton(
+            key: const ValueKey('translation-direction-summary'),
+            onPressed: widget.enabled ? () => widget.onOpen(settings) : null,
+            style: TextButton.styleFrom(
+              foregroundColor: color,
+              minimumSize: const Size(0, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              alignment: Alignment.centerLeft,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.translate_rounded, size: 17),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${widget.label == null ? '' : '${widget.label} · '}${settings.mode == SubtitleTranslationMode.smart ? settings.smartPolicy.compactSummary : settings.languageSummary}',
+                        maxLines: widget.maxLines,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      settings.binding.label,
-                      maxLines: widget.maxLines,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: color.withValues(alpha: .7),
+                      Text(
+                        settings.binding.label,
+                        maxLines: widget.maxLines,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: color.withValues(alpha: .7),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              const Text('设置', style: TextStyle(fontSize: 12)),
-              const SizedBox(width: 3),
-              const Icon(Icons.edit_outlined, size: 14),
-            ],
+                const SizedBox(width: 6),
+                const Text('设置', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 3),
+                const Icon(Icons.edit_outlined, size: 14),
+              ],
+            ),
           ),
-        )),
+        ),
       );
     },
   );
@@ -135,8 +150,12 @@ class TranslationLanguageControls extends StatelessWidget {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (_) =>
-          _LanguagePicker(source: source, selected: selected, binding: binding),
+      builder: (_) => _LanguagePicker(
+        source: source,
+        selected: selected,
+        binding: binding,
+        showTranslator: showContext,
+      ),
     );
     if (result != null) {
       await settings.setLanguages(
@@ -181,6 +200,7 @@ class TranslationLanguageControls extends StatelessWidget {
         allowAuto: false,
         allowOriginal: !source,
         excludedFamilies: excluded,
+        showTranslator: showContext,
         title: source ? '选择规则的源语言' : '选择规则的目标语言',
       ),
     );
@@ -200,44 +220,46 @@ class TranslationLanguageControls extends StatelessWidget {
   Widget _smartRules(BuildContext context, Color color) {
     final policy = settings.smartPolicy, binding = settings.binding;
     Widget field(String title, String code, String key, VoidCallback onTap) =>
-        DesktopButtonClickRegion(child: OutlinedButton(
-          key: ValueKey(key),
-          onPressed: enabled ? onTap : null,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: color,
-            alignment: Alignment.centerLeft,
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: color.withValues(alpha: .65),
+        DesktopButtonClickRegion(
+          child: OutlinedButton(
+            key: ValueKey(key),
+            onPressed: enabled ? onTap : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: color,
+              alignment: Alignment.centerLeft,
+              minimumSize: const Size(0, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: color.withValues(alpha: .65),
+                        ),
                       ),
-                    ),
-                    Text(
-                      title == '检测到' && subtitleLanguageFamily(code) == 'zh'
-                          ? '中文'
-                          : SmartTranslationPolicy.targetLabel(code),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
+                      Text(
+                        title == '检测到' && subtitleLanguageFamily(code) == 'zh'
+                            ? '中文'
+                            : SmartTranslationPolicy.targetLabel(code),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.expand_more, size: 14),
-            ],
+                const Icon(Icons.expand_more, size: 14),
+              ],
+            ),
           ),
-        ));
+        );
     final used = policy.rules
         .map((rule) => subtitleLanguageFamily(rule.source))
         .toSet();
@@ -275,27 +297,29 @@ class TranslationLanguageControls extends StatelessWidget {
                     () => _chooseRule(context, index, false),
                   ),
                 ),
-                DesktopButtonClickRegion(child: IconButton(
-                  key: ValueKey('smart-rule-$index-delete'),
-                  tooltip: '删除规则',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 40,
+                DesktopButtonClickRegion(
+                  child: IconButton(
+                    key: ValueKey('smart-rule-$index-delete'),
+                    tooltip: '删除规则',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 40,
+                    ),
+                    icon: const Icon(Icons.remove_circle_outline, size: 17),
+                    onPressed: enabled
+                        ? () => _savePolicy(
+                            policy.copyWith(
+                              rules: [
+                                for (var i = 0; i < policy.rules.length; i++)
+                                  if (i != index) policy.rules[i],
+                              ],
+                            ),
+                            binding.key,
+                          )
+                        : null,
                   ),
-                  icon: const Icon(Icons.remove_circle_outline, size: 17),
-                  onPressed: enabled
-                      ? () => _savePolicy(
-                          policy.copyWith(
-                            rules: [
-                              for (var i = 0; i < policy.rules.length; i++)
-                                if (i != index) policy.rules[i],
-                            ],
-                          ),
-                          binding.key,
-                        )
-                      : null,
-                )),
+                ),
               ],
             ),
           ),
@@ -319,25 +343,27 @@ class TranslationLanguageControls extends StatelessWidget {
         ),
         Align(
           alignment: Alignment.centerLeft,
-          child: DesktopButtonClickRegion(child: TextButton.icon(
-            key: const ValueKey('smart-add-rule'),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加语言规则'),
-            onPressed: enabled && next != null
-                ? () => _savePolicy(
-                    policy.copyWith(
-                      rules: [
-                        ...policy.rules,
-                        SmartTranslationRule(
-                          source: next.code,
-                          target: policy.otherTarget,
-                        ),
-                      ],
-                    ),
-                    binding.key,
-                  )
-                : null,
-          )),
+          child: DesktopButtonClickRegion(
+            child: TextButton.icon(
+              key: const ValueKey('smart-add-rule'),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('添加语言规则'),
+              onPressed: enabled && next != null
+                  ? () => _savePolicy(
+                      policy.copyWith(
+                        rules: [
+                          ...policy.rules,
+                          SmartTranslationRule(
+                            source: next.code,
+                            target: policy.otherTarget,
+                          ),
+                        ],
+                      ),
+                      binding.key,
+                    )
+                  : null,
+            ),
+          ),
         ),
         Row(
           children: [
@@ -378,50 +404,52 @@ class TranslationLanguageControls extends StatelessWidget {
     builder: (_, _) {
       final color = foregroundColor ?? Theme.of(context).colorScheme.onSurface;
       Widget language(bool source) => Expanded(
-        child: DesktopButtonClickRegion(child: OutlinedButton(
-          key: ValueKey(
-            source
-                ? 'translation-source-language'
-                : 'translation-target-language',
-          ),
-          onPressed: enabled ? () => _choose(context, source) : null,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: color,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            alignment: Alignment.centerLeft,
-            minimumSize: const Size(0, 48),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      source ? '源语言' : '目标语言',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: color.withValues(alpha: .65),
+        child: DesktopButtonClickRegion(
+          child: OutlinedButton(
+            key: ValueKey(
+              source
+                  ? 'translation-source-language'
+                  : 'translation-target-language',
+            ),
+            onPressed: enabled ? () => _choose(context, source) : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: color,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              alignment: Alignment.centerLeft,
+              minimumSize: const Size(0, 48),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        source ? '源语言' : '目标语言',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: color.withValues(alpha: .65),
+                        ),
                       ),
-                    ),
-                    Text(
-                      subtitleLanguageLabel(
-                        source
-                            ? settings.sourceLanguage
-                            : settings.targetLanguage,
+                      Text(
+                        subtitleLanguageLabel(
+                          source
+                              ? settings.sourceLanguage
+                              : settings.targetLanguage,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.expand_more, size: 16),
-            ],
+                const Icon(Icons.expand_more, size: 16),
+              ],
+            ),
           ),
-        )),
+        ),
       );
       return Column(
         mainAxisSize: MainAxisSize.min,
@@ -487,6 +515,7 @@ class _LanguagePicker extends StatefulWidget {
     this.allowAuto = true,
     this.allowOriginal = false,
     this.excludedFamilies = const {},
+    this.showTranslator = true,
     this.title,
   });
   final bool source;
@@ -494,6 +523,9 @@ class _LanguagePicker extends StatefulWidget {
   final SubtitleTranslationBinding binding;
   final bool allowAuto, allowOriginal;
   final Set<String> excludedFamilies;
+
+  /// 手动翻译不使用内部引擎，选语言时也不展示“当前翻译”。
+  final bool showTranslator;
   final String? title;
   @override
   State<_LanguagePicker> createState() => _LanguagePickerState();
@@ -534,15 +566,16 @@ class _LanguagePickerState extends State<_LanguagePicker> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-            child: Text(
-              '当前翻译：${widget.binding.label}',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+          if (widget.showTranslator)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: Text(
+                '当前翻译：${widget.binding.label}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(

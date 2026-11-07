@@ -1,5 +1,5 @@
 name: video_player_app
-description: "Fluent Player: cross-platform media, subtitles and learning."
+description: "Fluent Player Community: cross-platform media, subtitles and learning."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.1+3
+# Change the application version/build number only when explicitly requested.
+version: 1.0.0+3
 
 environment:
   sdk: ^3.10.7
@@ -104,7 +105,6 @@ dependencies:
   llamadart: 0.15.1
   llamadart_llama_cpp_flutter: 0.15.1
   flutter_secure_storage: ^10.3.4
-  flutter_inappwebview: ^6.1.5
   flutter_markdown_plus:
     path: third_party/flutter_markdown_plus
   markdown: ^7.3.0
@@ -147,8 +147,6 @@ dependency_overrides:
   sherpa_onnx_macos: 1.12.12
   sherpa_onnx_linux: 1.12.12
   sherpa_onnx_windows: 1.12.12
-  flutter_inappwebview_windows:
-    path: third_party/flutter_inappwebview_windows
 
 dev_dependencies:
   integration_test:
@@ -203,8 +201,10 @@ flutter:
     - PRIVACY.md
     - assets/licenses/
     - assets/fonts/licenses/
+    - assets/fonts/previews/
     - assets/models/ocr_catalog.json
     - assets/models/catalog.json
+    - assets/models/asr_dependencies.json
     - assets/models/asr/
     - assets/language_id/
     # Reuse the small Android launcher artwork for the lightweight Flutter
@@ -220,13 +220,18 @@ flutter:
   fonts:
     - family: App Reading
       fonts:
-        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
-    - family: MiSans
-      fonts:
-        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+        - asset: assets/fonts/NotoSansSC-Variable.ttf
     - family: Noto Sans SC
       fonts:
+        - asset: assets/fonts/NotoSansSC-Variable.ttf
+    # Retain the full CJK repertoire, including Hangul, as a fallback.
+    - family: Noto Sans CJK Fallback
+      fonts:
         - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+    - family: Swei Gothic CJK SC
+      fonts:
+        - asset: assets/fonts/SweiGothicCJKsc-Bold.ttf
+          weight: 700
     - family: Brawler
       fonts:
         - asset: assets/fonts/Brawler-Bold.otf

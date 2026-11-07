@@ -14,6 +14,11 @@ For tar.gz, extract the **entire** directory and run `./fluent-player.sh`.
 Optionally run `./install-desktop.sh` to add it to your own application menu.
 Keep the directory in its installed location after adding the menu shortcut.
 
+The application menu and window name are **Fluent Player**. The GTK/desktop ID
+is `cn.teezy.fluentplayer.standard`; its executable and Debian package use the
+technical name `fluent-player`. The two editions can be installed
+side by side without sharing their application data roots.
+
 The program includes the matching **libmpv and its dependency tree**, FFmpeg,
 ffprobe, Flutter plugins and isolated media helpers. `linux-runtime.json`
 records the system package versions used; third-party notices are in `licenses`.

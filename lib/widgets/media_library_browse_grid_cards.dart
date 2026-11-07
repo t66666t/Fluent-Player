@@ -1,6 +1,7 @@
-import 'library_card_rebuild.dart';
-import 'media_library_card_scale.dart';
 import '../features/podcasts/podcast_widgets.dart';
+import 'library_card_rebuild.dart';
+import 'media_display_title.dart';
+import 'media_library_card_scale.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -227,7 +228,7 @@ class MediaLibraryMediaGridCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          item.title,
+                          mediaLibraryItemTitle(context, item),
                           style: TextStyle(
                             fontSize: titleFontSize,
                             fontWeight: FontWeight.w500,
@@ -273,6 +274,7 @@ class MediaLibraryMediaGridCard extends StatelessWidget {
           );
 
           final card = MediaLibraryGridCard(
+            keyboardItemId: item.id,
             cacheItem: item,
             isSelectionMode: isSelectionMode,
             radius: radius,
@@ -410,6 +412,8 @@ class MediaLibraryFolderGridCard extends StatelessWidget {
               thumbnailPath != null && thumbnailPath.isNotEmpty;
 
           final card = MediaLibraryGridCard(
+            keyboardItemId: collection.id,
+            isSelectionMode: isSelectionMode,
             radius: radius,
             isSelected: isSelected,
             onTap: onTap,

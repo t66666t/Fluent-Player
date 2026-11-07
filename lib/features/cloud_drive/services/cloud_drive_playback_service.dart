@@ -1,3 +1,4 @@
+import '../../../services/community_media_input.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -99,6 +100,7 @@ class CloudDrivePlaybackService {
     DateTime? operationDeadline,
     Object? cancelToken,
   }) async {
+    requireCommunityAuthorizedCloudDrive();
     final cachedMedia = await MediaCacheHooks.openCloud?.call(
       item,
       qualityId: qualityId,
@@ -245,6 +247,7 @@ class CloudDrivePlaybackService {
   /// A cache file whose bytes no longer match the stamp we wrote is left
   /// alone, so a later refresh cannot wipe an edit made on that copy.
   Future<List<CloudDriveCachedSubtitle>> loadSubtitles(VideoItem item) async {
+    requireCommunityAuthorizedCloudDrive();
     final source = item.sourceRef?.cloudDrive;
     if (source == null) return const [];
     final account = _accounts.findRemote(

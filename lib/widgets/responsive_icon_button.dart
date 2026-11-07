@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_haptics.dart';
+
 class ResponsiveIconButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -31,8 +33,8 @@ class ResponsiveIconButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(buttonSize / 2),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: onPressed,
-          onLongPress: onLongPress,
+          onTap: AppHaptics.wrap(onPressed, light: true),
+          onLongPress: AppHaptics.wrap(onLongPress, light: true),
           child: Container(
             width: buttonSize,
             height: buttonSize,

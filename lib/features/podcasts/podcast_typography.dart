@@ -5,7 +5,7 @@ import '../../theme/app_typography.dart';
 /// semibold. Preserve the podcast's existing reading and figure families.
 abstract final class PodcastType {
   /// Titles, buttons, filters, menus, and other interface chrome.
-  static const ui = 'MiSans';
+  static const ui = 'Noto Sans SC';
 
   /// Show notes, channel copy, and episode summaries.
   /// Keep prose regular for sustained reading.
@@ -14,8 +14,8 @@ abstract final class PodcastType {
   /// Clocks and durations. Latin figures, with a CJK face behind them.
   static const figures = 'Inter';
 
-  static const uiFallback = <String>[reading];
-  static const figureFallback = <String>[reading, ui];
+  static const uiFallback = <String>['Noto Sans CJK Fallback'];
+  static const figureFallback = <String>[reading, 'Noto Sans CJK Fallback'];
 
   static const title = TextStyle(
     fontFamily: ui,
@@ -38,13 +38,13 @@ abstract final class PodcastType {
 
   static const prose = TextStyle(
     fontFamily: reading,
-    fontFamilyFallback: <String>[ui],
+    fontFamilyFallback: uiFallback,
     fontWeight: AppFontWeight.reading,
   );
 
   static const heading = TextStyle(
     fontFamily: reading,
-    fontFamilyFallback: <String>[ui],
+    fontFamilyFallback: uiFallback,
     fontWeight: FontWeight.w700,
   );
 

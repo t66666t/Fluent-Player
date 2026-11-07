@@ -17,15 +17,7 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       for (final entry in {
-        'Noto Sans SC': [
-          'NotoSansCJKsc-Regular.otf',
-          'NotoSansCJKsc-Medium.otf',
-          'NotoSansCJKsc-Bold.otf',
-        ],
-        'Noto Serif CJK SC': [
-          'NotoSerifCJKsc-Regular.otf',
-          'NotoSerifCJKsc-Bold.otf',
-        ],
+        'Noto Sans SC': ['NotoSansSC-Variable.ttf'],
         'Inter': [
           'Inter-Regular.otf',
           'Inter-Medium.otf',

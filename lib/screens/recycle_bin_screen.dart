@@ -16,6 +16,9 @@ import '../models/video_item.dart';
 import '../models/media_source_ref.dart';
 import '../utils/app_toast.dart';
 import '../utils/route_transition_work.dart';
+import '../utils/hardware_keyboard_shortcuts.dart';
+import '../utils/page_shortcut_keys.dart';
+import '../widgets/media_library_keyboard_navigation.dart';
 import '../widgets/responsive_icon_button.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -167,6 +170,7 @@ class _SizeDisplayState extends State<SizeDisplay> {
 }
 
 class _RecycleBinScreenState extends State<RecycleBinScreen> {
+  final _keyboardRegionKey = GlobalKey<MediaLibraryKeyboardRegionState>();
   final Set<String> _selectedIds = {};
   bool _isSelectionMode = false;
   final FocusNode _shortcutFocusNode = FocusNode(
@@ -191,7 +195,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (Platform.isWindows && mounted) {
+      if (supportsNativeHardwareKeyboardShortcuts && mounted) {
         _shortcutFocusNode.requestFocus();
       }
     });
@@ -340,10 +344,54 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   KeyEventResult _handleEscKeyEvent(KeyEvent event) {
-    if (!Platform.isWindows) return KeyEventResult.ignored;
-    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+    if (!supportsNativeHardwareKeyboardShortcuts || isEditableTextFocused()) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
     if (event is KeyDownEvent &&
+        _shortcutFocusNode.hasPrimaryFocus &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed &&
+        (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.arrowRight) &&
+        (_keyboardRegionKey.currentState?.focusInitial() ?? false)) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyB &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed) {
+      setState(() => _isSelectionMode = true);
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyA &&
+        _isSelectionMode &&
+        (keyboard.isControlPressed || keyboard.isMetaPressed) &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed) {
+      final library = context.read<LibraryService>();
+      final bin = widget.collection == null
+          ? library.getRecycleBinContents()
+          : library.getRecycledFolderContents(widget.collection!.id);
+      setState(() => _selectedIds.addAll(bin.map((item) => item.id as String)));
+      _updateSelectedSizeFuture(library, bin);
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent &&
         event.logicalKey == LogicalKeyboardKey.escape) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        !hasBlockingKeyboardModifier() &&
+        !keyboard.isShiftPressed) {
       if (_isSelectionMode) {
         setState(() {
           _clearSelection();
@@ -358,230 +406,149 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _shortcutFocusNode,
-      autofocus: Platform.isWindows,
-      onKeyEvent: (node, event) => _handleEscKeyEvent(event),
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) {
-          if (Platform.isWindows && !_shortcutFocusNode.hasFocus) {
-            _shortcutFocusNode.requestFocus();
-          }
-        },
-        child: Consumer<LibraryService>(
-          builder: (context, library, child) {
-            final bin = widget.collection == null
-                ? library.getRecycleBinContents()
-                : library.getRecycledFolderContents(widget.collection!.id);
-            final selectedItems = bin
-                .where((item) => _selectedIds.contains(item.id))
-                .toList();
+    return MediaLibrarySpatialNavigation(
+      child: Focus(
+        focusNode: _shortcutFocusNode,
+        autofocus: supportsNativeHardwareKeyboardShortcuts,
+        onKeyEvent: (node, event) => _handleEscKeyEvent(event),
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) {
+            if (supportsNativeHardwareKeyboardShortcuts &&
+                !_shortcutFocusNode.hasFocus) {
+              _shortcutFocusNode.requestFocus();
+            }
+          },
+          child: Consumer<LibraryService>(
+            builder: (context, library, child) {
+              final bin = widget.collection == null
+                  ? library.getRecycleBinContents()
+                  : library.getRecycledFolderContents(widget.collection!.id);
+              final selectedItems = bin
+                  .where((item) => _selectedIds.contains(item.id))
+                  .toList();
 
-            return Scaffold(
-              appBar: AppBar(
-                toolbarHeight: _isSelectionMode
-                    ? _responsiveToolbarHeight(MediaQuery.sizeOf(context).width)
-                    : null,
-                title: _buildAppBarTitle(
-                  context,
-                  bin.length,
-                  selectedItems.length,
-                ),
-                actions: [
-                  if (bin.isNotEmpty) ...[
-                    ResponsiveActionButtons(
-                      buttons: [
-                        if (_isSelectionMode) ...[
-                          ResponsiveIconButton(
-                            icon: Icons.select_all,
-                            onPressed: () {
-                              final shouldSelectAll =
-                                  _selectedIds.length != bin.length;
-                              setState(() {
-                                if (!shouldSelectAll) {
-                                  _selectedIds.clear();
-                                } else {
-                                  _selectedIds.addAll(
-                                    bin.map((e) => e.id as String),
-                                  );
-                                }
-                              });
-                              _updateSelectedSizeFuture(library, bin);
-                            },
-                            tooltip: "全选/反选",
-                          ),
-                          ResponsiveIconButton(
-                            icon: Icons.close,
-                            onPressed: () {
-                              setState(() {
-                                _clearSelection();
-                              });
-                            },
-                            tooltip: "关闭",
-                          ),
-                        ] else ...[
-                          ResponsiveIconButton(
-                            icon: Icons.checklist,
-                            onPressed: () {
-                              setState(() {
-                                _isSelectionMode = true;
-                              });
-                            },
-                            tooltip: "选择",
-                          ),
-                        ],
-                      ],
+              return MediaLibraryKeyboardRegion(
+                key: _keyboardRegionKey,
+                surface: () => 'recycle-${widget.collection?.id ?? 'root'}',
+                orderedIds: () => bin.map((item) => item.id as String).toList(),
+                selectionMode: () => _isSelectionMode,
+                selectedIds: () => _selectedIds,
+                onSelectionChanged: (ids) {
+                  setState(() {
+                    _selectedIds
+                      ..clear()
+                      ..addAll(ids);
+                  });
+                  _updateSelectedSizeFuture(library, bin);
+                },
+                child: Scaffold(
+                  appBar: AppBar(
+                    toolbarHeight: _isSelectionMode
+                        ? _responsiveToolbarHeight(
+                            MediaQuery.sizeOf(context).width,
+                          )
+                        : null,
+                    title: _buildAppBarTitle(
+                      context,
+                      bin.length,
+                      selectedItems.length,
                     ),
-                  ],
-                ],
-              ),
-              body: SafeArea(
-                top: false,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: bin.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.delete_outline,
-                                    size: 80,
-                                    color: Colors.white24,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    widget.collection == null
-                                        ? "回收站是空的"
-                                        : "没有待还原的内容",
-                                    style: TextStyle(color: Colors.white54),
-                                  ),
-                                ],
+                    actions: [
+                      if (bin.isNotEmpty) ...[
+                        ResponsiveActionButtons(
+                          buttons: [
+                            if (_isSelectionMode) ...[
+                              ResponsiveIconButton(
+                                icon: Icons.select_all,
+                                onPressed: () {
+                                  final shouldSelectAll =
+                                      _selectedIds.length != bin.length;
+                                  setState(() {
+                                    if (!shouldSelectAll) {
+                                      _selectedIds.clear();
+                                    } else {
+                                      _selectedIds.addAll(
+                                        bin.map((e) => e.id as String),
+                                      );
+                                    }
+                                  });
+                                  _updateSelectedSizeFuture(library, bin);
+                                },
+                                tooltip: "全选/反选",
                               ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: bin.length,
-                              itemBuilder: (context, index) {
-                                final item = bin[index];
-                                // Handle dynamic item type
-                                final String id = item.id;
-                                final VideoCollection? folder =
-                                    item is VideoCollection ? item : null;
-                                final String name =
-                                    folder?.name ?? (item as dynamic).title;
-                                final bool isFolder = folder != null;
-                                final String subtitleText = folder != null
-                                    ? "${library.getRecycledFolderContents(folder.id).length} 个项目"
-                                    : (item as dynamic).path ?? "未知路径";
-
-                                final isSelected = _selectedIds.contains(id);
-
-                                return Card(
-                                  color: isSelected
-                                      ? Colors.blueAccent.withValues(alpha: 0.2)
-                                      : const Color(0xFF2C2C2C),
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  child: ListTile(
-                                    leading: _isSelectionMode
-                                        ? Checkbox(
-                                            value: isSelected,
-                                            onChanged: (val) {
-                                              setState(() {
-                                                if (val == true) {
-                                                  _selectedIds.add(id);
-                                                } else {
-                                                  _selectedIds.remove(id);
-                                                }
-                                              });
-                                              _updateSelectedSizeFuture(
-                                                library,
-                                                bin,
-                                              );
-                                            },
-                                          )
-                                        : Icon(
-                                            isFolder
-                                                ? Icons.folder
-                                                : Icons.movie,
-                                            color: isFolder
-                                                ? Colors.amber
-                                                : Colors.blue,
-                                          ),
-                                    title: Text(
-                                      name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                              ResponsiveIconButton(
+                                icon: Icons.close,
+                                onPressed: () {
+                                  setState(() {
+                                    _clearSelection();
+                                  });
+                                },
+                                tooltip: "关闭",
+                              ),
+                            ] else ...[
+                              ResponsiveIconButton(
+                                icon: Icons.checklist,
+                                onPressed: () {
+                                  setState(() {
+                                    _isSelectionMode = true;
+                                  });
+                                },
+                                tooltip: "选择",
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                  body: SafeArea(
+                    top: false,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: bin.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.delete_outline,
+                                        size: 80,
+                                        color: Colors.white24,
                                       ),
-                                    ),
-                                    subtitle: Row(
-                                      children: [
-                                        Expanded(
-                                          child: SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Text(
-                                              subtitleText,
-                                              style: const TextStyle(
-                                                color: Colors.white54,
-                                                fontSize: 12,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.visible,
-                                            ),
-                                          ),
-                                        ),
-                                        SizeDisplay(
-                                          item: item,
-                                          library: library,
-                                        ),
-                                      ],
-                                    ),
-                                    trailing: !_isSelectionMode
-                                        ? Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              DesktopButtonClickRegion(
-                                                child: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.restore,
-                                                    color: Colors.green,
-                                                  ),
-                                                  onPressed: () async {
-                                                    await library
-                                                        .restoreFromRecycleBin([
-                                                          id,
-                                                        ]);
-                                                    if (!context.mounted) {
-                                                      return;
-                                                    }
-                                                    AppToast.show(
-                                                      "已还原",
-                                                      type:
-                                                          AppToastType.success,
-                                                    );
-                                                  },
-                                                  tooltip: "还原",
-                                                ),
-                                              ),
-                                              DesktopButtonClickRegion(
-                                                child: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.delete_forever,
-                                                    color: Colors.redAccent,
-                                                  ),
-                                                  tooltip: '彻底删除',
-                                                  onPressed: () => _deleteItems(
-                                                    library,
-                                                    [id],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        : null,
-                                    onTap: () {
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        widget.collection == null
+                                            ? "回收站是空的"
+                                            : "没有待还原的内容",
+                                        style: TextStyle(color: Colors.white54),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: bin.length,
+                                  itemBuilder: (context, index) {
+                                    final item = bin[index];
+                                    // Handle dynamic item type
+                                    final String id = item.id;
+                                    final VideoCollection? folder =
+                                        item is VideoCollection ? item : null;
+                                    final String name =
+                                        folder?.name ?? (item as dynamic).title;
+                                    final bool isFolder = folder != null;
+                                    final String subtitleText = folder != null
+                                        ? "${library.getRecycledFolderContents(folder.id).length} 个项目"
+                                        : (item as dynamic).path ?? "未知路径";
+
+                                    final isSelected = _selectedIds.contains(
+                                      id,
+                                    );
+
+                                    void activate() {
+                                      AppHaptics.pulse(light: true);
                                       if (_isSelectionMode) {
                                         setState(() {
                                           if (isSelected) {
@@ -591,7 +558,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                           }
                                         });
                                         _updateSelectedSizeFuture(library, bin);
-                                      } else if (isFolder) {
+                                      } else if (folder != null) {
                                         _navigateToFolderDetail(
                                           context,
                                           folder,
@@ -608,80 +575,212 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                               widget.collection?.id,
                                         );
                                       }
-                                    },
-                                    onLongPress: () {
-                                      if (!_isSelectionMode) {
-                                        setState(() {
-                                          _isSelectionMode = true;
-                                          _selectedIds.add(id);
-                                        });
-                                        _updateSelectedSizeFuture(library, bin);
-                                        unawaited(
-                                          AppHaptics.selectionClick(
-                                            context.read<SettingsService>(),
+                                    }
+
+                                    return MediaLibraryKeyboardItem(
+                                      itemId: id,
+                                      selected: isSelected,
+                                      selectionMode: _isSelectionMode,
+                                      onActivate: activate,
+                                      child: Card(
+                                        color: isSelected
+                                            ? Colors.blueAccent.withValues(
+                                                alpha: 0.2,
+                                              )
+                                            : const Color(0xFF2C2C2C),
+                                        margin: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: ListTile(
+                                          leading: _isSelectionMode
+                                              ? Checkbox(
+                                                  value: isSelected,
+                                                  onChanged: AppHaptics.wrapValue((val) {
+                                                    setState(() {
+                                                      if (val == true) {
+                                                        _selectedIds.add(id);
+                                                      } else {
+                                                        _selectedIds.remove(id);
+                                                      }
+                                                    });
+                                                    _updateSelectedSizeFuture(
+                                                      library,
+                                                      bin,
+                                                    );
+                                                  }),
+                                                )
+                                              : Icon(
+                                                  isFolder
+                                                      ? Icons.folder
+                                                      : Icons.movie,
+                                                  color: isFolder
+                                                      ? Colors.amber
+                                                      : Colors.blue,
+                                                ),
+                                          title: Text(
+                                            name,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                            ),
                                           ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
+                                          subtitle: Row(
+                                            children: [
+                                              Expanded(
+                                                child: SingleChildScrollView(
+                                                  scrollDirection:
+                                                      Axis.horizontal,
+                                                  child: Text(
+                                                    subtitleText,
+                                                    style: const TextStyle(
+                                                      color: Colors.white54,
+                                                      fontSize: 12,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.visible,
+                                                  ),
+                                                ),
+                                              ),
+                                              SizeDisplay(
+                                                item: item,
+                                                library: library,
+                                              ),
+                                            ],
+                                          ),
+                                          trailing: !_isSelectionMode
+                                              ? Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    DesktopButtonClickRegion(
+                                                      child: IconButton(
+                                                        icon: const Icon(
+                                                          Icons.restore,
+                                                          color: Colors.green,
+                                                        ),
+                                                        onPressed: () async {
+                                                          await library
+                                                              .restoreFromRecycleBin(
+                                                                [id],
+                                                              );
+                                                          if (!context
+                                                              .mounted) {
+                                                            return;
+                                                          }
+                                                          AppToast.show(
+                                                            "已还原",
+                                                            type: AppToastType
+                                                                .success,
+                                                          );
+                                                        },
+                                                        tooltip: "还原",
+                                                      ),
+                                                    ),
+                                                    DesktopButtonClickRegion(
+                                                      child: IconButton(
+                                                        icon: const Icon(
+                                                          Icons.delete_forever,
+                                                          color:
+                                                              Colors.redAccent,
+                                                        ),
+                                                        tooltip: '彻底删除',
+                                                        onPressed: () =>
+                                                            _deleteItems(
+                                                              library,
+                                                              [id],
+                                                            ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                )
+                                              : null,
+                                          onTap: activate,
+                                          onLongPress: () {
+                                            if (!_isSelectionMode) {
+                                              setState(() {
+                                                _isSelectionMode = true;
+                                                _selectedIds.add(id);
+                                              });
+                                              _updateSelectedSizeFuture(
+                                                library,
+                                                bin,
+                                              );
+                                              unawaited(
+                                                AppHaptics.selectionClick(
+                                                  context
+                                                      .read<SettingsService>(),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  bottomNavigationBar:
+                      _isSelectionMode && _selectedIds.isNotEmpty
+                      ? BottomAppBar(
+                          color: const Color(0xFF1E1E1E),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              DesktopButtonClickRegion(
+                                child: TextButton.icon(
+                                  icon: const Icon(
+                                    Icons.restore,
+                                    color: Colors.green,
+                                  ),
+                                  label: const Text(
+                                    "还原",
+                                    style: TextStyle(color: Colors.green),
+                                  ),
+                                  onPressed: AppHaptics.wrap(() async {
+                                    await library.restoreFromRecycleBin(
+                                      _selectedIds.toList(),
+                                    );
+                                    if (!context.mounted) return;
+                                    setState(() {
+                                      _clearSelection();
+                                    });
+                                    AppToast.show(
+                                      "已还原选中项",
+                                      type: AppToastType.success,
+                                    );
+                                  }, light: true),
+                                ),
+                              ),
+                              DesktopButtonClickRegion(
+                                child: TextButton.icon(
+                                  icon: const Icon(
+                                    Icons.delete_forever,
+                                    color: Colors.redAccent,
+                                  ),
+                                  label: const Text(
+                                    "彻底删除",
+                                    style: TextStyle(color: Colors.redAccent),
+                                  ),
+                                  onPressed: AppHaptics.wrap(
+                                    () => _deleteItems(
+                                      library,
+                                      _selectedIds.toList(),
+                                    ),
+                                    light: true,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : null,
                 ),
-              ),
-              bottomNavigationBar: _isSelectionMode && _selectedIds.isNotEmpty
-                  ? BottomAppBar(
-                      color: const Color(0xFF1E1E1E),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          DesktopButtonClickRegion(
-                            child: TextButton.icon(
-                              icon: const Icon(
-                                Icons.restore,
-                                color: Colors.green,
-                              ),
-                              label: const Text(
-                                "还原",
-                                style: TextStyle(color: Colors.green),
-                              ),
-                              onPressed: () async {
-                                await library.restoreFromRecycleBin(
-                                  _selectedIds.toList(),
-                                );
-                                if (!context.mounted) return;
-                                setState(() {
-                                  _clearSelection();
-                                });
-                                AppToast.show(
-                                  "已还原选中项",
-                                  type: AppToastType.success,
-                                );
-                              },
-                            ),
-                          ),
-                          DesktopButtonClickRegion(
-                            child: TextButton.icon(
-                              icon: const Icon(
-                                Icons.delete_forever,
-                                color: Colors.redAccent,
-                              ),
-                              label: const Text(
-                                "彻底删除",
-                                style: TextStyle(color: Colors.redAccent),
-                              ),
-                              onPressed: () =>
-                                  _deleteItems(library, _selectedIds.toList()),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : null,
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

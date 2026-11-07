@@ -9,9 +9,9 @@ import 'package:video_player_app/widgets/subtitle_overlay.dart';
 
 Future<void> _loadRealFont() async {
   final ByteData fontData = await rootBundle.load(
-    'assets/fonts/MiSans-Semibold.otf',
+    'assets/fonts/NotoSansSC-Variable.ttf',
   );
-  final FontLoader loader = FontLoader('MiSans')
+  final FontLoader loader = FontLoader('Noto Sans SC')
     ..addFont(Future<ByteData>.value(fontData));
   await loader.load();
 }

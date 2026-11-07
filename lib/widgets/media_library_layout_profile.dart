@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../models/media_library_view_mode.dart';
+
 /// Size bucket used only to pick **defaults**. User overrides are stored by
 /// orientation, not by device class, so a 10" tablet keeps one landscape
 /// profile and one portrait profile.
@@ -42,7 +44,11 @@ class MediaCardStyleSettings {
   double get aspectRatio => 1.0 / math.max(0.1, heightScale);
 }
 
-/// List-mode style the UI actually renders.
+/// Row-pipeline style the UI actually renders (media rows or details table).
+///
+/// [rowExtent], [titleSize] and the pixel spacings are set for the current
+/// rows/table styles; when [rowExtent] is null the legacy proportional
+/// fields ([heightScale], [titleScale], spacing scales) drive the geometry.
 class MediaListStyleSettings {
   const MediaListStyleSettings({
     required this.crossAxisCount,
@@ -52,6 +58,18 @@ class MediaListStyleSettings {
     required this.mainSpacingScale,
     required this.showThumbnail,
     required this.showIndex,
+    this.layout = MediaLibraryContentLayout.rows,
+    this.rowExtent,
+    this.titleSize,
+    this.titleLines = 2,
+    this.crossSpacing,
+    this.mainSpacing,
+    this.outerPadding,
+    this.showMeta = true,
+    this.showProgress = true,
+    this.cardSurface = true,
+    this.striped = true,
+    this.tableColumns = const <MediaTableColumn>{},
   });
 
   final int crossAxisCount;
@@ -61,6 +79,55 @@ class MediaListStyleSettings {
   final double mainSpacingScale;
   final bool showThumbnail;
   final bool showIndex;
+
+  /// Rows or table. Grid never produces a list style.
+  final MediaLibraryContentLayout layout;
+
+  /// Row height in logical pixels.
+  final double? rowExtent;
+
+  /// Title font size in logical pixels.
+  final double? titleSize;
+  final int titleLines;
+  final double? crossSpacing;
+  final double? mainSpacing;
+  final double? outerPadding;
+
+  /// Rows: relative path / type / duration line.
+  final bool showMeta;
+
+  /// Rows: thumbnail progress bar and the played percentage label.
+  final bool showProgress;
+
+  /// Rows: filled card background; false draws flat rows with hover only.
+  final bool cardSurface;
+
+  /// Table: alternate row tint.
+  final bool striped;
+
+  /// Table: optional columns in addition to the title.
+  final Set<MediaTableColumn> tableColumns;
+
+  bool get isTable => layout == MediaLibraryContentLayout.table;
+
+  /// Identity used to keep scroll position across relayouts.
+  Object get layoutIdentity => (
+    layout,
+    crossAxisCount,
+    rowExtent ?? heightScale,
+    titleSize ?? titleScale,
+    titleLines,
+    mainSpacing ?? mainSpacingScale,
+    crossSpacing ?? crossSpacingScale,
+    outerPadding,
+    showThumbnail,
+    showIndex,
+    showMeta,
+    showProgress,
+    cardSurface,
+    striped,
+    MediaTableColumn.encode(tableColumns),
+  );
 }
 
 class MediaLibraryWidthDistribution {

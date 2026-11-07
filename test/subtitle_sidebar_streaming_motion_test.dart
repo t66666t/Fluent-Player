@@ -62,7 +62,7 @@ void main() {
         find.byType(ContinuousArticleView),
       );
       final load = FontLoader('LateReadingMetrics')
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+        ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
       await tester.runAsync(load.load);
       await tester.pumpAndSettle();
       final after = tester.widget<ContinuousArticleView>(

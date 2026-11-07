@@ -20,7 +20,11 @@ class GongyiAudioPreparationPlan {
     int? audioBitRate,
     int audioStreams = 1,
     bool hasVideo = false,
+    bool preferMp3 = false,
   }) {
+    if (preferMp3 && codec != 'mp3') {
+      return GongyiAudioPreparation.transcode;
+    }
     if (durationSeconds == null ||
         !durationSeconds.isFinite ||
         durationSeconds <= 0 ||

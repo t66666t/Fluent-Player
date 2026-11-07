@@ -16,13 +16,28 @@ class ClipboardLink {
   final String label;
   final BilibiliLinkTarget? bilibili;
 
-  /// The app has a dedicated Douyin workflow; generic download is not an
-  /// alternative for it. Check the source host as well, so callers supplying
-  /// a generic link cannot expose that unusable entry for a Douyin source.
-  bool get offersGenericDownload {
-    if (kind == ClipboardLinkKind.douyin) return false;
-    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
-    return !_isDouyinHost(host);
+  /// Retained for callers of the old chooser. Website links never grant media
+  /// acquisition permission in the community edition.
+  bool get offersGenericDownload => false;
+
+  bool get offersOfficialPlayer {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.userInfo.isNotEmpty ||
+        (uri.hasPort && uri.port != 80 && uri.port != 443)) {
+      return false;
+    }
+    return const {
+      'bilibili.com',
+      'www.bilibili.com',
+      'm.bilibili.com',
+      'b23.tv',
+      'bili2233.cn',
+      'youtube.com',
+      'www.youtube.com',
+      'm.youtube.com',
+      'youtu.be',
+    }.contains(uri.host.toLowerCase());
   }
 
   // Do not remove unknown parameters, signatures, fragments or playback options.

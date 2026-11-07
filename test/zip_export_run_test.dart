@@ -12,7 +12,6 @@ import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/models/podcast_source_ref.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/utils/ffmpeg_utils.dart';
-import 'package:video_player_app/features/portable_transfer/zip_export_plan.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -81,7 +80,7 @@ void main() {
   );
 
   test(
-    'reference-only ZIP contains a feed link and no podcast media',
+    'retired reference-only podcast selections cannot create a media ZIP',
     () async {
       final originalProvider = PathProviderPlatform.instance;
       final root = await Directory.systemTemp.createTemp('zip_podcast_run_');
@@ -99,30 +98,22 @@ void main() {
         feedUrl: 'https://example.com/feed.xml',
       );
       final output = File(p.join(root.path, 'references.zip'));
-      final result = await ZipMediaExporter().run(
-        library: library,
-        rootIds: [card.id],
-        partialPath: output.path,
-        options: const PortableExportOptions(
-          packageName: '播客引用',
-          format: PortableExportFormat.zip,
+      await expectLater(
+        ZipMediaExporter().run(
+          library: library,
+          rootIds: [card.id],
+          partialPath: output.path,
+          options: const PortableExportOptions(
+            packageName: 'Retired',
+            format: PortableExportFormat.zip,
+          ),
+          taskId: 'reference-only',
+          isCancelled: () => false,
+          onProgress: (_, _, _, _) {},
         ),
-        taskId: 'reference-only',
-        isCancelled: () => false,
-        onProgress: (_, _, _, _) {},
+        throwsStateError,
       );
-      expect(result.mediaCount, 0);
-      expect(result.referenceCount, 1);
-      final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
-      expect(archive.files.map((entry) => entry.name), [
-        '节目订阅.url',
-        zipPodcastReferencesPath,
-      ]);
-      expect(
-        utf8.decode(archive.files.first.content),
-        contains('URL=https://example.com/feed.xml'),
-      );
-      expect(result.summary(await output.length()), contains('1 个播客卡片引用'));
+      expect(await output.exists(), isFalse);
     },
   );
 

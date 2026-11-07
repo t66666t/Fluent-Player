@@ -3,7 +3,7 @@ import 'add_to_playlist_button.dart';
 import 'playback_queue_add_actions.dart';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../services/app_web_navigation.dart';
 import 'package:video_player_app/models/bilibili_browse_models.dart';
 import 'package:video_player_app/screens/bilibili/bilibili_card_actions.dart';
 import 'package:video_player_app/screens/bilibili/bilibili_home_page.dart';
@@ -418,8 +418,7 @@ class _BilibiliPlayerPanelState extends State<BilibiliPlayerPanel> {
   Future<void> _launchExternal(Uri uri) async {
     if (uri.scheme != 'https' && uri.scheme != 'http') return;
     try {
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok && mounted) setState(() => _linkError = '无法打开该链接');
+      await AppWebNavigation.open(context, uri);
     } catch (_) {
       if (mounted) setState(() => _linkError = '无法打开该链接');
     }

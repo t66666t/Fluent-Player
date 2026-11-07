@@ -5,10 +5,12 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = Fluent Player Community
+PRODUCT_NAME = Fluent Player
+// Keep Swift/Interface Builder module identity independent of the product filename.
+PRODUCT_MODULE_NAME = Runner
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.videoPlayerAppCommunity
+PRODUCT_BUNDLE_IDENTIFIER = cn.teezy.fluentplayer.standard
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.

@@ -8,6 +8,7 @@ import '../utils/android_hardware_input_bridge.dart';
 import '../utils/hardware_keyboard_shortcuts.dart';
 import '../utils/page_shortcut_keys.dart';
 import 'media_library_shell.dart';
+import 'media_library_keyboard_navigation.dart';
 
 /// Route-scoped keyboard commands shared by library browsing pages.
 class MediaLibraryPageShortcuts extends StatefulWidget {
@@ -105,6 +106,31 @@ class _MediaLibraryPageShortcutsState extends State<MediaLibraryPageShortcuts> {
       }
       if (event is KeyDownEvent) FocusManager.instance.primaryFocus?.unfocus();
       return KeyEventResult.handled;
+    }
+    final arrow =
+        key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight;
+    if (event is KeyDownEvent &&
+        arrow &&
+        !blockingModifier &&
+        !shiftPressed &&
+        _focus.hasPrimaryFocus &&
+        MediaLibraryKeyboardRegion.focusInitialOf(
+          context,
+          event: event,
+          fromNativeBridge: fromNativeBridge,
+        )) {
+      return KeyEventResult.handled;
+    }
+    if (fromNativeBridge &&
+        MediaLibraryKeyboardItem.handlesNativeKey(key, shift: shiftPressed)) {
+      return KeyEventResult.ignored;
+    }
+    if ((arrow || key == LogicalKeyboardKey.space) &&
+        MediaLibraryKeyboardItem.interactiveControlHasFocus) {
+      return KeyEventResult.ignored;
     }
     final selectAll =
         !fromNativeBridge &&

@@ -1,3 +1,4 @@
+import 'package:video_player_app/utils/app_branding.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -74,11 +75,14 @@ class ProgressSyncLan extends ChangeNotifier {
     required this.onTrustChanged,
     required this.onReadChanges,
     required this.onChanges,
-  }) : _privateKeyBytes = List<int>.of(privateKeyBytes),
+    @visibleForTesting String? editionForTesting,
+  }) : _edition = editionForTesting ?? kApplicationId,
+       _privateKeyBytes = List<int>.of(privateKeyBytes),
        _trusted = Map<String, String>.of(trustedPeerPublicKeys);
 
-  static const defaultPort = 47791;
-  static const _discoveryPort = 47792;
+  static const defaultPort = kProgressSyncDefaultPort;
+  static const discoveryPort = kProgressSyncDiscoveryPort;
+  static const discoveryTargetPorts = kProgressSyncDiscoveryTargets;
   static final _group = InternetAddress('239.255.47.79');
   static const _maxBodyBytes = 2 * 1024 * 1024;
   static const _maxBatchBytes = 384 * 1024;
@@ -97,6 +101,7 @@ class ProgressSyncLan extends ChangeNotifier {
 
   final String deviceId;
   final String deviceName;
+  final String _edition;
   final List<int> _privateKeyBytes;
   final Map<String, String> _trusted;
   final FutureOr<void> Function(Map<String, String>) onTrustChanged;
@@ -260,7 +265,7 @@ class ProgressSyncLan extends ChangeNotifier {
       await _setMulticastEnabled(true);
       final socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
-        _discoveryPort,
+        discoveryPort,
         reuseAddress: true,
         reusePort: !Platform.isWindows,
       );
@@ -354,7 +359,9 @@ class ProgressSyncLan extends ChangeNotifier {
             address.rawAddress,
           ),
         );
-        sent |= _udp!.send(bytes, _group, _discoveryPort) > 0;
+        for (final targetPort in discoveryTargetPorts) {
+          sent |= _udp!.send(bytes, _group, targetPort) > 0;
+        }
       } catch (_) {
         // Continue when one adapter disconnects.
       }
@@ -364,7 +371,9 @@ class ProgressSyncLan extends ChangeNotifier {
       return;
     }
     try {
-      _udp!.send(bytes, _group, _discoveryPort);
+      for (final targetPort in discoveryTargetPorts) {
+        _udp!.send(bytes, _group, targetPort);
+      }
     } catch (_) {
       _errors['discovery'] = 'discoveryUnavailable';
     }
@@ -1055,7 +1064,7 @@ class ProgressSyncLan extends ChangeNotifier {
     return _hkdf.deriveKey(
       secretKey: shared,
       nonce: utf8.encode(jsonEncode(identities)),
-      info: utf8.encode('video-player-progress/v1/$purpose'),
+      info: utf8.encode('video-player-progress/v2/$_edition/$purpose'),
     );
   }
 
@@ -1069,6 +1078,7 @@ class ProgressSyncLan extends ChangeNotifier {
     final nonce = _cipher.newNonce();
     final header = <String, dynamic>{
       'v': 1,
+      'edition': _edition,
       'from': deviceId,
       'to': peer.id,
       'scope': scope,
@@ -1098,6 +1108,7 @@ class ProgressSyncLan extends ChangeNotifier {
     String? expectedSenderBoot,
   }) async {
     if (envelope['v'] != 1 ||
+        envelope['edition'] != _edition ||
         envelope['from'] != peer.id ||
         envelope['to'] != deviceId ||
         envelope['scope'] != scope ||
@@ -1116,6 +1127,7 @@ class ProgressSyncLan extends ChangeNotifier {
     final replayKey = '${peer.id}:$senderBoot';
     final header = {
       'v': 1,
+      'edition': _edition,
       'from': envelope['from'],
       'to': deviceId,
       'scope': scope,
@@ -1147,6 +1159,7 @@ class ProgressSyncLan extends ChangeNotifier {
 
   Map<String, dynamic> _hello() => {
     'v': 1,
+    'edition': _edition,
     'id': deviceId,
     'name': deviceName.length > 80 ? deviceName.substring(0, 80) : deviceName,
     'port': port,
@@ -1159,6 +1172,7 @@ class ProgressSyncLan extends ChangeNotifier {
     final name = data['name'];
     final port = data['port'];
     if (data['v'] != 1 ||
+        data['edition'] != _edition ||
         id is! String ||
         !RegExp(r'^[A-Za-z0-9_.:\-]{1,100}$').hasMatch(id) ||
         name is! String ||

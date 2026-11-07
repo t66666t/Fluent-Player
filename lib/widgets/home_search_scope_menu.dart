@@ -26,8 +26,7 @@ Future<HomeSearchScope?> showHomeSearchScopeMenu(
       data: theme,
       child: _HomeSearchScopeMenu(
         anchor: anchor,
-        selected: selected,
-        signedInProviders: signedInProviders,
+        selected: HomeSearchScope.library,
         keyboardNavigation: keyboardNavigation,
       ),
     ),
@@ -51,13 +50,11 @@ class _HomeSearchScopeMenu extends StatefulWidget {
   const _HomeSearchScopeMenu({
     required this.anchor,
     required this.selected,
-    required this.signedInProviders,
     required this.keyboardNavigation,
   });
 
   final Rect anchor;
   final HomeSearchScope selected;
-  final Set<String> signedInProviders;
   final bool keyboardNavigation;
 
   @override
@@ -65,16 +62,7 @@ class _HomeSearchScopeMenu extends StatefulWidget {
 }
 
 class _HomeSearchScopeMenuState extends State<_HomeSearchScopeMenu> {
-  late final _content = HomeSearchScope.values
-      .where((scope) => !scope.isCloud)
-      .toList();
-  late final _cloud = HomeSearchScope.values
-      .where(
-        (scope) =>
-            scope.isCloud && widget.signedInProviders.contains(scope.name),
-      )
-      .toList();
-  late final _scopes = [..._content, ..._cloud];
+  static const _scopes = [HomeSearchScope.library];
   late final _nodes = {
     for (final scope in _scopes)
       scope: FocusNode(debugLabel: 'search scope ${scope.name}'),
@@ -241,7 +229,7 @@ class _HomeSearchScopeMenuState extends State<_HomeSearchScopeMenu> {
           ? 2
           : 1;
       final rows = <List<HomeSearchScope>>[
-        for (final group in [_content, _cloud])
+        for (final group in [_scopes])
           for (var i = 0; i < group.length; i += columns)
             group.sublist(i, math.min(i + columns, group.length)),
       ];
@@ -294,30 +282,7 @@ class _HomeSearchScopeMenuState extends State<_HomeSearchScopeMenu> {
                               ),
                             ),
                           ),
-                          group(_content),
-                          const Padding(
-                            padding: EdgeInsets.fromLTRB(6, 16, 6, 10),
-                            child: Text(
-                              '网盘 · 已登录',
-                              style: TextStyle(
-                                color: Colors.white54,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          if (_cloud.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(6, 0, 6, 8),
-                              child: Text(
-                                '登录网盘后将在这里显示',
-                                style: TextStyle(
-                                  color: Colors.white38,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            )
-                          else
-                            group(_cloud),
+                          group(_scopes),
                         ],
                       ),
                     ),

@@ -24,7 +24,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
-        android:label="Fluent Player Community"
+        android:label="Fluent Player"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <!-- Optional vendor APIs: Android 12+ requires declarations for app

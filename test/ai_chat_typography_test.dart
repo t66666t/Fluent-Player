@@ -117,9 +117,12 @@ void main() {
         expect(sheet.p!.fontSize, size);
         expect(sheet.p!.fontWeight, FontWeight.w400);
         expect(sheet.p!.fontFamily, 'App Reading');
+        expect(sheet.p!.height, closeTo(1.55, .001));
+        expect(sheet.blockSpacing, closeTo(size * .6, .001));
         expect(sheet.tableBody!.fontWeight, FontWeight.w400);
         expect(sheet.h1!.fontWeight, FontWeight.w600);
-        expect(sheet.strong!.fontWeight, FontWeight.bold);
+        expect(sheet.h1!.height, closeTo(1.3, .001));
+        expect(sheet.strong!.fontWeight, FontWeight.w600);
         expect(sheet.h1!.fontSize, closeTo(size * 1.4, .001));
         expect(sheet.tableBody!.fontSize, size);
         expect(sheet.code!.fontSize, size - 1);

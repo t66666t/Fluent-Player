@@ -363,7 +363,7 @@ void main() {
     final remainingTime = find.byKey(const ValueKey('music-remaining-time'));
 
     expect(find.text('00:25'), findsOneWidget);
-    expect(find.text('-03:35'), findsOneWidget);
+    expect(find.text('04:00'), findsOneWidget);
     expect(
       tester.getCenter(slider).dy,
       lessThan(tester.getCenter(currentTime).dy),
@@ -382,6 +382,15 @@ void main() {
     expect(sliderTheme().data.thumbShape, same(SliderComponentShape.noThumb));
 
     final sliderRect = tester.getRect(slider);
+    expect(tester.getRect(remainingTime).right, closeTo(sliderRect.right, 0.5));
+    await tester.tap(remainingTime);
+    await tester.pump();
+    expect(find.text('-03:35'), findsOneWidget);
+    expect(tester.getRect(remainingTime).right, closeTo(sliderRect.right, 0.5));
+    await tester.tap(remainingTime);
+    await tester.pump();
+    expect(find.text('04:00'), findsOneWidget);
+
     final gesture = await tester.startGesture(
       Offset(sliderRect.left + sliderRect.width * 0.25, sliderRect.center.dy),
     );
@@ -436,6 +445,20 @@ void main() {
           ),
         );
 
+        final endTime = find.byKey(const ValueKey('music-remaining-time'));
+        final track = find.byKey(const ValueKey('music-progress-slider'));
+        expect(
+          tester.getRect(endTime).right,
+          closeTo(tester.getRect(track).right, 0.5),
+        );
+        // 这个用例要的是左右时间宽度不同。默认是总时长，点一下才是剩余时间。
+        // 控件状态会留到下一轮，所以已经是负号时不要再点，否则会点回总时长。
+        if (!tester.widget<Text>(endTime).data!.startsWith('-')) {
+          final endRect = tester.getRect(endTime);
+          await tester.tapAt(Offset(endRect.right - 1, endRect.center.dy));
+          await tester.pump();
+        }
+
         final slider = tester.getRect(
           find.byKey(const ValueKey('music-progress-slider')),
         );
@@ -451,6 +474,7 @@ void main() {
         final gapCenter = (current.right + remaining.left) / 2;
 
         expect(chip.center.dx, closeTo(slider.center.dx, 0.5));
+        expect(remaining.right, closeTo(slider.right, 0.5));
         expect(chip.center.dy, greaterThan(slider.bottom));
         // 左右时间宽度不同，空隙中点不能再被当成进度条中点。
         expect((gapCenter - slider.center.dx).abs(), greaterThan(1));

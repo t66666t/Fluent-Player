@@ -1,4 +1,4 @@
-import 'package:video_player_app/widgets/categorized_settings_page.dart';
+import 'package:video_player_app/widgets/media_library_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,49 +41,44 @@ void main() {
     );
   });
 
-  testWidgets('媒体库设置进入二级页，保存后应用位置方案', (tester) async {
-    final settings = SettingsService();
-    await settings.init();
-
-    tester.view.physicalSize = const Size(800, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () =>
-                  showMediaLibrarySettingsBottomSheet(context, settings),
-              child: const Text('打开设置'),
+  testWidgets(
+    'community settings keep local import options without placement rules',
+    (tester) async {
+      final settings = SettingsService();
+      await settings.init();
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () =>
+                    showMediaLibrarySettingsBottomSheet(context, settings),
+                child: const Text('打开设置'),
+              ),
             ),
           ),
         ),
-      ),
-    );
-
-    await tester.tap(find.text('打开设置'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(CategorizedSettingsPage), findsOneWidget);
-    expect(find.byKey(const ValueKey('settings-search')), findsOneWidget);
-    final entry = find.byKey(const ValueKey('import-location-settings'));
-    await tester.ensureVisible(entry);
-    await tester.tap(entry);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(const ValueKey('importCardPlacement-sourceFolder')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(settings.importCardPlacementMode, ImportCardPlacement.libraryRoot);
-    await tester.tap(find.byKey(const ValueKey('import-location-save')));
-    await tester.pumpAndSettle();
-    expect(settings.importCardPlacementMode, ImportCardPlacement.sourceFolder);
-  });
+      );
+      await tester.tap(find.text('打开设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaLibrarySettingsPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('import-location-settings')),
+        findsNothing,
+      );
+      expect(find.text('导入位置与整理'), findsNothing);
+      final copy = find.byKey(
+        const ValueKey('copyImportedMediaToPrivateStorage'),
+      );
+      await tester.ensureVisible(copy);
+      expect(copy, findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   test('旧用户明确保存的方案与B站目标迁移保留', () async {
     SharedPreferences.setMockInitialValues({
@@ -100,4 +95,28 @@ void main() {
     expect(rule.placement, ImportCardPlacement.fixedFolder);
     expect(rule.folderId, 'existing-folder');
   });
+
+  test(
+    'legacy local rules are retained without counting as download overrides',
+    () {
+      final rules = ImportPlacementRules(
+        overrides: {
+          ImportCardGroup.local.ruleKey: const ImportPlacementRule(
+            ImportCardPlacement.libraryRoot,
+          ),
+          ImportCardFeature.fluentPack.storageValue: const ImportPlacementRule(
+            ImportCardPlacement.sourceFolder,
+          ),
+          ImportCardFeature.ytDlp.storageValue: const ImportPlacementRule(
+            ImportCardPlacement.currentFolder,
+          ),
+        },
+      );
+      expect(rules.configurableOverrideCount, 1);
+      expect(
+        ImportPlacementRules.decode(rules.encode()).overrides,
+        hasLength(3),
+      );
+    },
+  );
 }

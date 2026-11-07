@@ -224,3 +224,28 @@ class InferenceTuner {
     }
   }
 }
+
+/// Null means keep the loaded session. A multi-gigabyte reload costs more than
+/// briefly using one extra core while playback starts or a thermal sample dips.
+int? asrReloadThreads({
+  int? loaded,
+  required int granted,
+  required bool protective,
+  required bool heavy,
+  required int lowGrants,
+  Duration lowFor = Duration.zero,
+}) {
+  if (loaded == null) return granted;
+  if (granted == loaded) return null;
+  if (granted > loaded) {
+    if (heavy) return null;
+    if (granted >= loaded + 2) return granted;
+    return null;
+  }
+  if (protective) return granted;
+  final halved = granted <= loaded / 2;
+  if (halved && (lowGrants >= 2 || lowFor >= const Duration(seconds: 60))) {
+    return granted;
+  }
+  return null;
+}

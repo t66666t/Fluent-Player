@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'community_media_input.dart';
 import 'package:video_player_app/services/network/network_http.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
 import '../utils/timed_subtitle_parser.dart';
+import '../utils/serial_task_queue.dart';
 
 enum GongyiAsrFailureKind {
   uploadSignature,
@@ -79,15 +81,24 @@ class GongyiAsrException implements Exception {
 
 /// Persisted by the transcription queue, scoped to one source and time slice.
 /// A completed upload must not be repeated merely because result polling failed.
-/// The queue invalidates its ID on an explicit retry of a failed job.
 class GongyiAsrTaskCheckpoint {
   GongyiAsrTaskCheckpoint({
     this.taskId,
     this.onChanged,
     this.lastQueryFailure,
     this.normalizeAudio = false,
+    this.submissionUncertain = false,
+    this.queryNotBefore,
+    this.usageReservationId,
+    this.leadingContext = Duration.zero,
   });
   String? taskId;
+  bool submissionUncertain;
+  DateTime? queryNotBefore;
+  String? usageReservationId;
+  Duration leadingContext;
+
+  bool get hasPendingWork => taskId?.isNotEmpty == true || submissionUncertain;
 
   /// Also retained after expiry so a compatibility retry cannot revert to the
   /// same original format after a pause or restart.
@@ -97,18 +108,53 @@ class GongyiAsrTaskCheckpoint {
   Map<String, dynamic> toJson() => {
     'taskId': taskId,
     if (normalizeAudio) 'normalizeAudio': true,
+    if (submissionUncertain) 'submissionUncertain': true,
+    if (queryNotBefore != null)
+      'queryNotBefore': queryNotBefore!.toUtc().toIso8601String(),
+    if (usageReservationId != null) 'usageReservationId': usageReservationId,
+    if (leadingContext > Duration.zero)
+      'leadingContextMs': leadingContext.inMilliseconds,
     if (lastQueryFailure != null) 'lastQueryFailure': lastQueryFailure,
   };
   factory GongyiAsrTaskCheckpoint.fromJson(Map value) =>
       GongyiAsrTaskCheckpoint(
         taskId: value['taskId'] is String ? value['taskId'] as String : null,
         normalizeAudio: value['normalizeAudio'] == true,
+        submissionUncertain: value['submissionUncertain'] == true,
+        queryNotBefore: value['queryNotBefore'] is String
+            ? DateTime.tryParse(value['queryNotBefore'] as String)?.toUtc()
+            : null,
+        usageReservationId: value['usageReservationId'] is String
+            ? value['usageReservationId'] as String
+            : null,
+        leadingContext:
+            value['leadingContextMs'] is int &&
+                (value['leadingContextMs'] as int) > 0 &&
+                (value['leadingContextMs'] as int) <= 10000
+            ? Duration(milliseconds: value['leadingContextMs'] as int)
+            : Duration.zero,
         lastQueryFailure: value['lastQueryFailure'] is Map
             ? Map<String, Object?>.from(value['lastQueryFailure'] as Map)
             : null,
       );
   Future<void> setTask(String? id) async {
     taskId = id;
+    if (id == null) {
+      usageReservationId = null;
+    }
+    submissionUncertain = false;
+    queryNotBefore = null;
+    await onChanged?.call();
+  }
+
+  Future<void> setSubmissionUncertain(bool value) async {
+    submissionUncertain = value;
+    await onChanged?.call();
+  }
+
+  Future<void> setQueryNotBefore(DateTime? value) async {
+    if (queryNotBefore == value) return;
+    queryNotBefore = value;
     await onChanged?.call();
   }
 
@@ -131,7 +177,7 @@ class GongyiAsrTaskCheckpoint {
 class _GongyiRequestSession {
   bool direct = false;
   bool authorizationRefreshed = false;
-  String uploadContentType = 'application/octet-stream';
+  String uploadContentType = 'application/json';
 
   Map<String, dynamic> get extra => {
     if (direct) NetworkHttp.speechRecognitionDirectRecoveryKey: true,
@@ -164,24 +210,28 @@ class _GongyiRequestSession {
 class GongyiAsrService {
   static const String _baseUrl =
       "https://member.bilibili.com/x/bcut/rubick-interface";
-  // Retain the established browser UA. A 412 alone does not identify its cause.
-  static const String _userAgent =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  // Use one stable API client identity for upload and result requests.
+  static const String _userAgent = 'Bilibili/1.0.0 (https://www.bilibili.com)';
 
   late final Dio _dio;
 
-  /// 查询结果时遇到访问限制，最多再隔一段时间查几次。
-  /// 隔离测试设为 0：第一次拒绝就停，避免连续探测。
+  /// Access restrictions stop by default. A caller may explicitly allow a
+  /// bounded number of later queries while retaining the submitted task.
   final int maxPollRiskWaits;
   final List<Duration> uploadRetryDelays;
   final Duration resultQueryTimeout;
   final Future<void> Function(Duration)? _resultQueryDelay;
+  final Duration minimumResultQueryInterval;
+  final _resultQueries = SerialTaskQueue();
+  DateTime? _nextResultQueryAt;
+  DateTime? _resultQueriesBlockedUntil;
 
   GongyiAsrService({
     Dio? dio,
-    this.maxPollRiskWaits = 4,
+    this.maxPollRiskWaits = 0,
     this.uploadRetryDelays = const [Duration(seconds: 1), Duration(seconds: 2)],
-    this.resultQueryTimeout = const Duration(minutes: 5),
+    this.resultQueryTimeout = const Duration(seconds: 500),
+    this.minimumResultQueryInterval = const Duration(seconds: 2),
     Future<void> Function(Duration)? resultQueryDelay,
   }) : _resultQueryDelay = resultQueryDelay {
     _dio =
@@ -202,6 +252,7 @@ class GongyiAsrService {
           ),
         );
     for (final entry in const {
+      'User-Agent': _userAgent,
       'Accept': 'application/json, text/plain, */*',
       'Cache-Control': 'no-cache',
     }.entries) {
@@ -220,20 +271,27 @@ class GongyiAsrService {
     GongyiAsrTaskCheckpoint? checkpoint,
     Future<String> Function()? prepareAudio,
   }) async {
+    requireCommunityLocalMedia(audioPath);
+    checkpoint ??= GongyiAsrTaskCheckpoint();
     final session = _GongyiRequestSession();
     File? audioFile;
     int? audioLength;
     try {
       _throwIfCancelled(cancelToken);
+      if (checkpoint.submissionUncertain &&
+          checkpoint.taskId?.isNotEmpty != true) {
+        throw _unconfirmedSubmission();
+      }
 
       for (var resumeAttempt = 0; ; resumeAttempt++) {
-        var taskId = checkpoint?.taskId;
+        var taskId = checkpoint.taskId;
         final resuming = taskId != null && taskId.isNotEmpty;
         if (!resuming) {
           // Poll a saved task first. Only an upload (including an expired
           // task's replacement) needs local extraction or even a local file.
           if (audioFile == null) {
             final path = await prepareAudio?.call() ?? audioPath;
+            requireCommunityLocalMedia(path);
             _throwIfCancelled(cancelToken);
             onProgress?.call(0.0, '检查音频文件...');
             audioFile = File(path);
@@ -269,40 +327,28 @@ class GongyiAsrService {
             downloadUrl,
             session: session,
             cancelToken: cancelToken,
+            checkpoint: checkpoint,
           );
-          await checkpoint?.setTask(taskId);
+          await checkpoint.setTask(taskId);
         } else {
           onProgress?.call(0.7, '继续查询上次已提交的识别任务，不会重新上传');
         }
 
         onProgress?.call(0.7, "等待转录结果...");
-        final recognitionWatch = Stopwatch()..start();
 
         // 6. 查询任务结果
         try {
           final result = await _queryTaskResult(
             taskId,
             (retryCount, maxRetries) {
-              // The service exposes no completion percentage. Polls are not work.
-              final elapsed = recognitionWatch.elapsed;
-              final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
-              final seconds = (elapsed.inSeconds % 60).toString().padLeft(
-                2,
-                '0',
-              );
-              onProgress?.call(0.7, '等待识别结果 · 已等待 $minutes:$seconds');
+              onProgress?.call(0.7, '等待识别结果');
             },
             cancelToken: cancelToken,
             session: session,
-            onFailure: checkpoint?.recordQueryFailure,
+            checkpoint: checkpoint,
+            onFailure: checkpoint.recordQueryFailure,
             onStatus: (message) {
-              final elapsed = recognitionWatch.elapsed;
-              final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
-              final seconds = (elapsed.inSeconds % 60).toString().padLeft(
-                2,
-                '0',
-              );
-              onProgress?.call(0.7, '$message · 已等待 $minutes:$seconds');
+              onProgress?.call(0.7, message);
             },
           );
 
@@ -316,7 +362,7 @@ class GongyiAsrService {
           );
         } on GongyiAsrException catch (error) {
           final missing = error.remoteTaskMissing;
-          if (error.taskFinished || missing) await checkpoint?.setTask(null);
+          if (error.taskFinished || missing) await checkpoint.setTask(null);
           if (missing && resuming && resumeAttempt == 0) {
             onProgress?.call(0.1, '上次识别任务已过期，正在使用本地音频重新提交');
             continue;
@@ -641,7 +687,7 @@ class GongyiAsrService {
     return text.length > 180 ? '${text.substring(0, 180)}…' : text;
   }
 
-  /// 把任务查询接口里 state=5 的正文还原成可区分的失败，而不是一句“转录任务失败”。
+  /// Decode terminal task failures while retaining the server's explanation.
   static GongyiAsrException classifyTaskPayload(Object? payload) {
     final detail = _serverDetail(payload, includeResult: true);
     final denied = _classifyServerRejection(
@@ -821,7 +867,14 @@ class GongyiAsrService {
 
     final body = _expectJsonBody(response.data, '请求上传授权');
     if (body['code'] != 0) {
-      _throwApiFailure('请求上传授权', body['code'], body['message']);
+      _throwApiFailure(
+        '请求上传授权',
+        body['code'],
+        body['message'],
+        statusCode: response.statusCode,
+        endpoint: response.requestOptions.uri.path,
+        retryAfter: parseRetryAfter(response.headers.value('retry-after')),
+      );
     }
     final data = body['data'];
     if (data is! Map) {
@@ -872,12 +925,9 @@ class GongyiAsrService {
       );
     }
 
-    // Storage uploads are independent; keep at most two buffers/requests in
-    // flight. ASR task creation and result polling remain sequential.
+    // Upload storage parts in order, with one buffer/request in flight.
     final etags = List<String>.filled(clips, '');
     final sent = List<int>.filled(clips, 0);
-    var nextIndex = 0;
-    var stopped = false;
     var totalUploaded = 0;
     var progressBytes = 0;
     var lastProgressMs = -100;
@@ -901,8 +951,7 @@ class GongyiAsrService {
     Future<void> worker() async {
       final reader = await audioFile.open();
       try {
-        while (!stopped && nextIndex < clips) {
-          final i = nextIndex++;
+        for (var i = 0; i < clips; i++) {
           _throwIfCancelled(cancelToken);
           final offset = i * perSize;
           final remaining = audioLength - offset;
@@ -920,7 +969,6 @@ class GongyiAsrService {
           var headerCorrected = false;
           for (var attempt = 0; ; attempt++) {
             _throwIfCancelled(cancelToken);
-            if (stopped) return;
             try {
               final request =
                   Options(
@@ -985,9 +1033,7 @@ class GongyiAsrService {
                     GongyiAsrFailureKind.networkUnavailable,
                     GongyiAsrFailureKind.transient,
                   ].contains(classified.kind);
-              if (!retryable ||
-                  stopped ||
-                  attempt >= uploadRetryDelays.length) {
+              if (!retryable || attempt >= uploadRetryDelays.length) {
                 rethrow;
               }
               onStatus?.call('上传第 ${i + 1}/$clips 块时网络中断，正在重试这一块，已完成的块会保留');
@@ -995,10 +1041,8 @@ class GongyiAsrService {
             }
           }
 
-          String? etag = response.headers.value('etag');
+          final etag = response.headers.value('etag');
           if (etag != null) {
-            // 提交时使用不带引号的 ETag 值。
-            etag = etag.replaceAll('"', '');
             etags[i] = etag;
           } else {
             throw GongyiAsrException(
@@ -1010,16 +1054,12 @@ class GongyiAsrService {
           totalUploaded += chunk.length;
           report(i, chunk.length);
         }
-      } catch (_) {
-        stopped = true;
-        rethrow;
       } finally {
         await reader.close();
       }
     }
 
-    // Wait for both workers to settle before retrying or deleting the file.
-    await Future.wait([worker(), if (clips > 1) worker()]);
+    await worker();
 
     if (etags.any((etag) => etag.isEmpty) || totalUploaded != audioLength) {
       throw GongyiAsrException(
@@ -1038,7 +1078,7 @@ class GongyiAsrService {
     required _GongyiRequestSession session,
     CancelToken? cancelToken,
   }) async {
-    // ETags 按上传协议使用逗号分隔的字符串，JSON 数组格式会触发 139201。
+    // Keep returned ETags unchanged, in part order and comma-separated.
     final primary = await _commitUploadAttempt(
       uploadAuth,
       etags.join(','),
@@ -1046,46 +1086,25 @@ class GongyiAsrService {
       cancelToken: cancelToken,
     );
     final primaryBody = _expectJsonBody(primary.data, '提交上传');
-    if (primaryBody['code'] == 0) {
-      final data = primaryBody['data'];
-      final url = data is Map ? data['download_url']?.toString() : null;
-      if (url == null || url.isEmpty) {
-        throw const GongyiAsrException(
-          GongyiAsrFailureKind.transient,
-          '提交上传成功，但没有返回音频地址',
-        );
-      }
-      return url;
+    if (primaryBody['code'] != 0) {
+      _throwApiFailure(
+        '提交上传',
+        primaryBody['code'],
+        primaryBody['message'],
+        statusCode: primary.statusCode,
+        endpoint: primary.requestOptions.uri.path,
+        retryAfter: parseRetryAfter(primary.headers.value('retry-after')),
+      );
     }
-
-    final firstCode = primaryBody['code'];
-    final firstMessage = primaryBody['message']?.toString() ?? '';
-    if (!_shouldTryAlternateEtags(firstCode, firstMessage)) {
-      _throwApiFailure('提交上传', firstCode, firstMessage);
+    final data = primaryBody['data'];
+    final url = data is Map ? data['download_url']?.toString() : null;
+    if (url == null || url.isEmpty) {
+      throw const GongyiAsrException(
+        GongyiAsrFailureKind.transient,
+        '提交上传成功，但没有返回音频地址',
+      );
     }
-
-    // 给对象存储的分片状态一点传播时间，然后只做一次格式兼容重试。
-    // 取消信号在等待期间仍然有效，不会阻塞“暂停全部”。
-    await _cancelableDelay(const Duration(milliseconds: 800), cancelToken);
-    final fallback = await _commitUploadAttempt(
-      uploadAuth,
-      jsonEncode(etags),
-      session: session,
-      cancelToken: cancelToken,
-    );
-    final fallbackBody = _expectJsonBody(fallback.data, '提交上传');
-    if (fallbackBody['code'] == 0) {
-      final data = fallbackBody['data'];
-      final url = data is Map ? data['download_url']?.toString() : null;
-      if (url == null || url.isEmpty) {
-        throw const GongyiAsrException(
-          GongyiAsrFailureKind.transient,
-          '提交上传成功，但没有返回音频地址',
-        );
-      }
-      return url;
-    }
-    _throwApiFailure('提交上传', fallbackBody['code'], fallbackBody['message']);
+    return url;
   }
 
   Future<Response<dynamic>> _commitUploadAttempt(
@@ -1108,41 +1127,70 @@ class GongyiAsrService {
     );
   }
 
-  bool _shouldTryAlternateEtags(Object? code, String message) {
-    if (code == 139201) return true;
-    if (code == -412 || code == 412 || code == 429) return false;
-    final normalized = message.toLowerCase();
-    if (_looksLikeRiskControl(normalized)) return false;
-    return normalized.contains('etag') ||
-        normalized.contains('参数') ||
-        normalized.contains('格式') ||
-        normalized.contains('第三方服务异常');
-  }
+  static GongyiAsrException _unconfirmedSubmission([
+    GongyiAsrException? failure,
+  ]) => GongyiAsrException(
+    GongyiAsrFailureKind.transient,
+    '创建识别任务的结果尚未确认，已停止重复提交。请稍后使用“重新转录”创建新任务',
+    statusCode: failure?.statusCode,
+    apiCode: failure?.apiCode,
+    serverMessage: failure?.serverMessage,
+    endpoint: failure?.endpoint ?? '/x/bcut/rubick-interface/task',
+    recoveryExhausted: true,
+  );
 
   // 创建ASR任务
   Future<String> _createTask(
     String downloadUrl, {
     required _GongyiRequestSession session,
+    required GongyiAsrTaskCheckpoint checkpoint,
     CancelToken? cancelToken,
   }) async {
-    final response = await _dio.post(
-      "$_baseUrl/task",
-      options: Options(extra: session.extra),
-      data: {"resource": downloadUrl, "model_id": "8"},
-      cancelToken: cancelToken,
-    );
+    _throwIfCancelled(cancelToken);
+    // Persist before dispatch: a lost response must not make a restored job
+    // silently issue another non-idempotent creation request.
+    await checkpoint.setSubmissionUncertain(true);
+    if (cancelToken?.isCancelled == true) {
+      await checkpoint.setSubmissionUncertain(false);
+      _throwIfCancelled(cancelToken);
+    }
+    late Response<dynamic> response;
+    try {
+      response = await _dio.post(
+        "$_baseUrl/task",
+        options: Options(extra: session.extra),
+        data: {"resource": downloadUrl, "model_id": "8"},
+        cancelToken: cancelToken,
+      );
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      if (status != null && status >= 400 && status < 500 && status != 408) {
+        await checkpoint.setSubmissionUncertain(false);
+        rethrow;
+      }
+      if (CancelToken.isCancel(error)) rethrow;
+      throw _unconfirmedSubmission(classifyDioException(error));
+    }
 
-    final body = _expectJsonBody(response.data, '创建转录任务');
-    if (body['code'] != 0) {
-      _throwApiFailure('创建转录任务', body['code'], body['message']);
+    final body = response.data;
+    if (body is! Map) throw _unconfirmedSubmission();
+    final code = _parseApiCode(body['code']);
+    if (code == null) throw _unconfirmedSubmission();
+    if (code != 0) {
+      await checkpoint.setSubmissionUncertain(false);
+      _throwApiFailure(
+        '创建转录任务',
+        code,
+        body['message'],
+        statusCode: response.statusCode,
+        endpoint: response.requestOptions.uri.path,
+        retryAfter: parseRetryAfter(response.headers.value('retry-after')),
+      );
     }
     final data = body['data'];
     final taskId = data is Map ? data['task_id']?.toString() : null;
     if (taskId == null || taskId.isEmpty) {
-      throw const GongyiAsrException(
-        GongyiAsrFailureKind.transient,
-        '创建转录任务成功，但没有返回任务编号',
-      );
+      throw _unconfirmedSubmission();
     }
     return taskId;
   }
@@ -1153,6 +1201,7 @@ class GongyiAsrService {
     String taskId,
     Function(int retryCount, int maxRetries) onRetry, {
     required _GongyiRequestSession session,
+    required GongyiAsrTaskCheckpoint checkpoint,
     CancelToken? cancelToken,
     void Function(String message)? onStatus,
     Future<void> Function(GongyiAsrException)? onFailure,
@@ -1161,8 +1210,8 @@ class GongyiAsrService {
     int transportFailures = 0;
     int riskWaits = 0;
     int rejectedWaits = 0;
-    const maxRetries = 120;
-    const maxTransportFailures = 6;
+    const maxRetries = 80;
+    const maxTransportFailures = 3;
     final watch = Stopwatch()..start();
     GongyiAsrFailureKind? lastFailureKind;
     int? lastStatusCode;
@@ -1177,12 +1226,14 @@ class GongyiAsrService {
     ) => GongyiAsrException(
       kind,
       '$reason${lastFailure?.diagnosticSummary.isNotEmpty == true ? '（${lastFailure!.diagnosticSummary}）' : ''}'
-      '，已停止本次查询。识别任务已保留，失败后点重试将重新提交未完成片段',
+      '，已停止本次查询。识别任务已保留，点重试将继续查询，不会重新上传',
       statusCode: lastStatusCode,
       apiCode: lastFailure?.apiCode,
       serverMessage: lastFailure?.serverMessage,
       endpoint: lastFailure?.endpoint,
-      retryAfter: lastFailure?.retryAfter,
+      retryAfter: checkpoint.queryNotBefore?.isAfter(DateTime.now()) == true
+          ? checkpoint.queryNotBefore!.difference(DateTime.now())
+          : lastFailure?.retryAfter,
       queryRetryExhausted: true,
     );
 
@@ -1198,41 +1249,112 @@ class GongyiAsrService {
       return remaining;
     }
 
-    Future<void> waitBeforeQuery(Duration delay, String reason) async {
-      var remaining = delay;
-      while (remaining > Duration.zero) {
-        final budget = remainingBudget();
-        var step = remaining < const Duration(seconds: 1)
-            ? remaining
-            : const Duration(seconds: 1);
-        if (step > budget) step = budget;
-        final seconds = (remaining.inMicroseconds / 1000000).ceil();
-        onStatus?.call('$reason · $seconds 秒后继续查询');
-        await _cancelableDelay(
-          step,
-          queryCancellation,
-          delay: _resultQueryDelay,
+    Future<void> waitBeforeQuery(
+      Duration delay,
+      String reason, {
+      bool restriction = false,
+    }) async {
+      if (restriction && delay > remainingBudget()) {
+        throw stopped(
+          lastFailureKind ?? GongyiAsrFailureKind.riskControl,
+          '服务端要求稍后查询，冷却时间已保存',
         );
-        remaining -= step;
       }
+      final budget = remainingBudget();
+      final waitUntil = DateTime.now().add(delay < budget ? delay : budget);
+      onStatus?.call(reason);
+      await _cancelableDelay(
+        delay < budget ? delay : budget,
+        queryCancellation,
+        delay: _resultQueryDelay,
+      );
+      if (_resultQueriesBlockedUntil != null &&
+          !_resultQueriesBlockedUntil!.isAfter(waitUntil)) {
+        _resultQueriesBlockedUntil = null;
+      }
+      if (_nextResultQueryAt != null &&
+          !_nextResultQueryAt!.isAfter(waitUntil)) {
+        _nextResultQueryAt = null;
+      }
+      remainingBudget();
     }
 
     try {
+      final resumeAfter = checkpoint.queryNotBefore;
+      if (resumeAfter != null && resumeAfter.isAfter(DateTime.now())) {
+        await waitBeforeQuery(
+          resumeAfter.difference(DateTime.now()),
+          '等待上次查询的冷却时间结束，不会重新上传',
+          restriction: true,
+        );
+      }
       while (retryCount < maxRetries) {
         final budget = remainingBudget();
         try {
           // Include connection stalls and slow responses in the same deadline,
           // and abort the in-flight request when that deadline expires.
-          final response = await _dio
-              .get<dynamic>(
-                "$_baseUrl/task/result",
-                options: Options(
-                  receiveTimeout: const Duration(seconds: 30),
-                  extra: session.extra,
-                ),
-                queryParameters: {"model_id": "8", "task_id": taskId},
-                cancelToken: queryCancellation,
-              )
+          final response = await _resultQueries
+              .enqueue(() async {
+                _throwIfCancelled(queryCancellation);
+                var allowed = _nextResultQueryAt;
+                final blocked = _resultQueriesBlockedUntil;
+                if (blocked != null &&
+                    (allowed == null || blocked.isAfter(allowed))) {
+                  allowed = blocked;
+                }
+                if (allowed != null && allowed.isAfter(DateTime.now())) {
+                  await _cancelableDelay(
+                    allowed.difference(DateTime.now()),
+                    queryCancellation,
+                    delay: _resultQueryDelay,
+                  );
+                }
+                _throwIfCancelled(queryCancellation);
+                remainingBudget();
+                _nextResultQueryAt = DateTime.now().add(
+                  minimumResultQueryInterval,
+                );
+                try {
+                  final response = await _dio.get<dynamic>(
+                    "$_baseUrl/task/result",
+                    options: Options(
+                      receiveTimeout: const Duration(seconds: 30),
+                      extra: session.extra,
+                    ),
+                    queryParameters: {"model_id": 7, "task_id": taskId},
+                    cancelToken: queryCancellation,
+                  );
+                  final body = response.data;
+                  if (body is Map &&
+                      body['code'] != null &&
+                      _parseApiCode(body['code']) != 0) {
+                    _throwApiFailure(
+                      '查询转录结果',
+                      body['code'],
+                      body['message'],
+                      statusCode: response.statusCode,
+                      endpoint: response.requestOptions.uri.path,
+                      retryAfter: parseRetryAfter(
+                        response.headers.value('retry-after'),
+                      ),
+                    );
+                  }
+                  return response;
+                } catch (error) {
+                  final failure = error is DioException
+                      ? classifyDioException(error)
+                      : error;
+                  if (failure is GongyiAsrException && failure.isAccessDenied) {
+                    final advised = failure.retryAfter;
+                    _resultQueriesBlockedUntil = DateTime.now().add(
+                      advised != null && advised > const Duration(seconds: 60)
+                          ? advised
+                          : const Duration(seconds: 60),
+                    );
+                  }
+                  rethrow;
+                }
+              })
               .timeout(
                 budget,
                 onTimeout: () {
@@ -1271,11 +1393,27 @@ class GongyiAsrService {
               '字幕服务返回了无法识别的结果',
             );
           }
-          if (data['state'] == 4) {
-            return _decodeResultMap(data['result']);
+          await checkpoint.setQueryNotBefore(null);
+          final state = _parseApiCode(data['state']);
+          if (state == 4) {
+            final result = _decodeResultMap(data['result']);
+            if (result['utterances'] is! List) {
+              throw const GongyiAsrException(
+                GongyiAsrFailureKind.transient,
+                '识别结果尚未完整返回',
+              );
+            }
+            return result;
           }
-          if (data['state'] == 5) {
+          if (state == 3 || state == 5) {
             final failure = classifyTaskPayload(data);
+            final cooldown = failure.isAccessDenied
+                ? parseRetryAfter(response.headers.value('retry-after')) ??
+                      const Duration(seconds: 60)
+                : null;
+            if (cooldown != null) {
+              _resultQueriesBlockedUntil = DateTime.now().add(cooldown);
+            }
             throw GongyiAsrException(
               failure.kind,
               failure.message,
@@ -1284,7 +1422,20 @@ class GongyiAsrService {
               serverMessage: failure.serverMessage ?? failure.message,
               endpoint: response.requestOptions.uri.path,
               taskFinished: true,
+              retryAfter: cooldown,
+              recoveryExhausted: failure.isAccessDenied,
             );
+          }
+          if (state != 0 && state != 1 && state != 2) {
+            final failure = GongyiAsrException(
+              GongyiAsrFailureKind.transient,
+              '识别服务返回了未知任务状态，已暂停查询；原任务已保留，可稍后继续',
+              statusCode: response.statusCode,
+              endpoint: response.requestOptions.uri.path,
+              queryRetryExhausted: true,
+            );
+            await onFailure?.call(failure);
+            throw failure;
           }
 
           retryCount++;
@@ -1293,13 +1444,22 @@ class GongyiAsrService {
           lastStatusCode = null;
           lastFailure = null;
           onRetry(retryCount, maxRetries);
-          final reason = switch (data['state']) {
-            1 => '服务器正在排队',
-            2 => '服务器正在识别',
-            _ => '等待识别结果',
-          };
-          final delaySeconds = 2 + (retryCount ~/ 10).clamp(0, 4);
-          await waitBeforeQuery(Duration(seconds: delaySeconds), reason);
+          final reason = state == 0 ? '服务器正在排队' : '等待识别结果';
+          final normal = Duration(
+            seconds: state == 0
+                ? 10
+                : retryCount <= 2
+                ? 3
+                : retryCount <= 6
+                ? 5
+                : 10,
+          );
+          final advised = parseRetryAfter(
+            response.headers.value('retry-after'),
+          );
+          final delay = advised != null && advised > normal ? advised : normal;
+          await checkpoint.setQueryNotBefore(DateTime.now().add(delay));
+          await waitBeforeQuery(delay, reason);
         } catch (error) {
           if (error is DioException && CancelToken.isCancel(error)) rethrow;
           final failure = error is DioException
@@ -1319,7 +1479,6 @@ class GongyiAsrService {
           lastFailureKind = failure.kind;
           lastStatusCode = failure.statusCode;
           lastFailure = failure;
-          await onFailure?.call(failure);
           String withEvidence(String reason) =>
               failure.diagnosticSummary.isEmpty
               ? reason
@@ -1330,35 +1489,46 @@ class GongyiAsrService {
               : fallback;
           if (failure.isRiskControl) {
             riskWaits++;
+            const waitSeconds = [60, 120, 180];
+            final index = (riskWaits - 1).clamp(0, waitSeconds.length - 1);
+            final wait = advisedWait(Duration(seconds: waitSeconds[index]));
+            _resultQueriesBlockedUntil = DateTime.now().add(wait);
+            await checkpoint.setQueryNotBefore(DateTime.now().add(wait));
+            await onFailure?.call(failure);
             if (riskWaits > maxPollRiskWaits) {
               throw stopped(
                 failure.kind,
-                failure.isRateLimited ? '查询结果持续受到频率限制' : '查询结果持续被服务端安全策略拦截',
+                failure.isRateLimited ? '查询结果受到频率限制' : '查询结果被服务端安全策略拦截',
               );
             }
-            const waitSeconds = [15, 30, 60, 90];
-            final index = (riskWaits - 1).clamp(0, waitSeconds.length - 1);
             await waitBeforeQuery(
-              advisedWait(Duration(seconds: waitSeconds[index])),
+              wait,
               withEvidence(
                 failure.isRateLimited
                     ? '查询结果受到频率限制，等待后重查，不会重新上传'
                     : '查询结果被服务端安全策略拦截，等待后重查，不会重新上传',
               ),
+              restriction: true,
             );
           } else if (failure.kind == GongyiAsrFailureKind.requestRejected) {
-            // An unexplained 412 is not proof of rate limiting. Only one short
-            // retry; repeating identical refused requests rarely helps.
+            // An unexplained rejection is not proof of rate limiting, but
+            // identical automatic probes are still unhelpful.
             rejectedWaits++;
+            final wait = advisedWait(const Duration(seconds: 60));
+            _resultQueriesBlockedUntil = DateTime.now().add(wait);
+            await checkpoint.setQueryNotBefore(DateTime.now().add(wait));
+            await onFailure?.call(failure);
             if (rejectedWaits > 1 || maxPollRiskWaits == 0) {
-              throw stopped(failure.kind, '查询请求再次被拒绝，原因尚未确认');
+              throw stopped(failure.kind, '查询请求被拒绝，原因尚未确认');
             }
             await waitBeforeQuery(
-              advisedWait(const Duration(seconds: 3)),
+              wait,
               withEvidence('查询请求被拒绝，原因尚未确认，准备重查'),
+              restriction: true,
             );
           } else if (failure.kind == GongyiAsrFailureKind.networkUnavailable ||
               failure.kind == GongyiAsrFailureKind.transient) {
+            await onFailure?.call(failure);
             transportFailures++;
             if (transportFailures > maxTransportFailures) {
               throw stopped(failure.kind, '结果查询连续失败：${failure.message}');
@@ -1374,6 +1544,7 @@ class GongyiAsrService {
               ),
             );
           } else {
+            await onFailure?.call(failure);
             throw failure;
           }
         }

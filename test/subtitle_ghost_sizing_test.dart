@@ -291,6 +291,7 @@ void main() {
       for (final page in [const Size(390, 844), const Size(1920, 1080)]) {
         await _mount(tester, notifier, page: page, sidebar: 0, ghost: ghost);
         final viewport = tester.getRect(find.byType(SubtitleOverlayGroup));
+        final paintedTracks = <String>[];
         for (final rich in tester.widgetList<RichText>(
           find.descendant(
             of: find.byType(SubtitleOverlayGroup),
@@ -306,8 +307,10 @@ void main() {
             rect.right,
             lessThanOrEqualTo(viewport.right - viewport.width * .07),
           );
-          expect(rich.text.toPlainText(), contains('When the wind rises'));
+          paintedTracks.add(rich.text.toPlainText());
         }
+        expect(paintedTracks.join('\n'), contains('When the wind rises'));
+        expect(paintedTracks.join('\n'), contains('风起时，我们再次相遇。'));
       }
     }
   });

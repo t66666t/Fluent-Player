@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/music_playback_controls.dart';
 
 class _Clock extends ValueNotifier<Duration> {
@@ -97,6 +100,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(_time(tester, 'music-current-time').data, '00:01');
+      expect(_time(tester, 'music-remaining-time').data, '00:10');
+      await tester.tap(find.byKey(const ValueKey('music-remaining-time')));
+      await tester.pump();
       expect(_time(tester, 'music-remaining-time').data, '-00:09');
       clock.value = const Duration(milliseconds: 1600);
       await tester.pump();
@@ -132,7 +138,7 @@ void main() {
       await tester.pump();
       expect(oldClock.listening, isFalse);
       expect(_time(tester, 'music-current-time').data, '1:01:01');
-      expect(_time(tester, 'music-remaining-time').data, '-58:59');
+      expect(_time(tester, 'music-remaining-time').data, '2:00:00');
       oldClock.value = const Duration(seconds: 20);
       await tester.pump();
       expect(_time(tester, 'music-current-time').data, '1:01:01');
@@ -140,4 +146,61 @@ void main() {
       expect(nextClock.listening, isFalse);
     },
   );
+
+  testWidgets('right time starts as the duration and remembers the tap', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsService()..resetForTest();
+    addTearDown(settings.resetForTest);
+    await settings.init();
+    await settings.updateMusicProgressShowsRemaining(true);
+    final clock = ValueNotifier(const Duration(milliseconds: 1100));
+    addTearDown(clock.dispose);
+
+    Future<void> mount() {
+      return tester.pumpWidget(
+        ChangeNotifierProvider<SettingsService>.value(
+          value: settings,
+          child: _controls(
+            clock,
+            duration: const Duration(milliseconds: 10500),
+          ),
+        ),
+      );
+    }
+
+    await mount();
+    await tester.pumpAndSettle();
+    final slider = tester.getRect(
+      find.byKey(const ValueKey('music-progress-slider')),
+    );
+    expect(_time(tester, 'music-remaining-time').data, '-00:09');
+    expect(
+      tester.getRect(find.byKey(const ValueKey('music-remaining-time'))).right,
+      closeTo(slider.right, 0.5),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('music-remaining-time')));
+    await tester.pump();
+    expect(settings.musicProgressShowsRemaining, isFalse);
+    expect(_time(tester, 'music-remaining-time').data, '00:10');
+    expect(
+      tester.getRect(find.byKey(const ValueKey('music-remaining-time'))).right,
+      closeTo(slider.right, 0.5),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await mount();
+    await tester.pump();
+    expect(_time(tester, 'music-remaining-time').data, '00:10');
+
+    settings.resetForTest();
+    await settings.init();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await mount();
+    await tester.pump();
+    expect(_time(tester, 'music-remaining-time').data, '00:10');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

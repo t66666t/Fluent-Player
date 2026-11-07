@@ -246,8 +246,8 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1100, 680));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.runAsync(() async {
-        final chinese = FontLoader('MiSans')
-          ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+        final chinese = FontLoader('Noto Sans SC')
+          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'));
         final english = FontLoader('Comic Relief')
           ..addFont(rootBundle.load('assets/fonts/ComicRelief-Regular.ttf'));
         final icons = FontLoader('MaterialIcons')

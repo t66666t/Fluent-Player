@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -12,6 +11,7 @@ import 'package:video_player_app/features/model_center/inference_scheduler.dart'
 import 'package:video_player_app/features/model_center/local_subtitle_translator.dart';
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/features/model_center/model_center_service.dart';
+import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/models/subtitle_punctuation.dart';
 import 'package:video_player_app/models/subtitle_stream.dart';
@@ -20,12 +20,12 @@ import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/ai_subtitle_api_settings.dart';
 import 'package:video_player_app/services/ai_subtitle_translator.dart';
 import 'package:video_player_app/services/cloud_translation_batches.dart';
-import 'package:video_player_app/services/gongyi_asr_service.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/streaming_subtitle_store.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
+import 'package:video_player_app/services/subtitle_optimization.dart';
 import 'package:video_player_app/services/subtitle_translation_service.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
 import 'package:video_player_app/utils/ffmpeg_utils.dart';
@@ -50,28 +50,49 @@ List<SubtitleItem> _cues(int count) => List.generate(
   ),
 );
 
-class _Asr extends GongyiAsrService {
-  int calls = 0;
+class _Asr extends ModelTranscriptionRunner {
+  int calls = 0, count = 17;
   Completer<void>? gate;
   @override
-  Future<List<SubtitleItem>> transcribeAudio(
-    String audioPath, {
-    bool needWordTimestamp = false,
-    bool includeWordTimings = false,
-    Function(double, String)? onProgress,
-    CancelToken? cancelToken,
-    GongyiAsrTaskCheckpoint? checkpoint,
-    Future<String> Function()? prepareAudio,
+  Future<List<SubtitleItem>> run({
+    required ModelJobSpec spec,
+    required String sourceIdentity,
+    String checkpointScope = '',
+    required Duration duration,
+    required PrepareModelAudio prepareAudio,
+    PrepareCloudAsrAudio? prepareCloudAudio,
+    dynamic prepareAudioChannel,
+    required void Function(ModelProcessingProgress) onProgress,
+    Future<void>? cancelSignal,
+    Future<void> Function(StableAsrBatch)? onStableBatch,
+    bool serializeConsumer = false,
+    int consumerModelBytes = 0,
+    int? consumerWorkingSetBytes,
+    int consumerBatchSize = 8,
+    int streamAssemblyVersion = 3,
+    Future<void> Function()? onSessionClose,
+    Future<void> Function()? onConsumerIdle,
+    bool Function()? consumerHasResidentModel,
+    dynamic resourceSession,
   }) async {
     calls++;
     if (gate != null) {
       await Future.any([
         gate!.future,
-        if (cancelToken != null)
-          cancelToken.whenCancel.then((_) => throw StateError('cancelled')),
+        if (cancelSignal != null)
+          cancelSignal.then((_) => throw StateError('cancelled')),
       ]);
     }
-    final cues = _cues(17);
+    final cues = _cues(count);
+    if (count > 17) {
+      for (var i = 0; i < cues.length; i++) {
+        cues[i] = cues[i].copyWith(
+          startTime: Duration(seconds: i),
+          endTime: Duration(seconds: i + 1),
+          timedSpans: const [],
+        );
+      }
+    }
     cues[0] = cues[0].copyWith(
       timedSpans: const [
         SubtitleTimedSpan(
@@ -94,14 +115,22 @@ class _Center extends ModelCenterService {
   @override
   bool installed(String id) => true;
   @override
-  Future<ModelJobSpec> captureTranscription() async =>
-      const ModelJobSpec(profile: ModelCenterService.legacyProfile);
+  Future<ModelJobSpec> captureTranscription() async => const ModelJobSpec(
+    profile: ModelServiceProfile(
+      id: 'test-authorized',
+      name: 'Configured test service',
+      kind: TranscriptionServiceKind.openai,
+      endpoint: 'https://example.test/v1',
+      model: 'test',
+    ),
+  );
 }
 
 class _Translation extends SubtitleTranslationService {
   bool hold = true, fail = false, partial = false;
   final calls = <List<int>>[];
   final contexts = <String>[];
+  final sourceTexts = <List<String>>[];
   final sessions = <LocalTranslationSession?>[];
   final gates = <Completer<void>>[];
   @override
@@ -127,6 +156,7 @@ class _Translation extends SubtitleTranslationService {
     expect(provider, SubtitleTranslateProvider.local);
     calls.add(items.map((cue) => cue.index).toList());
     contexts.add(precedingContext);
+    sourceTexts.add(items.map((cue) => cue.text).toList());
     sessions.add(localSession);
     final gate = Completer<void>();
     gates.add(gate);
@@ -245,6 +275,7 @@ void main() {
       late TranscriptionManager manager;
       late MediaPlaybackService playback;
       late VideoItem item;
+      var optimizeCalls = 0;
       final library = LibraryService();
       final settings = SettingsService();
 
@@ -294,9 +325,33 @@ void main() {
             SubtitlePunctuation.removeTrailingFullStopsAndCommas;
         asr = _Asr();
         translation = _Translation();
+        optimizeCalls = 0;
         manager = TranscriptionManager(
+          subtitleOptimizer: SubtitleOptimizer(
+            client: AiSubtitleTranslator(
+              complete: (_, messages) async {
+                optimizeCalls++;
+                final source =
+                    (jsonDecode(
+                              messages.firstWhere(
+                                (m) => m['role'] == 'user',
+                              )['content']!,
+                            )
+                            as Map)['字幕']
+                        as Map;
+                return jsonEncode({
+                  for (final entry in source.entries)
+                    '${entry.key}': (entry.value as String).replaceAll(
+                      'Hello',
+                      'Hello!',
+                    ),
+                });
+              },
+            ),
+          ),
+          resolveOptimizationEndpoint: (snapshot) async => snapshot,
           settings: settings,
-          asrService: asr,
+          modelRunner: asr,
           modelCenter: center,
           translationService: translation,
         );
@@ -341,6 +396,70 @@ void main() {
           direction: TranscriptTranslateDirection.toChinese,
           aiOptions: AiSubtitleTranslationSettings(),
         ),
+      );
+
+      test(
+        'public ASR batches optimize before translation and resume without recognition or optimization replay',
+        () async {
+          asr.count = 45;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+            AiSubtitleApiSettings.preferencesKey,
+            jsonEncode(
+              const AiSubtitleApiSettings(
+                baseUrl: 'https://example.test',
+                model: 'corrector',
+              ).toJson(),
+            ),
+          );
+          await const SubtitleOptimizationSettings(enabled: true).save();
+          translation.fail = true;
+          translation.hold = false;
+          await start();
+          await _until(() => !manager.isQueueRunning);
+          expect(
+            manager.getQueueSnapshot().single.status,
+            TranscriptionStatus.error,
+          );
+          expect(asr.calls, 1);
+          final savedCalls = optimizeCalls;
+          expect(savedCalls, greaterThan(0));
+          expect(
+            translation.sourceTexts
+                .expand((batch) => batch)
+                .every((text) => text.startsWith('Hello!')),
+            isTrue,
+          );
+          final raw = library.getVideo(item.id)!.subtitlePath!;
+          expect(await File(raw).readAsString(), contains('Hello,'));
+          // Changing the global default cannot change the frozen generation.
+          await const SubtitleOptimizationSettings().save();
+          translation.fail = false;
+          manager.retryTask(
+            manager.mediaKeyForVideo(item.path, videoId: item.id),
+          );
+          await _until(() => !manager.isQueueRunning);
+          expect(
+            manager.getQueueSnapshot().single.status,
+            TranscriptionStatus.completed,
+          );
+          expect(asr.calls, 1);
+          expect(optimizeCalls, 3);
+          final output = manager.getGeneratedSrtPathForVideo(
+            item.path,
+            videoId: item.id,
+          )!;
+          expect(await File(output).readAsString(), contains('Hello!'));
+          expect(
+            SubtitleParser.parse(await File(output).readAsString()),
+            hasLength(45),
+          );
+          expect(await File(raw).readAsString(), contains('Hello,'));
+          expect(
+            manager.completionMessageForVideo(item.path, videoId: item.id),
+            contains('优化'),
+          );
+        },
       );
 
       test(
@@ -442,6 +561,34 @@ void main() {
         },
       );
       test(
+        'manual selection during optimized public ASR remains selected',
+        () async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(AiSubtitleApiSettings.preferencesKey,
+            jsonEncode(const AiSubtitleApiSettings(baseUrl: 'https://example.test', model: 'corrector').toJson()));
+          await const SubtitleOptimizationSettings(enabled: true).save();
+          asr.gate = Completer<void>();
+          await start();
+          await _until(() => asr.calls == 1);
+          final manual = File(p.join(root.path, 'manual.srt'))
+            ..writeAsStringSync('1\n00:00:00,000 --> 00:00:04,000\nManual\n');
+          await playback.loadSubtitlePathsForCurrentItem(
+            itemId: item.id,
+            paths: [manual.path],
+          );
+          await library.updateVideoSubtitles(item.id, manual.path, false);
+          translation.hold = false;
+          asr.gate!.complete();
+          await _until(() => !manager.isQueueRunning);
+          expect(playback.subtitlePaths, [manual.path]);
+          expect(item.subtitlePath, manual.path);
+          expect(
+            manager.streamForVideo(item.path, videoId: item.id)!.secondaryBytes,
+            greaterThan(0),
+          );
+        },
+      );
+      test(
         'first completed batch attaches secondary; remaining batches retain full primary and session',
         () async {
           await start();
@@ -495,7 +642,7 @@ void main() {
           manager.dispose();
           manager = TranscriptionManager(
             settings: settings,
-            asrService: asr,
+            modelRunner: asr,
             modelCenter: center,
             translationService: translation,
           );
@@ -555,7 +702,7 @@ void main() {
           translation.partial = false;
           manager = TranscriptionManager(
             settings: settings,
-            asrService: asr,
+            modelRunner: asr,
             modelCenter: center,
             translationService: translation,
           );

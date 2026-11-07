@@ -7,12 +7,8 @@ class HomeSearchPreferences {
   final SharedPreferences preferences;
   static const scopeKey = 'homeSearch.lastScope';
 
-  HomeSearchScope get scope =>
-      HomeSearchScope.values
-          .where((scope) => scope.name == preferences.get(scopeKey))
-          .firstOrNull ??
-      HomeSearchScope.library;
+  HomeSearchScope get scope => HomeSearchScope.library;
 
   Future<bool> select(HomeSearchScope scope) =>
-      preferences.setString(scopeKey, scope.name);
+      preferences.setString(scopeKey, HomeSearchScope.library.name);
 }

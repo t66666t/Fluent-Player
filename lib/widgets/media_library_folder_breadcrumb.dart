@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../services/app_haptics.dart';
 import 'media_library_compact_app_bar.dart';
 
 class MediaLibraryBreadcrumbCrumb {
@@ -159,7 +160,10 @@ class _MediaLibraryFolderBreadcrumbState
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: () => widget.onSelected(crumb.folderId),
+        onTap: () {
+          AppHaptics.pulse(light: true);
+          widget.onSelected(crumb.folderId);
+        },
         behavior: HitTestBehavior.opaque,
         child: label,
       ),

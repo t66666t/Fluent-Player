@@ -1,3 +1,4 @@
+import 'package:video_player_app/utils/app_branding.dart';
 import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'podcast_store.dart';
@@ -22,9 +23,9 @@ class PodcastNotifications {
         ),
         linux: LinuxInitializationSettings(defaultActionName: '查看播客'),
         windows: WindowsInitializationSettings(
-          appName: 'Fluent Player',
-          appUserModelId: 'FluentPlayer.Podcasts',
-          guid: '64d58804-0863-43aa-a3d1-f47a8fcdf799',
+          appName: kAppDisplayName,
+          appUserModelId: '$kApplicationId.podcasts',
+          guid: '44d07412-f8b2-4b6b-a864-82b965b8f2fd',
         ),
       ),
       onDidReceiveNotificationResponse: (response) {

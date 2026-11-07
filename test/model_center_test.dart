@@ -1448,6 +1448,7 @@ void main() {
     () async {
       final service = create();
       await service.initialize();
+      final originalProfile = service.asrProfile;
       service.selectedTab = 1;
       expect(
         service.subtitlePunctuation,
@@ -1499,7 +1500,15 @@ void main() {
       );
       expect(restored.subtitleSegmentation, service.subtitleSegmentation);
       expect(restored.subtitlePunctuation, SubtitlePunctuation.removeAll);
-      expect(restored.asrProfile.name, '公益接口');
+      expect(
+        restored.asrProfile.id,
+        originalProfile.id,
+      );
+      expect(restored.asrProfile.kind, originalProfile.kind);
+      expect(
+        restored.profiles[ModelCenterService.legacyProfile.id]!.kind,
+        TranscriptionServiceKind.gongyi,
+      );
     },
   );
 
@@ -1532,7 +1541,7 @@ void main() {
   }
 
   test(
-    'an uninstalled ASR binding persists but cannot start inference',
+    'an uninstalled ASR binding persists and can be captured for preparation',
     () async {
       final catalog = await loadModelCatalog();
       final asr = catalog.firstWhere(
@@ -1549,7 +1558,8 @@ void main() {
           service.asrEnhancements.requiredModels(asr.languages, 'auto'),
         ),
       );
-      await expectLater(service.captureTranscription(), throwsStateError);
+      final captured = await service.captureTranscription();
+      expect(captured.artifactIdentity, asr.identity);
       // A restart closes the first application-owned downloader before opening
       // another service on the same checkpoint; both now have enhancement work.
       await service.shutdown();
@@ -1558,7 +1568,7 @@ void main() {
       await restored.initialize();
       expect(restored.asrProfileId, 'local:${asr.id}');
       expect(restored.asrProfile.local, isTrue);
-      await expectLater(restored.captureTranscription(), throwsStateError);
+      expect((await restored.captureTranscription()).artifactIdentity, captured.artifactIdentity);
     },
   );
 
@@ -2007,7 +2017,7 @@ void main() {
       bindLocal(service, first);
       final components = service.asrDownloadComponents(first);
       expect(
-        components.skip(1).map((m) => m.id).toSet(),
+        components.skip(1).where((m) => m.id != asrVadModelId).map((m) => m.id).toSet(),
         service.transcriptionConfiguration.enhancementModels.keys.toSet(),
       );
       service.downloads[AsrEnhancementOptions.languageId] = ModelDownload(
@@ -2044,7 +2054,7 @@ void main() {
         isNot(contains(AsrEnhancementOptions.languageId)),
       );
       service.asrEnhancements = AsrEnhancementOptions.disabled;
-      expect(service.asrDownloadComponents(second), [second]);
+      expect(service.asrDownloadComponents(second), [second, service.artifact(asrVadModelId)]);
       service.dispose();
     },
   );
@@ -2317,7 +2327,10 @@ void main() {
           }
 
           await openDownload();
-          expect(service.enqueued, [target.id]);
+          final combination = service.asrDownloadComponents(target)
+              .where((m) => purpose == ModelPurpose.transcription || m.id == target.id)
+              .map((m) => m.id).toList();
+          expect(service.enqueued, combination);
           expect(
             service.downloads[target.id]!.phase,
             ModelDownloadPhase.queued,
@@ -2332,7 +2345,7 @@ void main() {
           await openDownload();
           expect(
             service.enqueued,
-            [target.id],
+            combination,
             reason: 'queued transfers must not be enqueued twice',
           );
           service.downloads[target.id]!.phase = ModelDownloadPhase.downloading;
@@ -2357,7 +2370,11 @@ void main() {
             find.byKey(ValueKey('model-detail-download-${target.id}')),
           );
           await advance(tester);
-          expect(service.enqueued, [target.id, target.id]);
+          expect(service.enqueued, [...combination, ...combination]);
+          // Shared components may finish while the primary transfer fails.
+          for (final id in combination.where((id) => id != target.id)) {
+            service.downloads[id]!.phase = ModelDownloadPhase.installed;
+          }
           service.downloads[target.id]!.phase = ModelDownloadPhase.failed;
           service.downloads[target.id]!.message = '测试连接失败';
           service.notifyListeners();
@@ -2368,8 +2385,10 @@ void main() {
             find.byKey(ValueKey('model-detail-download-${target.id}')),
           );
           await advance(tester);
-          expect(service.enqueued, [target.id, target.id, target.id]);
-          service.downloads[target.id]!.phase = ModelDownloadPhase.installed;
+          expect(service.enqueued, [...combination, ...combination, target.id]);
+          for (final id in combination) {
+            service.downloads[id]!.phase = ModelDownloadPhase.installed;
+          }
           service.notifyListeners();
           await advance(tester);
           expect(
@@ -2780,9 +2799,10 @@ void main() {
         find.byKey(const ValueKey('model-center-translation')),
         findsNothing,
       );
+      expect(find.byKey(const ValueKey('model-center-optimization')), findsNothing);
       await tapVisible(
         tester,
-        find.byKey(const ValueKey('asr-binding-gongyi')),
+        find.byKey(ValueKey('asr-binding-${service.asrProfileId}')),
       );
       await tapVisible(
         tester,
@@ -2866,9 +2886,24 @@ void main() {
         final device = tester.getRect(
           find.byKey(const ValueKey('model-center-device')),
         );
-        expect(output.top - asr.bottom, closeTo(12, .1));
-        expect(device.top - translationCard.bottom, closeTo(12, .1));
-        expect(translationCard.left, greaterThan(asr.right));
+        final optimization = tester.getRect(
+          find.byKey(const ValueKey('model-center-optimization')),
+        );
+        if (size.width >= 1280) {
+          expect(optimization.top, closeTo(asr.top, .1));
+          expect(translationCard.top, closeTo(asr.top, .1));
+          expect(optimization.left, greaterThan(asr.right));
+          expect(translationCard.left, greaterThan(optimization.right));
+          final bottom = [asr.bottom, optimization.bottom, translationCard.bottom]
+              .reduce((a, b) => a > b ? a : b);
+          expect(output.top - bottom, closeTo(12, .1));
+          expect(device.top, closeTo(output.top, .1));
+        } else {
+          expect(output.top - asr.bottom, closeTo(12, .1));
+          expect(device.top - translationCard.bottom, closeTo(12, .1));
+          expect(optimization.left, greaterThan(asr.right));
+          expect(translationCard.top - optimization.bottom, closeTo(12, .1));
+        }
       }
       await preview(tester, key, '${size.width.toInt()}-functions');
 
@@ -3165,6 +3200,7 @@ void main() {
       final catalog = (await tester.runAsync(loadModelCatalog))!;
       final service = create(view: true, catalog: catalog);
       await tester.runAsync(service.initialize);
+      final originalProfileId = service.asrProfileId;
       final settings = SubtitleTranslateSettings();
       await settings.ensureLoaded();
       final key = GlobalKey();
@@ -3206,7 +3242,7 @@ void main() {
       );
       expect(
         service.asrProfileId,
-        'gongyi',
+        originalProfileId,
         reason: 'saving a service does not silently enable it',
       );
       expect(find.text('服务管理'), findsOneWidget);

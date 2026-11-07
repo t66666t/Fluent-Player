@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player_app/utils/app_branding.dart';
 import 'package:video_player_app/features/progress_sync/progress_sync_lan.dart';
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
     expect(hello.body, isNot(contains('private-video.mp4')));
     expect(hello.json.keys.toSet(), {
       'v',
+      'edition',
       'id',
       'name',
       'port',
@@ -46,6 +48,7 @@ void main() {
         request.response.write(
           jsonEncode({
             'v': 1,
+            'edition': kApplicationId,
             'id': id,
             'name': '同一台手机',
             'port': server.port,
@@ -68,15 +71,56 @@ void main() {
         }
         expect(fixture.a.nearbyDevices.map((device) => device.id), ['beta']);
         expect(fixture.a.connectedPeers, contains('beta'));
-      // A final pairing acknowledgement may notify once concurrently; thirty
-      // rediscoveries must not generate a notification for every announcement.
-      expect(notifications, lessThan(5));
+        // A final pairing acknowledgement may notify once concurrently; thirty
+        // rediscoveries must not generate a notification for every announcement.
+        expect(notifications, lessThan(5));
       } finally {
         fixture.a.removeListener(changed);
         await server.close(force: true);
       }
     },
   );
+
+  test('different editions reject manual discovery and pairing', () async {
+    final key = await X25519().newKeyPair();
+    var applied = false;
+    final foreign = ProgressSyncLan(
+      deviceId: 'foreign',
+      deviceName: '其他版本',
+      editionForTesting: 'a.different.edition',
+      privateKeyBytes: await key.extractPrivateKeyBytes(),
+      trustedPeerPublicKeys: {},
+      onTrustChanged: (_) {},
+      onReadChanges: (_) async => [],
+      onChanges: (_, _) async {
+        applied = true;
+      },
+    );
+    await foreign.start(
+      bindAddress: InternetAddress.loopbackIPv4,
+      enableDiscovery: false,
+    );
+    try {
+      await expectLater(
+        fixture.a.connectAddress('127.0.0.1:${foreign.port}'),
+        throwsFormatException,
+      );
+      await expectLater(
+        foreign.connectAddress('127.0.0.1:${fixture.a.port}'),
+        throwsFormatException,
+      );
+      final hello = (await _http(fixture.a.port!, '/v1/hello')).json;
+      final response = await _http(foreign.port!, '/v1/pair', hello);
+      expect(response.status, isNot(200));
+      expect(fixture.a.nearbyDevices, isEmpty);
+      expect(foreign.nearbyDevices, isEmpty);
+      expect(fixture.trustA, isEmpty);
+      expect(applied, isFalse);
+    } finally {
+      await foreign.stop();
+      foreign.dispose();
+    }
+  });
 
   test('both devices must explicitly approve the same code', () async {
     final peer = await fixture.a.connectAddress('127.0.0.1:${fixture.b.port}');
@@ -341,6 +385,9 @@ void main() {
         tampered['nonce'] = base64Encode(List<int>.filled(12, 123));
         final altered = await _http(fixture.b.port!, '/v1/sync', tampered);
         expect(altered.status, 400);
+        final crossEdition = {...captured!, 'edition': 'another.edition'};
+        final rejected = await _http(fixture.b.port!, '/v1/sync', crossEdition);
+        expect(rejected.status, 403);
         expect(fixture.receivedB.length, applied);
         await fixture.b.stop();
         await fixture.b.start(
@@ -354,6 +401,68 @@ void main() {
         await subscription.cancel();
         await proxy.close(force: true);
       }
+    },
+  );
+
+  test(
+    'legacy trust cannot authenticate another edition with a relabelled envelope',
+    () async {
+      await fixture.pair();
+      final helloA = (await _http(fixture.a.port!, '/v1/hello')).json;
+      final helloB = (await _http(fixture.b.port!, '/v1/hello')).json;
+      final keyPair = await X25519().newKeyPairFromSeed(fixture.privateA);
+      final shared = await X25519().sharedSecretKey(
+        keyPair: keyPair,
+        remotePublicKey: SimplePublicKey(
+          base64Decode(fixture.b.publicKeyBase64!),
+          type: KeyPairType.x25519,
+        ),
+      );
+      final identities = [
+        'alpha:${fixture.a.publicKeyBase64}',
+        'beta:${fixture.b.publicKeyBase64}',
+      ]..sort();
+      final foreignKey = await Hkdf(hmac: Hmac.sha256(), outputLength: 32)
+          .deriveKey(
+            secretKey: shared,
+            nonce: utf8.encode(jsonEncode(identities)),
+            info: utf8.encode(
+              'video-player-progress/v2/another.edition/trusted',
+            ),
+          );
+      final cipher = AesGcm.with256bits();
+      final nonce = cipher.newNonce();
+      final header = <String, dynamic>{
+        'v': 1,
+        'edition': kApplicationId,
+        'from': 'alpha',
+        'to': 'beta',
+        'scope': 'sync',
+        'senderBoot': helloA['boot'],
+        'receiverBoot': helloB['boot'],
+        'nonce': base64Encode(nonce),
+        'sequence': 100,
+      };
+      final box = await cipher.encrypt(
+        utf8.encode(
+          jsonEncode({
+            'changes': [
+              {'file': 'foreign'},
+            ],
+          }),
+        ),
+        secretKey: foreignKey,
+        nonce: nonce,
+        aad: utf8.encode(jsonEncode(header)),
+      );
+      final before = fixture.receivedB.length;
+      final response = await _http(fixture.b.port!, '/v1/sync', {
+        ...header,
+        'ciphertext': base64Encode(box.cipherText),
+        'mac': base64Encode(box.mac.bytes),
+      });
+      expect(response.status, isNot(200));
+      expect(fixture.receivedB.length, before);
     },
   );
 
@@ -378,13 +487,14 @@ void main() {
       final key = await Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
         secretKey: shared,
         nonce: utf8.encode(jsonEncode(identities)),
-        info: utf8.encode('video-player-progress/v1/trusted'),
+        info: utf8.encode('video-player-progress/v2/$kApplicationId/trusted'),
       );
       Future<int> send(int sequence) async {
         final cipher = AesGcm.with256bits();
         final nonce = cipher.newNonce();
         final header = {
           'v': 1,
+          'edition': kApplicationId,
           'from': 'alpha',
           'to': 'beta',
           'scope': 'sync',

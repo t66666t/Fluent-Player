@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../controllers/music_volume_controller.dart';
 import '../services/drag_haptic_session.dart';
+import '../services/settings_service.dart';
 import '../utils/desktop_player_shortcuts.dart';
 import 'music_play_pause_button.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
@@ -10,7 +12,7 @@ import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 /// Apple Music 风格播放控制栏（严格对齐 Apple Music 全屏播放页面截图）
 ///
 /// 布局结构（垂直排列，宽度由父组件约束）：
-///   1. 进度条行：Slider，其下为当前时间 + 倒计时（-mm:ss）
+///   1. 进度条行：Slider，其下为当前时间 + 总时长。点右侧时间可改成剩余时间（-mm:ss）
 ///      横竖屏都可在时间行放一颗「字幕管理」胶囊，水平中心对齐进度条
 ///   2. 控制按钮行：[音量] [页面设置]  ...  [◀◀] [▶/⏸] [▶▶]  ...  [更多]
 ///
@@ -105,6 +107,9 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
   bool _isScrubbing = false;
   final _progressHaptics = DragHapticSession();
 
+  /// 控件单测没有设置服务时，只在这一棵控件里记住。正式播放页走 SettingsService。
+  bool _showRemainingWithoutSettings = false;
+
   @override
   void didUpdateWidget(MusicPlaybackControls oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -128,6 +133,41 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+
+  /// 右侧时间。false 显示总时长；true 显示带负号的剩余时间。
+  SettingsService? _settingsOrNull(BuildContext context, {bool listen = true}) {
+    try {
+      return Provider.of<SettingsService>(context, listen: listen);
+    } on ProviderNotFoundException {
+      // 控件单测没有套设置服务，改用这一棵控件自己的状态。
+      return null;
+    }
+  }
+
+  bool _showsRemaining(BuildContext context) {
+    final settings = _settingsOrNull(context);
+    if (settings == null) return _showRemainingWithoutSettings;
+    return settings.musicProgressShowsRemaining;
+  }
+
+  void _toggleEndTime() {
+    final settings = _settingsOrNull(context, listen: false);
+    if (settings == null) {
+      setState(() {
+        _showRemainingWithoutSettings = !_showRemainingWithoutSettings;
+      });
+      return;
+    }
+    // 内存先换字，磁盘随后写完。下次打开播放页仍是这一次的选择。
+    settings.updateMusicProgressShowsRemaining(
+      !settings.musicProgressShowsRemaining,
+    );
+  }
+
+  String _endTimeLabel(Duration total, Duration remaining, bool showRemaining) {
+    if (showRemaining) return '-${_formatDuration(remaining)}';
+    return _formatDuration(total);
   }
 
   /// 非静音时固定使用完整的扬声器图标，不随音量档位变化。
@@ -198,7 +238,7 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
     );
   }
 
-  /// 进度条行：左侧时间 | 滑块 | 右侧倒计时
+  /// 进度条行：左侧当前时间 | 滑块 | 右侧总时长或剩余时间
   ///
   /// 用 ValueListenableBuilder 监听 positionListenable，只有进度条叶子节点
   /// 每帧重绘，整棵 MusicPlaybackControls 不因进度变化而重建。
@@ -219,6 +259,8 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
     // 静止状态不显示拇指；拖动时才淡入接近 Apple Music 的小圆点。
     final thumbR = (trackH * 1.6).clamp(4.0, 9.0);
     final timeColor = Colors.white.withValues(alpha: 0.7);
+    // 在进度条这一层读取，时间标签每秒重建时不会重复订阅设置。
+    final showRemaining = _showsRemaining(context);
 
     // 如果没有提供 positionListenable，直接使用 currentPosition 和 progress
     if (widget.positionListenable == null) {
@@ -232,6 +274,7 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
         trackH,
         thumbR,
         timeColor,
+        showRemaining,
       );
     }
 
@@ -244,7 +287,11 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
         totalDuration: widget.totalDuration,
         builder: (current, remaining) => _buildTimestampRow(
           currentLabel: _formatDuration(current),
-          remainingLabel: '-${_formatDuration(remaining)}',
+          endLabel: _endTimeLabel(
+            widget.totalDuration,
+            remaining,
+            showRemaining,
+          ),
           timeFontSize: timeFontSize,
           timeColor: timeColor,
           baseDim: baseDim,
@@ -263,6 +310,7 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
         trackH,
         thumbR,
         timeColor,
+        showRemaining,
         timestampRow: timestamps,
       ),
     );
@@ -281,7 +329,8 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
     double timeFontSize,
     double trackH,
     double thumbR,
-    Color timeColor, {
+    Color timeColor,
+    bool showRemaining, {
     Widget? timestampRow,
   }) {
     final rawRemaining = totalDuration - currentPosition;
@@ -351,7 +400,7 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
         timestampRow ??
             _buildTimestampRow(
               currentLabel: _formatDuration(currentPosition),
-              remainingLabel: '-${_formatDuration(remaining)}',
+              endLabel: _endTimeLabel(totalDuration, remaining, showRemaining),
               timeFontSize: timeFontSize,
               timeColor: timeColor,
               baseDim: baseDim,
@@ -368,7 +417,7 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
   /// 两条文字之间的空隙居中，否则胶囊会跟着文字宽度左右偏移。
   Widget _buildTimestampRow({
     required String currentLabel,
-    required String remainingLabel,
+    required String endLabel,
     required double timeFontSize,
     required Color timeColor,
     required double baseDim,
@@ -414,13 +463,21 @@ class _MusicPlaybackControlsState extends State<MusicPlaybackControls> {
           ),
       ],
     );
-    final remaining = Text(
-      remainingLabel,
-      key: const ValueKey('music-remaining-time'),
-      textAlign: TextAlign.end,
-      maxLines: 1,
-      softWrap: false,
-      style: timeStyle,
+    // 负号会让文字变宽，但行仍是两端对齐，所以右缘一直贴着进度条右端。
+    final remaining = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggleEndTime,
+        child: Text(
+          endLabel,
+          key: const ValueKey('music-remaining-time'),
+          textAlign: TextAlign.end,
+          maxLines: 1,
+          softWrap: false,
+          style: timeStyle,
+        ),
+      ),
     );
     final chip = _buildSubtitleManagementChip(baseDim, isMobile);
     final times = Row(

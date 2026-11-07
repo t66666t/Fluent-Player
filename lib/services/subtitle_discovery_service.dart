@@ -49,9 +49,6 @@ class DiscoveredSubtitleFile {
 class SubtitleDiscoveryService {
   const SubtitleDiscoveryService();
 
-  static const SubtitleDurationReader _durationReader =
-      SubtitleDurationReader();
-
   /// 允许进入时长二次校验的 A 类候选上限（避免对文件夹中大量同名变体
   /// 全部读盘）。
   static const int _durationValidationLimit = 8;
@@ -90,6 +87,7 @@ class SubtitleDiscoveryService {
   Future<List<DiscoveredSubtitleFile>> scanVideoDirectory({
     required String videoPath,
     int? videoDurationMs,
+    SubtitleDiscoveryBatch? batch,
   }) async {
     final localPath = localVideoPath(videoPath);
     if (localPath == null) return const <DiscoveredSubtitleFile>[];
@@ -105,33 +103,8 @@ class SubtitleDiscoveryService {
 
     final videoStem = p.basenameWithoutExtension(localPath);
 
-    final files = <File>[];
-    try {
-      await for (final entity in directory.list(followLinks: false)) {
-        if (entity is! File ||
-            SubtitleWordTimingStore.isCompanion(entity.path)) {
-          continue;
-        }
-        final ext = p.extension(entity.path).toLowerCase();
-        if (!SubtitleFileMatcher.supportedExtensions.contains(ext)) continue;
-        if (ext == '.json' || ext == '.xml') {
-          try {
-            if (await entity.length() > 100 * 1024 * 1024 ||
-                SubtitleParser.parse(
-                  SubtitleParser.decodeBytes(await entity.readAsBytes()),
-                  sourcePath: entity.path,
-                ).isEmpty) {
-              continue;
-            }
-          } catch (_) {
-            continue;
-          }
-        }
-        files.add(entity);
-      }
-    } on FileSystemException {
-      return const <DiscoveredSubtitleFile>[];
-    }
+    final snapshot = batch ?? SubtitleDiscoveryBatch();
+    final files = await snapshot._files(directory);
 
     // 1) 名称资格判定（纯函数，无 IO）。
     final analyzed = <DiscoveredSubtitleFile>[];
@@ -140,13 +113,11 @@ class SubtitleDiscoveryService {
         videoStem: videoStem,
         subtitleStem: p.basenameWithoutExtension(file.path),
       );
-      final stat = await _tryStat(file);
-      if (stat == null) continue;
       analyzed.add(
         DiscoveredSubtitleFile(
           path: p.normalize(file.path),
-          modifiedAt: stat.modified,
-          length: stat.size,
+          modifiedAt: file.modified,
+          length: file.size,
           analysis: analysis,
         ),
       );
@@ -162,7 +133,7 @@ class SubtitleDiscoveryService {
     if (videoDurationMs != null && videoDurationMs > 0) {
       final limited = autoCandidates.take(_durationValidationLimit).toList();
       final results = await Future.wait(
-        limited.map((entry) => _durationReader.readMaxEndMs(File(entry.path))),
+        limited.map((entry) => snapshot._duration(entry.path)),
       );
       for (var i = 0; i < limited.length; i++) {
         durationMap[limited[i].path] = results[i];
@@ -194,14 +165,6 @@ class SubtitleDiscoveryService {
       (a, b) => _compareEntries(a, b, videoDurationMs, durationMap),
     );
     return analyzed;
-  }
-
-  Future<FileStat?> _tryStat(File file) async {
-    try {
-      return await file.stat();
-    } on FileSystemException {
-      return null;
-    }
   }
 
   int _compareEntries(
@@ -284,4 +247,61 @@ class SubtitleDiscoveryService {
     if (closeness == null) return 0; // 信息缺失中性处理
     return closeness <= 0.3 ? 0 : 1;
   }
+}
+
+/// An explicitly scoped, read-only snapshot for a batch of media. Sharing it
+/// avoids enumerating and parsing the same directory once for every video.
+/// Do not retain it between operations: a new batch sees newly added files.
+class SubtitleDiscoveryBatch {
+  SubtitleDiscoveryBatch({this.validateGenericFiles = true});
+  final bool validateGenericFiles;
+  final _directories =
+      <String, Future<List<({String path, DateTime modified, int size})>>>{};
+  final _durations = <String, Future<int?>>{};
+
+  Future<List<({String path, DateTime modified, int size})>> _files(
+    Directory directory,
+  ) => _directories.putIfAbsent(p.normalize(directory.path), () async {
+    final files = <({String path, DateTime modified, int size})>[];
+    try {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is! File ||
+            SubtitleWordTimingStore.isCompanion(entity.path)) {
+          continue;
+        }
+        final ext = p.extension(entity.path).toLowerCase();
+        if (!SubtitleFileMatcher.supportedExtensions.contains(ext)) continue;
+        try {
+          final stat = await entity.stat();
+          if (stat.type != FileSystemEntityType.file) continue;
+          if (validateGenericFiles && (ext == '.json' || ext == '.xml')) {
+            if (stat.size > 100 * 1024 * 1024 ||
+                SubtitleParser.parse(
+                  SubtitleParser.decodeBytes(await entity.readAsBytes()),
+                  sourcePath: entity.path,
+                ).isEmpty) {
+              continue;
+            }
+          }
+          files.add((
+            path: entity.path,
+            modified: stat.modified,
+            size: stat.size,
+          ));
+        } on FileSystemException {
+          continue;
+        } on FormatException {
+          continue;
+        }
+      }
+    } on FileSystemException {
+      return const [];
+    }
+    return files;
+  });
+
+  Future<int?> _duration(String path) => _durations.putIfAbsent(
+    path,
+    () => const SubtitleDurationReader().readMaxEndMs(File(path)),
+  );
 }

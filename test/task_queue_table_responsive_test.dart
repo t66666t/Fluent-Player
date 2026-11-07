@@ -210,7 +210,7 @@ void main() {
   );
 
   testWidgets(
-    'display direction explains execution and only waiting rows can be held to reorder',
+    'display direction remains available and unselected rows cannot reorder',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -233,15 +233,15 @@ void main() {
           ),
         ),
       );
-      expect(find.byKey(const ValueKey('task-drag-waiting')), findsOneWidget);
+      expect(find.byKey(const ValueKey('task-drag-waiting')), findsNothing);
       expect(
         find.byKey(ValueKey('task-drag-${tasks.first.mediaKey}')),
         findsNothing,
       );
-      expect(find.text('进行中置顶 · 等待任务从上到下'), findsOneWidget);
+      expect(find.text('进行中置顶 · 等待任务从上到下'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('task-queue-display-order')));
       await tester.pumpAndSettle();
-      expect(find.text('进行中置顶 · 等待任务从下到上'), findsOneWidget);
+      expect(find.text('进行中置顶 · 等待任务从下到上'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -354,7 +354,7 @@ void main() {
           Theme.of(completedContext).colorScheme.onSurface,
         );
         if (size.width == 320) {
-          expect(find.text('进行中置顶 · 等待任务从上到下'), findsOneWidget);
+          expect(find.text('进行中置顶 · 等待任务从上到下'), findsNothing);
           expect(find.byTooltip('暂停'), findsOneWidget);
           expect(find.byIcon(Icons.drag_handle), findsNothing);
         }
@@ -421,7 +421,7 @@ void main() {
           Theme.of(titleContext).textTheme.bodyMedium?.fontFamily,
           'Noto Sans SC',
         );
-        expect(find.byType(Switch), findsOneWidget);
+        expect(find.byType(Switch), findsNWidgets(2));
         expect(find.text('翻译设置'), findsOneWidget);
         expect(
           find.byKey(const ValueKey('batch-current-mode')),
@@ -437,7 +437,10 @@ void main() {
           find.textContaining('智能互译：中→英 / 其他→中', findRichText: true),
           findsOneWidget,
         );
-        expect(find.textContaining('公益接口', findRichText: true), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('batch-transcription-settings')),
+          findsOneWidget,
+        );
         if (size.width == 320) {
           expect(find.text('添加媒体'), findsOneWidget);
           expect(find.text('开始全部'), findsOneWidget);

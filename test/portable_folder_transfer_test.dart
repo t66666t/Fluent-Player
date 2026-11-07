@@ -423,49 +423,43 @@ void main() {
     },
   );
 
-  test(
-    'online cards transfer no video bytes and retain playback source',
-    () async {
-      final folder = await library.createCollection('在线', null);
-      final online = VideoItem(
-        id: 'online',
-        path: 'bilibili://stream/BVexample?cid=12',
-        title: 'Online',
-        durationMs: 10000,
-        lastUpdated: 1,
-        parentId: folder.id,
-        sourceRef: const MediaSourceRef(
-          value: 'BVexample',
-          kind: MediaSourceKind.bilibiliStream,
-          bvid: 'BVexample',
-          cid: 12,
-        ),
-      );
-      await library.addSingleVideo(online, useOriginalPath: true);
-      final estimate = await transfer.estimateFolder(
-        library: library,
-        collectionId: folder.id,
-      );
-      expect(estimate.totalBytes, 0);
-      final package = await transfer.prepareFolderPackage(
-        library: library,
-        collectionId: folder.id,
-        outputPath: p.join(temp.path, 'online.fluentpack'),
-      );
-      becomeReceiver();
-      final result = await transfer.importReceivedFolder(
-        library: library,
-        packagePath: package.path,
-        originDeviceId: 'laptop',
-        sourceCollectionId: folder.id,
-      );
-      expect(
-        library.mediaInFolderTree(result.collectionId).single.sourceRef?.cid,
-        12,
-      );
-      expect(result.fingerprints, isEmpty);
-    },
-  );
+  test('retired Bilibili cards are not recreated by folder transfer', () async {
+    final folder = await library.createCollection('在线', null);
+    final online = VideoItem(
+      id: 'online',
+      path: 'bilibili://stream/BVexample?cid=12',
+      title: 'Online',
+      durationMs: 10000,
+      lastUpdated: 1,
+      parentId: folder.id,
+      sourceRef: const MediaSourceRef(
+        value: 'BVexample',
+        kind: MediaSourceKind.bilibiliStream,
+        bvid: 'BVexample',
+        cid: 12,
+      ),
+    );
+    await library.addSingleVideo(online, useOriginalPath: true);
+    final estimate = await transfer.estimateFolder(
+      library: library,
+      collectionId: folder.id,
+    );
+    expect(estimate.totalBytes, 0);
+    final package = await transfer.prepareFolderPackage(
+      library: library,
+      collectionId: folder.id,
+      outputPath: p.join(temp.path, 'online.fluentpack'),
+    );
+    becomeReceiver();
+    final result = await transfer.importReceivedFolder(
+      library: library,
+      packagePath: package.path,
+      originDeviceId: 'laptop',
+      sourceCollectionId: folder.id,
+    );
+    expect(library.mediaInFolderTree(result.collectionId), isEmpty);
+    expect(result.fingerprints, isEmpty);
+  });
   test(
     'same-named distinct subfolders preserve their separate trees',
     () async {

@@ -249,6 +249,173 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('node preview opens within 300ms despite small touch jitter', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q0'));
+    await tester.pump(const Duration(milliseconds: 200));
+    final preview = find.byKey(const ValueKey('ai-node-preview'));
+    expect(preview, findsNothing);
+    await press.moveBy(const Offset(2, 2));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(preview, findsOneWidget);
+    expect(navigations, 0);
+    expect(controller.isUserScrolling, isFalse);
+    await press.up();
+    await tester.pumpAndSettle();
+    expect(preview, findsOneWidget);
+    expect(navigations, 0, reason: 'releasing a preview must not also jump');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a quick node tap jumps without a delayed preview', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q1'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await press.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(navigations, 1);
+    expect(controller.bookmark!.messageId, 'q1');
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('dragging just before the preview deadline wins the gesture', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q0'));
+    await tester.pump(const Duration(milliseconds: 250));
+    await press.moveBy(const Offset(0, 32));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(controller.isUserScrolling, isTrue);
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    await press.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(navigations, greaterThan(0));
+    await press.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('horizontal movement cancels a node preview without jumping', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q0'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await press.moveBy(const Offset(-32, 0));
+    await tester.pump(const Duration(milliseconds: 600));
+    await press.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    expect(navigations, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a cancelled touch never leaves a pending node preview', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q0'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await press.cancel();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    expect(navigations, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('returning after horizontal movement does not revive a tap', (
+    tester,
+  ) async {
+    await mount(tester);
+    final point = nodePoint(tester, 'q0');
+    final press = await tester.startGesture(point);
+    await tester.pump(const Duration(milliseconds: 150));
+    await press.moveBy(const Offset(-32, 0));
+    await tester.pump(const Duration(milliseconds: 50));
+    await press.moveTo(point);
+    await tester.pump(const Duration(milliseconds: 600));
+    await press.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    expect(navigations, 0);
+    expect(controller.isUserScrolling, isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('holding empty track leaves a later drag available', (
+    tester,
+  ) async {
+    await mount(tester);
+    final first = nodePoint(tester, 'q0');
+    final second = nodePoint(tester, 'q1');
+    final press = await tester.startGesture((first + second) / 2);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    expect(navigations, 0);
+    await press.moveBy(const Offset(0, 32));
+    await tester.pump();
+    expect(controller.isUserScrolling, isTrue);
+    await press.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(navigations, greaterThan(0));
+    await press.up();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a second touch cancels preview recognition and permits retry', (
+    tester,
+  ) async {
+    await mount(tester);
+    final point = nodePoint(tester, 'q0');
+    final first = await tester.startGesture(point, pointer: 1);
+    await tester.pump(const Duration(milliseconds: 150));
+    final second = await tester.startGesture(
+      point + const Offset(-4, 0),
+      pointer: 2,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsNothing);
+    await second.cancel();
+    await first.cancel();
+    await tester.pumpAndSettle();
+    expect(navigations, 0);
+    await tester.longPressAt(nodePoint(tester, 'q1'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ai-node-preview')), findsOneWidget);
+    expect(navigations, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('sliding after a preview changes details without scrolling', (
+    tester,
+  ) async {
+    await mount(tester);
+    final press = await tester.startGesture(nodePoint(tester, 'q0'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await press.moveTo(nodePoint(tester, 'q1'));
+    await tester.pump();
+    final preview = find.byKey(const ValueKey('ai-node-preview'));
+    expect(
+      find.descendant(of: preview, matching: find.text(messages[2].content)),
+      findsOneWidget,
+    );
+    expect(navigations, 0);
+    expect(controller.isUserScrolling, isFalse);
+    await press.up();
+    await tester.pumpAndSettle();
+    expect(navigations, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('long press preview leaves the composer keyboard focus intact', (
     tester,
   ) async {

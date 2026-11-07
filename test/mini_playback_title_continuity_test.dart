@@ -49,7 +49,7 @@ void main() {
     playback.publishRestoredSessionPreview(
       VideoItem(
         id: 'title-continuity',
-        path: 'podcast:title-continuity',
+        path: 'title-continuity.mp3',
         title: title,
         durationMs: 120000,
         lastUpdated: 0,
@@ -184,20 +184,31 @@ void main() {
     await tester.pump(const Duration(milliseconds: 80));
     expect(
       titleOffset(tester, _longTitle),
-      closeTo(before - (titleWidth + 50) * 0.080 / 20, 0.001),
+      closeTo(before - 18 * 0.080, 0.001),
     );
     final phase = titleOffset(tester, _longTitle);
-    await tester.pump(const Duration(seconds: 20));
+    final loopDuration = Duration(
+      microseconds: ((titleWidth + 50) / 18 * Duration.microsecondsPerSecond)
+          .round(),
+    );
+    await tester.pump(loopDuration);
     expect(titleOffset(tester, _longTitle), closeTo(phase, 0.001));
+
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
   for (final viewport in [
+    (TargetPlatform.android, const Size(320, 568)),
     (TargetPlatform.android, const Size(390, 844)),
     (TargetPlatform.iOS, const Size(390, 844)),
+    (TargetPlatform.iOS, const Size(430, 932)),
+    (TargetPlatform.android, const Size(600, 960)),
     (TargetPlatform.android, const Size(900, 1200)),
+    (TargetPlatform.iOS, const Size(1200, 900)),
     (TargetPlatform.windows, const Size(1440, 900)),
+    (TargetPlatform.macOS, const Size(1440, 900)),
+    (TargetPlatform.linux, const Size(1440, 900)),
   ]) {
     for (final playbackPage in [false, true]) {
       testWidgets('${viewport.$1} ${viewport.$2}, playback=$playbackPage: '
@@ -207,8 +218,7 @@ void main() {
         await pumpLibrary(tester, title: _longTitle, size: viewport.$2);
         expect(tester.takeException(), isNull);
         final state = tester.state(card());
-        final titleWidth = tester.getSize(titleText(_longTitle).first).width;
-        final step = (titleWidth + 50) * 0.016 / 20;
+        const step = 18 * 0.016;
         final cover = playbackPage
             ? PlaybackNavigationService.buildPlaybackPageRoute<void>(
                 builder: (_) => const Scaffold(body: Text('cover')),
@@ -247,17 +257,28 @@ void main() {
     }
   }
 
-  testWidgets('large text uses the same measurement as the looping copies', (
+  testWidgets('text and layout changes keep the same gentle scrolling speed', (
     tester,
   ) async {
-    await pumpLibrary(tester, title: _longTitle, textScale: 1.8);
-    final width = tester.getSize(titleText(_longTitle).first).width;
-    final before = titleOffset(tester, _longTitle);
-    await tester.pump(const Duration(milliseconds: 80));
-    expect(
-      titleOffset(tester, _longTitle),
-      closeTo(before - (width + 50) * 0.080 / 20, 0.001),
-    );
+    for (final (size, textScale) in [
+      (const Size(390, 844), 1.8),
+      (const Size(900, 1200), 1.8),
+      (const Size(1200, 900), 1.2),
+      (const Size(390, 844), 1.0),
+    ]) {
+      await pumpLibrary(
+        tester,
+        title: _longTitle,
+        size: size,
+        textScale: textScale,
+      );
+      final before = titleOffset(tester, _longTitle);
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(
+        titleOffset(tester, _longTitle),
+        closeTo(before - 18 * 0.080, 0.001),
+      );
+    }
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -269,7 +290,6 @@ void main() {
     final shell = MediaLibraryShell.maybeOf(tester.element(card()))!;
     final nested = shell.libraryNavigator!;
     final state = tester.state(card());
-    final width = tester.getSize(titleText(_longTitle).first).width;
     for (final route in [
       buildMediaLibraryFolderRoute<void>(
         folderId: 'folder',
@@ -284,7 +304,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
         expect(
           titleOffset(tester, _longTitle),
-          closeTo(before - (width + 50) * 0.016 / 20, 0.001),
+          closeTo(before - 18 * 0.016, 0.001),
         );
         expect(tester.state(card()), same(state));
       }
@@ -316,7 +336,7 @@ void main() {
       playback.publishRestoredSessionPreview(
         VideoItem(
           id: id,
-          path: 'podcast:$id',
+          path: '$id.mp3',
           title: title,
           durationMs: 120000,
           lastUpdated: 0,
@@ -333,7 +353,11 @@ void main() {
         expect(titleOffset(tester, title), 0);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 80));
-        expect(titleOffset(tester, title), lessThan(0));
+        expect(
+          titleOffset(tester, title),
+          closeTo(-18 * 0.080, 0.001),
+          reason: 'Different title lengths must keep the same reading speed.',
+        );
       }
       expect(tester.takeException(), isNull);
     }
@@ -368,8 +392,7 @@ void main() {
   ) async {
     await pumpLibrary(tester, title: _longTitle);
     final state = tester.state(card());
-    final width = tester.getSize(titleText(_longTitle).first).width;
-    final step = (width + 50) * 0.016 / 20;
+    const step = 18 * 0.016;
     for (var iteration = 0; iteration < 4; iteration++) {
       final cover = AppMaterialPageRoute<void>(
         builder: (_) => const Scaffold(body: Text('cover')),

@@ -195,14 +195,11 @@ namespace flutter_inappwebview_plugin
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
+    bool downloadCancellationReady_ = false;
+    EventRegistrationToken downloadStartingToken_ = {};
+    std::shared_ptr<bool> downloadLifetime_ = std::make_shared<bool>(true);
     std::string pageFrameId_;
     std::map<std::string, std::pair<wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver>, EventRegistrationToken>> devToolsProtocolEventListener_ = {};
-    // Passive response observation also covers native media in child frames.
-    bool networkResponseObserverEnabled_ = false;
-    std::string networkDocumentUrl_;
-    std::map<std::string, std::string> networkRequestPages_;
-    std::vector<std::string> pendingNetworkResponses_;
-
     void registerEventHandlers();
     void registerSurfaceEventHandlers();
   };

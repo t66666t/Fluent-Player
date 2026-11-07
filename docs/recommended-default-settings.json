@@ -1299,7 +1299,7 @@
         "showSubtitles": true,
         "showSystemMediaNotification": true,
         "sidebarFontSizeScale": null,
-        "skipPortraitPlayer": true,
+        "skipPortraitPlayer": false,
         "skipRepeatedClipboardText": true,
         "sleepTimer.countOnlyWhilePlaying": true,
         "sleepTimer.customItemCount": 3,

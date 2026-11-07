@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
-import '../models/media_source_ref.dart';
 import '../models/video_item.dart';
 import 'open_with_other_apps.dart';
 import 'reveal_in_file_manager.dart';
@@ -38,10 +37,6 @@ class SourceMediaFileActions {
 
   String? pathFor(VideoItem item) {
     if (!isSupported || item.isRecycled) return null;
-    if (item.sourceRef?.kind == MediaSourceKind.cloudDrive ||
-        item.sourceRef?.kind == MediaSourceKind.bilibiliStream) {
-      return null;
-    }
     return sourceMediaFilePath(item.path, platform: platform);
   }
 

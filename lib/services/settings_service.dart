@@ -3,6 +3,7 @@ import 'subtitle_debug_session.dart';
 import 'default_settings_trial.dart';
 import 'app_default_settings_trial.dart';
 import '../models/recommended_app_defaults.dart';
+import '../models/processing_screen_protection_timing.dart';
 import '../models/subtitle_debug_preset.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -21,7 +22,9 @@ import '../models/media_library_root_entry.dart';
 import '../models/media_library_continue_policy.dart';
 import '../models/music_lyric_display_mode.dart';
 import '../models/music_lyric_anchor.dart';
+import '../models/music_lyric_font.dart';
 import '../models/music_lyric_typography.dart';
+import '../models/transcript_typography.dart';
 import '../models/subtitle_copy_format.dart';
 import '../models/subtitle_position.dart';
 import '../models/subtitle_style.dart';
@@ -31,8 +34,9 @@ import 'subtitle_position_store.dart';
 import '../models/subtitle_output_path_strategy.dart';
 import '../models/danmaku_style.dart';
 import '../models/video_compose_models.dart';
-import '../utils/device_form_factor.dart';
+import '../models/media_library_view_mode.dart';
 import '../widgets/media_library_layout_profile.dart';
+import '../widgets/media_library_view_defaults.dart';
 import '../widgets/media_list_layout_metrics.dart';
 
 enum PlaybackSpeedLockAction { locked, switched, unlocked }
@@ -47,6 +51,7 @@ bool platformShowsSystemMediaNotificationSetting() {
 class _RegisteredSetting<T> {
   final String key;
   final T defaultValue;
+  final T Function()? resolveDefaultValue;
   final T Function(SharedPreferences prefs, String key, T defaultValue) read;
   final Future<void> Function(SharedPreferences prefs, String key, T value)
   write;
@@ -56,19 +61,22 @@ class _RegisteredSetting<T> {
   const _RegisteredSetting({
     required this.key,
     required this.defaultValue,
+    this.resolveDefaultValue,
     required this.read,
     required this.write,
     required this.normalize,
     required this.apply,
   });
 
-  Object? get normalizedDefaultValue => normalize(defaultValue);
+  T get currentDefaultValue => resolveDefaultValue?.call() ?? defaultValue;
+
+  Object? get normalizedDefaultValue => normalize(currentDefaultValue);
 
   Future<void> loadInto(
     SettingsService service,
     SharedPreferences prefs,
   ) async {
-    final rawValue = read(prefs, key, defaultValue);
+    final rawValue = read(prefs, key, currentDefaultValue);
     final normalizedValue = normalize(rawValue);
     apply(service, normalizedValue);
     if (rawValue != normalizedValue) {
@@ -239,6 +247,9 @@ class SettingsService extends ChangeNotifier {
   // Subtitle Settings - 新的结构
   // 文字样式 - 横竖屏共享
   SubtitleTextStyle subtitleTextStyle = const SubtitleTextStyle(
+    defaultFontFamily: 'Swei Gothic CJK SC',
+    defaultFontWeight: 700,
+    languageFonts: {},
     fontFamilyChinese: 'Swei Gothic CJK SC',
     fontFamilyEnglish: 'Swei Gothic CJK SC',
     textColor: Color(0xFFFFFFFF),
@@ -259,35 +270,43 @@ class SettingsService extends ChangeNotifier {
 
   // 布局样式 - 横竖屏共享
   SubtitleLayoutStyle subtitleLayoutLandscape = const SubtitleLayoutStyle(
-    fontSize: 39.7,
-    secondaryFontSize: 22.6,
+    fontSize: kDefaultSubtitleFontSize,
+    secondaryFontSize: kDefaultSecondarySubtitleFontSize,
     lineSpacing: -0.1,
     letterSpacing: 0.0,
   );
   SubtitleLayoutStyle subtitleLayoutPortrait = const SubtitleLayoutStyle(
-    fontSize: 39.7,
-    secondaryFontSize: 22.6,
+    fontSize: kDefaultSubtitleFontSize,
+    secondaryFontSize: kDefaultSecondarySubtitleFontSize,
     lineSpacing: -0.1,
     letterSpacing: 0.0,
   );
 
   // 幽灵模式布局样式 - 与普通字幕完全独立（仅共享文字样式）
   SubtitleLayoutStyle subtitleLayoutGhostLandscape = const SubtitleLayoutStyle(
-    fontSize: 39.7,
-    secondaryFontSize: 22.6,
+    fontSize: kDefaultSubtitleFontSize,
+    secondaryFontSize: kDefaultSecondarySubtitleFontSize,
     lineSpacing: -0.1,
     letterSpacing: 0.0,
   );
   SubtitleLayoutStyle subtitleLayoutGhostPortrait = const SubtitleLayoutStyle(
-    fontSize: 39.7,
-    secondaryFontSize: 22.6,
+    fontSize: kDefaultSubtitleFontSize,
+    secondaryFontSize: kDefaultSecondarySubtitleFontSize,
     lineSpacing: -0.1,
     letterSpacing: 0.0,
   );
 
   // 音频字幕 - 同样结构
   bool syncAudioSubtitleStyleWithVideo = true;
-  SubtitleTextStyle audioSubtitleTextStyle = const SubtitleTextStyle();
+  SubtitleTextStyle audioSubtitleTextStyle = const SubtitleTextStyle(
+    defaultFontFamily: 'Swei Gothic CJK SC',
+    defaultFontWeight: 700,
+    languageFonts: {},
+    fontFamilyChinese: 'Swei Gothic CJK SC',
+    fontFamilyEnglish: 'Swei Gothic CJK SC',
+    fontWeightChinese: FontWeight.w700,
+    fontWeightEnglish: FontWeight.w700,
+  );
   SubtitleLayoutStyle audioSubtitleLayoutLandscape =
       const SubtitleLayoutStyle();
   SubtitleLayoutStyle audioSubtitleLayoutPortrait = const SubtitleLayoutStyle();
@@ -356,8 +375,23 @@ class SettingsService extends ChangeNotifier {
   double videoCardTitleFontSize = 11.0;
   double videoCardAspectRatio = 0.625;
 
-  // Media manager unified view mode (0: grid, 1: list)
+  /// Media manager view style; see [MediaLibraryViewMode] for the indices
+  /// (0 grid, 1 media rows, 2 details table, 3 folder tree).
   int mediaLibraryViewMode = 0;
+
+  /// Details-table sort ([MediaTableSortKey.name]). View-only: it never
+  /// rewrites the stored folder order that drag-reorder edits.
+  String mediaTableSortKey = MediaTableSortKey.manual.name;
+  bool mediaTableSortDescending = false;
+
+  /// Content layout inside the folder-tree shell
+  /// ([MediaLibraryContentLayout] index).
+  int mediaTreeContentMode = MediaLibraryContentLayout.rows.index;
+  double mediaTreeSidebarWidth = MediaLibraryViewDefaults.treeSidebarWidth;
+  bool mediaTreeShowCounts = true;
+
+  /// Docked tree pane hidden by the user on wide screens.
+  bool mediaTreeSidebarCollapsed = false;
 
   // Root entry switcher: empty until first initialized default is written.
   String mediaLibraryRootEntry = '';
@@ -365,7 +399,7 @@ class SettingsService extends ChangeNotifier {
   String mediaLibraryRootEntryOrder = '';
 
   /// When true, cold start reopens the last root page and nested folder.
-  bool mediaLibraryRestoreLastPage = true;
+  bool mediaLibraryRestoreLastPage = false;
   bool mediaLibraryReadableCardDefaults = false;
 
   /// Used only when [mediaLibraryRestoreLastPage] is false.
@@ -422,7 +456,454 @@ class SettingsService extends ChangeNotifier {
   int cardTitleMaxLinesFor(Size size) =>
       mediaLibraryReadableCardDefaults ? 2 : 10;
 
-  MediaListStyleSettings listStyleFor(Size size) {
+  MediaLibraryViewMode get mediaLibraryViewStyle {
+    final stored = MediaLibraryViewMode.fromStorage(mediaLibraryViewMode);
+    // The switcher is parked. Keep the saved style, but draw the card grid.
+    if (!mediaLibraryAlternateViewsEnabled) return MediaLibraryViewMode.grid;
+    return stored;
+  }
+
+  /// Layout drawn inside the scroll area; the tree style wraps one of these.
+  MediaLibraryContentLayout get mediaLibraryContentLayout =>
+      switch (mediaLibraryViewStyle) {
+        MediaLibraryViewMode.grid => MediaLibraryContentLayout.grid,
+        MediaLibraryViewMode.rows => MediaLibraryContentLayout.rows,
+        MediaLibraryViewMode.table => MediaLibraryContentLayout.table,
+        MediaLibraryViewMode.tree => MediaLibraryContentLayout.fromStorage(
+          mediaTreeContentMode,
+        ),
+      };
+
+  /// Rows and table use the fixed-extent row grid (list tiles, list geometry).
+  bool get mediaLibraryUsesRowPipeline =>
+      mediaLibraryContentLayout.usesRowPipeline;
+
+  bool get mediaLibraryShowsFolderTree =>
+      mediaLibraryViewStyle == MediaLibraryViewMode.tree;
+
+  MediaTableSortKey get mediaTableSort =>
+      MediaTableSortKey.fromStorage(mediaTableSortKey);
+
+  /// Folder order is only editable when the table is not re-sorting it.
+  bool get mediaLibraryAllowsManualOrder =>
+      mediaLibraryContentLayout != MediaLibraryContentLayout.table ||
+      mediaTableSort == MediaTableSortKey.manual;
+
+  Future<void> setMediaLibraryViewStyle(MediaLibraryViewMode mode) =>
+      updateSetting('mediaLibraryViewMode', mode.storageValue);
+
+  /// Cycles grid → rows → table → tree (keyboard shortcut).
+  Future<void> cycleMediaLibraryViewStyle() {
+    if (!mediaLibraryAlternateViewsEnabled) return Future.value();
+    const modes = MediaLibraryViewMode.values;
+    final stored = MediaLibraryViewMode.fromStorage(mediaLibraryViewMode);
+    return setMediaLibraryViewStyle(
+      modes[(stored.index + 1) % modes.length],
+    );
+  }
+
+  Future<void> setMediaTableSort(MediaTableSortKey key, {bool? descending}) async {
+    await updateSetting('mediaTableSortKey', key.name);
+    if (descending != null) {
+      await updateSetting('mediaTableSortDescending', descending);
+    }
+  }
+
+  /// Style of whichever row layout is active (rows unless the table shows).
+  MediaListStyleSettings listStyleFor(Size size) =>
+      mediaLibraryContentLayout == MediaLibraryContentLayout.table
+      ? tableStyleFor(size)
+      : rowsStyleFor(size);
+
+  static const _rowsColumnsKeys = (
+    'mediaListRowsColumnsPortrait',
+    'mediaListRowsColumnsLandscape',
+  );
+  static const _rowsExtentKeys = (
+    'mediaListRowsExtentPortrait',
+    'mediaListRowsExtentLandscape',
+  );
+  static const _rowsTitleSizeKeys = (
+    'mediaListRowsTitleSizePortrait',
+    'mediaListRowsTitleSizeLandscape',
+  );
+  static const _rowsTitleLinesKeys = (
+    'mediaListRowsTitleLinesPortrait',
+    'mediaListRowsTitleLinesLandscape',
+  );
+  static const _rowsCrossSpacingKeys = (
+    'mediaListRowsCrossSpacingPortrait',
+    'mediaListRowsCrossSpacingLandscape',
+  );
+  static const _rowsMainSpacingKeys = (
+    'mediaListRowsMainSpacingPortrait',
+    'mediaListRowsMainSpacingLandscape',
+  );
+  static const _rowsOuterPaddingKeys = (
+    'mediaListRowsOuterPaddingPortrait',
+    'mediaListRowsOuterPaddingLandscape',
+  );
+  static const _rowsShowThumbnailKeys = (
+    'mediaListRowsShowThumbnailPortrait',
+    'mediaListRowsShowThumbnailLandscape',
+  );
+  static const _rowsShowIndexKeys = (
+    'mediaListRowsShowIndexPortrait',
+    'mediaListRowsShowIndexLandscape',
+  );
+  static const _rowsShowMetaKeys = (
+    'mediaListRowsShowMetaPortrait',
+    'mediaListRowsShowMetaLandscape',
+  );
+  static const _rowsShowProgressKeys = (
+    'mediaListRowsShowProgressPortrait',
+    'mediaListRowsShowProgressLandscape',
+  );
+  static const _rowsCardSurfaceKeys = (
+    'mediaListRowsCardSurfacePortrait',
+    'mediaListRowsCardSurfaceLandscape',
+  );
+  static const _tableExtentKeys = (
+    'mediaListTableExtentPortrait',
+    'mediaListTableExtentLandscape',
+  );
+  static const _tableTitleSizeKeys = (
+    'mediaListTableTitleSizePortrait',
+    'mediaListTableTitleSizeLandscape',
+  );
+  static const _tableOuterPaddingKeys = (
+    'mediaListTableOuterPaddingPortrait',
+    'mediaListTableOuterPaddingLandscape',
+  );
+  static const _tableShowThumbnailKeys = (
+    'mediaListTableShowThumbnailPortrait',
+    'mediaListTableShowThumbnailLandscape',
+  );
+  static const _tableShowIndexKeys = (
+    'mediaListTableShowIndexPortrait',
+    'mediaListTableShowIndexLandscape',
+  );
+  static const _tableStripedKeys = (
+    'mediaListTableStripedPortrait',
+    'mediaListTableStripedLandscape',
+  );
+  static const _tableColumnsKeys = (
+    'mediaListTableColumnsPortrait',
+    'mediaListTableColumnsLandscape',
+  );
+
+  static const _rowsSlotKeys = [
+    _rowsColumnsKeys,
+    _rowsExtentKeys,
+    _rowsTitleSizeKeys,
+    _rowsTitleLinesKeys,
+    _rowsCrossSpacingKeys,
+    _rowsMainSpacingKeys,
+    _rowsOuterPaddingKeys,
+    _rowsShowThumbnailKeys,
+    _rowsShowIndexKeys,
+    _rowsShowMetaKeys,
+    _rowsShowProgressKeys,
+    _rowsCardSurfaceKeys,
+  ];
+  static const _tableSlotKeys = [
+    _tableExtentKeys,
+    _tableTitleSizeKeys,
+    _tableOuterPaddingKeys,
+    _tableShowThumbnailKeys,
+    _tableShowIndexKeys,
+    _tableStripedKeys,
+    _tableColumnsKeys,
+  ];
+  static const _gridSlotKeys = [
+    ('homeGridCrossAxisCountPortrait', 'homeGridCrossAxisCountLandscape'),
+    ('homeCardTitleFontSizePortrait', 'homeCardTitleFontSizeLandscape'),
+    ('homeCardAspectRatioPortrait', 'homeCardAspectRatioLandscape'),
+    ('homeCardCrossSpacingScalePortrait', 'homeCardCrossSpacingScaleLandscape'),
+    ('homeCardMainSpacingScalePortrait', 'homeCardMainSpacingScaleLandscape'),
+  ];
+
+  static String _slotKeyFor((String, String) keys, Size size) =>
+      MediaLibraryLayoutDefaults.isLandscape(size) ? keys.$2 : keys.$1;
+
+  double _slotDoubleOr(
+    (String, String) keys,
+    Size size,
+    double fallback,
+    double min,
+    double max,
+  ) =>
+      (_slotDouble(_slotKeyFor(keys, size)) ?? fallback).clamp(min, max);
+
+  int _slotIntOr((String, String) keys, Size size, int fallback, int min, int max) =>
+      (_slotInt(_slotKeyFor(keys, size)) ?? fallback).clamp(min, max);
+
+  bool _slotBoolOr((String, String) keys, Size size, bool fallback) =>
+      _slotBool(_slotKeyFor(keys, size)) ?? fallback;
+
+  /// Media rows: thumbnail left, text right. Pixel-sized per orientation.
+  MediaListStyleSettings rowsStyleFor(Size size) {
+    return MediaListStyleSettings(
+      layout: MediaLibraryContentLayout.rows,
+      crossAxisCount: _slotIntOr(
+        _rowsColumnsKeys,
+        size,
+        MediaLibraryViewDefaults.rowsColumns(size),
+        MediaLibraryViewDefaults.minRowsColumns,
+        MediaLibraryViewDefaults.maxRowsColumns,
+      ),
+      rowExtent: _slotDoubleOr(
+        _rowsExtentKeys,
+        size,
+        MediaLibraryViewDefaults.rowsExtent(size),
+        MediaLibraryViewDefaults.minRowsExtent,
+        MediaLibraryViewDefaults.maxRowsExtent,
+      ),
+      titleSize: _slotDoubleOr(
+        _rowsTitleSizeKeys,
+        size,
+        MediaLibraryViewDefaults.rowsTitleSize(size),
+        MediaLibraryViewDefaults.minTitleSize,
+        MediaLibraryViewDefaults.maxTitleSize,
+      ),
+      titleLines: _slotIntOr(
+        _rowsTitleLinesKeys,
+        size,
+        MediaLibraryViewDefaults.rowsTitleLines,
+        MediaLibraryViewDefaults.minTitleLines,
+        MediaLibraryViewDefaults.maxTitleLines,
+      ),
+      crossSpacing: _slotDoubleOr(
+        _rowsCrossSpacingKeys,
+        size,
+        MediaLibraryViewDefaults.rowsCrossSpacing(size),
+        MediaLibraryViewDefaults.minSpacing,
+        MediaLibraryViewDefaults.maxSpacing,
+      ),
+      mainSpacing: _slotDoubleOr(
+        _rowsMainSpacingKeys,
+        size,
+        MediaLibraryViewDefaults.rowsMainSpacing(size),
+        MediaLibraryViewDefaults.minSpacing,
+        MediaLibraryViewDefaults.maxSpacing,
+      ),
+      outerPadding: _slotDoubleOr(
+        _rowsOuterPaddingKeys,
+        size,
+        MediaLibraryViewDefaults.rowsOuterPadding(size),
+        MediaLibraryViewDefaults.minOuterPadding,
+        MediaLibraryViewDefaults.maxOuterPadding,
+      ),
+      showThumbnail: _slotBoolOr(_rowsShowThumbnailKeys, size, true),
+      showIndex: _slotBoolOr(_rowsShowIndexKeys, size, false),
+      showMeta: _slotBoolOr(_rowsShowMetaKeys, size, true),
+      showProgress: _slotBoolOr(_rowsShowProgressKeys, size, true),
+      // Flat rows with a hover surface read lighter than stacked cards.
+      cardSurface: _slotBoolOr(_rowsCardSurfaceKeys, size, false),
+      // Legacy proportional fields are unused once rowExtent is set.
+      titleScale: mediaListTitleScale,
+      heightScale: mediaListItemHeightScale,
+      crossSpacingScale: 0,
+      mainSpacingScale: 0,
+    );
+  }
+
+  /// Details table: one column of fixed-height rows plus a pinned header.
+  MediaListStyleSettings tableStyleFor(Size size) {
+    final storedColumns = _hasPref(_slotKeyFor(_tableColumnsKeys, size))
+        ? _prefs.getString(_slotKeyFor(_tableColumnsKeys, size))
+        : null;
+    return MediaListStyleSettings(
+      layout: MediaLibraryContentLayout.table,
+      crossAxisCount: 1,
+      rowExtent: _slotDoubleOr(
+        _tableExtentKeys,
+        size,
+        MediaLibraryViewDefaults.tableExtent(size),
+        MediaLibraryViewDefaults.minTableExtent,
+        MediaLibraryViewDefaults.maxTableExtent,
+      ),
+      titleSize: _slotDoubleOr(
+        _tableTitleSizeKeys,
+        size,
+        MediaLibraryViewDefaults.tableTitleSize(size),
+        MediaLibraryViewDefaults.minTitleSize,
+        MediaLibraryViewDefaults.maxTitleSize,
+      ),
+      titleLines: 1,
+      crossSpacing: 0,
+      mainSpacing: 0,
+      outerPadding: _slotDoubleOr(
+        _tableOuterPaddingKeys,
+        size,
+        MediaLibraryViewDefaults.tableOuterPadding(size),
+        MediaLibraryViewDefaults.minOuterPadding,
+        MediaLibraryViewDefaults.maxOuterPadding,
+      ),
+      showThumbnail: _slotBoolOr(_tableShowThumbnailKeys, size, true),
+      showIndex: _slotBoolOr(_tableShowIndexKeys, size, false),
+      // Hairline row dividers already guide the eye; stripes are opt-in.
+      striped: _slotBoolOr(_tableStripedKeys, size, false),
+      tableColumns: storedColumns == null
+          ? MediaLibraryViewDefaults.tableColumns(size)
+          : MediaTableColumn.decode(storedColumns),
+      titleScale: mediaListTitleScale,
+      heightScale: mediaListItemHeightScale,
+      crossSpacingScale: 0,
+      mainSpacingScale: 0,
+    );
+  }
+
+  /// Writes only the given fields into the current orientation's slots.
+  Future<void> updateRowsStyleFor(
+    Size size, {
+    int? columns,
+    double? rowExtent,
+    double? titleSize,
+    int? titleLines,
+    double? crossSpacing,
+    double? mainSpacing,
+    double? outerPadding,
+    bool? showThumbnail,
+    bool? showIndex,
+    bool? showMeta,
+    bool? showProgress,
+    bool? cardSurface,
+  }) async {
+    String k((String, String) keys) => _slotKeyFor(keys, size);
+    if (columns != null) {
+      await _writeSlotInt(
+        k(_rowsColumnsKeys),
+        columns.clamp(MediaLibraryViewDefaults.minRowsColumns, MediaLibraryViewDefaults.maxRowsColumns),
+      );
+    }
+    if (rowExtent != null) {
+      await _writeSlotDouble(
+        k(_rowsExtentKeys),
+        rowExtent.clamp(MediaLibraryViewDefaults.minRowsExtent, MediaLibraryViewDefaults.maxRowsExtent),
+      );
+    }
+    if (titleSize != null) {
+      await _writeSlotDouble(
+        k(_rowsTitleSizeKeys),
+        titleSize.clamp(MediaLibraryViewDefaults.minTitleSize, MediaLibraryViewDefaults.maxTitleSize),
+      );
+    }
+    if (titleLines != null) {
+      await _writeSlotInt(
+        k(_rowsTitleLinesKeys),
+        titleLines.clamp(MediaLibraryViewDefaults.minTitleLines, MediaLibraryViewDefaults.maxTitleLines),
+      );
+    }
+    if (crossSpacing != null) {
+      await _writeSlotDouble(
+        k(_rowsCrossSpacingKeys),
+        crossSpacing.clamp(MediaLibraryViewDefaults.minSpacing, MediaLibraryViewDefaults.maxSpacing),
+      );
+    }
+    if (mainSpacing != null) {
+      await _writeSlotDouble(
+        k(_rowsMainSpacingKeys),
+        mainSpacing.clamp(MediaLibraryViewDefaults.minSpacing, MediaLibraryViewDefaults.maxSpacing),
+      );
+    }
+    if (outerPadding != null) {
+      await _writeSlotDouble(
+        k(_rowsOuterPaddingKeys),
+        outerPadding.clamp(MediaLibraryViewDefaults.minOuterPadding, MediaLibraryViewDefaults.maxOuterPadding),
+      );
+    }
+    if (showThumbnail != null) {
+      await _writeSlotBool(k(_rowsShowThumbnailKeys), showThumbnail);
+    }
+    if (showIndex != null) {
+      await _writeSlotBool(k(_rowsShowIndexKeys), showIndex);
+    }
+    if (showMeta != null) {
+      await _writeSlotBool(k(_rowsShowMetaKeys), showMeta);
+    }
+    if (showProgress != null) {
+      await _writeSlotBool(k(_rowsShowProgressKeys), showProgress);
+    }
+    if (cardSurface != null) {
+      await _writeSlotBool(k(_rowsCardSurfaceKeys), cardSurface);
+    }
+    notifyListeners();
+  }
+
+  Future<void> updateTableStyleFor(
+    Size size, {
+    double? rowExtent,
+    double? titleSize,
+    double? outerPadding,
+    bool? showThumbnail,
+    bool? showIndex,
+    bool? striped,
+    Set<MediaTableColumn>? columns,
+  }) async {
+    String k((String, String) keys) => _slotKeyFor(keys, size);
+    if (rowExtent != null) {
+      await _writeSlotDouble(
+        k(_tableExtentKeys),
+        rowExtent.clamp(MediaLibraryViewDefaults.minTableExtent, MediaLibraryViewDefaults.maxTableExtent),
+      );
+    }
+    if (titleSize != null) {
+      await _writeSlotDouble(
+        k(_tableTitleSizeKeys),
+        titleSize.clamp(MediaLibraryViewDefaults.minTitleSize, MediaLibraryViewDefaults.maxTitleSize),
+      );
+    }
+    if (outerPadding != null) {
+      await _writeSlotDouble(
+        k(_tableOuterPaddingKeys),
+        outerPadding.clamp(MediaLibraryViewDefaults.minOuterPadding, MediaLibraryViewDefaults.maxOuterPadding),
+      );
+    }
+    if (showThumbnail != null) {
+      await _writeSlotBool(k(_tableShowThumbnailKeys), showThumbnail);
+    }
+    if (showIndex != null) {
+      await _writeSlotBool(k(_tableShowIndexKeys), showIndex);
+    }
+    if (striped != null) {
+      await _writeSlotBool(k(_tableStripedKeys), striped);
+    }
+    if (columns != null) {
+      await _prefs.setString(
+        k(_tableColumnsKeys),
+        MediaTableColumn.encode(columns),
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Drops the current orientation's overrides so responsive defaults apply.
+  Future<void> resetRowsStyleFor(Size size) async {
+    for (final keys in _rowsSlotKeys) {
+      await _prefs.remove(_slotKeyFor(keys, size));
+    }
+    notifyListeners();
+  }
+
+  Future<void> resetTableStyleFor(Size size) async {
+    for (final keys in _tableSlotKeys) {
+      await _prefs.remove(_slotKeyFor(keys, size));
+    }
+    notifyListeners();
+  }
+
+  /// Drops the current orientation's card-grid overrides (home/folder grid).
+  Future<void> resetGridStyleFor(Size size) async {
+    for (final keys in _gridSlotKeys) {
+      await _prefs.remove(_slotKeyFor(keys, size));
+    }
+    notifyListeners();
+  }
+
+  /// Retired proportional list style. Its values are kept for export and
+  /// for users who re-import old settings; nothing renders from it anymore.
+  MediaListStyleSettings legacyListStyleFor(Size size) {
     final slot = MediaLibraryLayoutDefaults.slotFor(size);
     return MediaListStyleSettings(
       crossAxisCount: _resolveColumns(
@@ -540,6 +1021,14 @@ class SettingsService extends ChangeNotifier {
     );
   }
 
+  /// Pinch-zoom column change for whichever row layout is active. The table
+  /// is always one column, so it ignores the gesture.
+  Future<void> updateActiveListColumnsFor(Size size, int columns) async {
+    if (mediaLibraryContentLayout == MediaLibraryContentLayout.table) return;
+    await updateRowsStyleFor(size, columns: columns);
+  }
+
+  /// Writes the retired proportional list slots (see [legacyListStyleFor]).
   Future<void> updateListStyleFor(
     Size size, {
     int? crossAxisCount,
@@ -933,7 +1422,8 @@ class SettingsService extends ChangeNotifier {
   /// they start so a multi-file import can never end up with mixed semantics.
   bool copyImportedMediaToPrivateStorage = false;
 
-  /// All acquisition methods share the root by default; users organise later.
+  /// Download/online imports share the root by default. Manual local imports
+  /// always use their initiating folder, independently of these preferences.
   String importCardPlacement = ImportCardPlacement.libraryRoot.storageValue;
   String importSourceFolderNamesJson = '{}';
   String importSourceFolderIdsJson = '{}';
@@ -949,6 +1439,9 @@ class SettingsService extends ChangeNotifier {
     ImportCardFeature feature, {
     String? openedFromFolderId,
   }) {
+    if (!feature.usesPlacementRules) {
+      return ImportPlacementRequest.explicit(feature, openedFromFolderId);
+    }
     final rule = importPlacementRules.effectiveRule(
       feature,
       importCardPlacementMode,
@@ -1091,11 +1584,19 @@ class SettingsService extends ChangeNotifier {
   // New: Subtitle Sidebar Font Scale (Portrait)
   double portraitSidebarFontSizeScale = 1.0;
 
+  // Toolbar visibility follows the playback page, independently of the media.
+  bool landscapeSidebarToolbarExpanded = true;
+  bool portraitSidebarToolbarExpanded = true;
+
   // Subtitle sidebar list timestamp layout (kept separate per orientation).
-  bool landscapeSidebarShowTimestamps = true;
-  bool portraitSidebarShowTimestamps = true;
+  bool landscapeSidebarShowTimestamps = false;
+  bool portraitSidebarShowTimestamps = false;
   double landscapeSidebarTimeColumnRatio = 0.18;
   double portraitSidebarTimeColumnRatio = 0.12;
+
+  // Shared by list/article views and portrait/landscape playback pages.
+  double transcriptFontWeight = TranscriptTypography.defaultFontWeight;
+  bool transcriptShowDividers = false;
 
   // Subtitle sidebar locate alignment, as a percentage from the top.
   int landscapeSidebarLocatePositionPercent = 30;
@@ -1153,6 +1654,15 @@ class SettingsService extends ChangeNotifier {
   double musicLyricSpacingScaleLandscape =
       MusicLyricTypography.defaultSpacingScale;
 
+  /// Secondary lyric size relative to the built-in pairing. 1 is that pairing.
+  double musicLyricSecondaryRatioPortrait =
+      MusicLyricTypography.defaultSecondaryRatio;
+  double musicLyricSecondaryRatioLandscape =
+      MusicLyricTypography.defaultSecondaryRatio;
+
+  /// Lyric faces for the music player only. Video subtitle fonts stay separate.
+  SubtitleTextStyle musicLyricTextStyle = MusicLyricFont.defaultStyle;
+
   /// Negative means the original responsive layout; custom values are 10–70%.
   double musicLyricAnchorPortrait = MusicLyricAnchor.automatic;
   double musicLyricAnchorLandscape = MusicLyricAnchor.automatic;
@@ -1165,6 +1675,9 @@ class SettingsService extends ChangeNotifier {
 
   /// 竖屏底部播放控件默认常驻；打开后允许闲置或滚动歌词时隐藏。
   bool musicPortraitControlsAutoHide = false;
+
+  /// 音乐进度条右侧时间。false 显示总时长；true 显示带负号的剩余时间。
+  bool musicProgressShowsRemaining = false;
 
   /// Music lyric role: both, primary or secondary. Unknown values load as both.
   String musicLyricTrackDisplayMode = 'both';
@@ -1236,10 +1749,32 @@ class SettingsService extends ChangeNotifier {
   // New: Auto Pause on Exit
   bool autoPauseOnExit = true;
 
-  // Skip the portrait player on mobile and open the landscape player
-  // directly. Tablets default to on, phones to off; desktop always skips
-  // regardless of this flag.
-  bool skipPortraitPlayer = false;
+  // Initialize an unset mobile preference from the first visible home window.
+  // Desktop playback always skips the portrait page regardless of this flag.
+  bool? _skipPortraitPlayer;
+  bool get skipPortraitPlayer => _skipPortraitPlayer ?? false;
+  set skipPortraitPlayer(bool value) => _skipPortraitPlayer = value;
+
+  /// Wait for loaded preferences and valid home metrics before saving once.
+  /// Subsequent rotations, launches and manual choices retain the saved value.
+  Future<void> initializeSkipPortraitPlayerForHome(Size homeSize) async {
+    if (!_initialized ||
+        _skipPortraitPlayer != null ||
+        kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS) ||
+        homeSize.isEmpty ||
+        !homeSize.width.isFinite ||
+        !homeSize.height.isFinite) {
+      return;
+    }
+    await saveSkipPortraitPlayer(
+      DefaultSettingsDevice(
+        defaultTargetPlatform,
+        homeSize,
+      ).skipPortraitPlayerByDefault,
+    );
+  }
 
   // Keep the complete primary/secondary subtitle group clear of visible
   // playback controls. Enabled by default on every platform.
@@ -1287,6 +1822,10 @@ class SettingsService extends ChangeNotifier {
   // Shared by portrait/landscape action rails, independent of card layout.
   bool showActionButtonLabels = true;
 
+  // Presentation only; imported titles and source files retain their names.
+  bool showLocalMediaExtensions = false;
+  bool localImportFilterMediaExtensions = true;
+
   String? largeDataRootPath;
 
   // New: Window Management
@@ -1301,6 +1840,9 @@ class SettingsService extends ChangeNotifier {
 
   // App-wide haptic feedback. Only surfaced on Android and iOS.
   bool enableHapticFeedback = true;
+
+  /// Two-finger video scaling, rotation and translation.
+  bool enableVideoTransformGestures = true;
 
   // New: Suppress Bilibili Restricted Dialog
   bool suppressBilibiliRestrictedDialog = false;
@@ -1322,6 +1864,8 @@ class SettingsService extends ChangeNotifier {
 
   bool batchSubtitleAutoDelete = false;
   bool processingScreenProtection = true;
+  int processingScreenProtectionWaitSeconds =
+      ProcessingScreenProtectionTiming.defaultSeconds;
   bool batchSubtitleKeepScreenAwake = false;
 
   /// Batch page only. Off until the user turns it on. Tasks started elsewhere
@@ -1354,12 +1898,14 @@ class SettingsService extends ChangeNotifier {
   _RegisteredSetting<bool> _boolSetting({
     required String key,
     required bool defaultValue,
+    bool Function()? resolveDefaultValue,
     required void Function(SettingsService service, bool value) apply,
     bool Function(bool value)? normalize,
   }) {
     return _RegisteredSetting<bool>(
       key: key,
       defaultValue: defaultValue,
+      resolveDefaultValue: resolveDefaultValue,
       read: (prefs, settingKey, fallback) =>
           prefs.getBool(settingKey) ?? fallback,
       write: (prefs, settingKey, value) => prefs.setBool(settingKey, value),
@@ -1689,10 +2235,7 @@ class SettingsService extends ChangeNotifier {
       ),
       _boolSetting(
         key: 'skipPortraitPlayer',
-        defaultValue:
-            !kIsWeb &&
-            (Platform.isAndroid || Platform.isIOS) &&
-            DeviceFormFactor.isTabletLikeDevice(),
+        defaultValue: false,
         apply: (service, value) => service.skipPortraitPlayer = value,
       ),
       _boolSetting(
@@ -1764,6 +2307,17 @@ class SettingsService extends ChangeNotifier {
         apply: (service, value) => service.showActionButtonLabels = value,
       ),
       _boolSetting(
+        key: 'showLocalMediaExtensions',
+        defaultValue: false,
+        apply: (service, value) => service.showLocalMediaExtensions = value,
+      ),
+      _boolSetting(
+        key: 'localImportFilterMediaExtensions',
+        defaultValue: true,
+        apply: (service, value) =>
+            service.localImportFilterMediaExtensions = value,
+      ),
+      _boolSetting(
         key: 'enableSeekPreview',
         defaultValue: true,
         apply: (service, value) => service.enableSeekPreview = value,
@@ -1777,6 +2331,11 @@ class SettingsService extends ChangeNotifier {
         key: 'enableHapticFeedback',
         defaultValue: true,
         apply: (service, value) => service.enableHapticFeedback = value,
+      ),
+      _boolSetting(
+        key: 'enableVideoTransformGestures',
+        defaultValue: true,
+        apply: (service, value) => service.enableVideoTransformGestures = value,
       ),
       _boolSetting(
         key: 'suppressBilibiliRestrictedDialog',
@@ -1867,8 +2426,46 @@ class SettingsService extends ChangeNotifier {
       _intSetting(
         key: 'mediaLibraryViewMode',
         defaultValue: 0,
-        normalize: (value) => value.clamp(0, 1),
+        normalize: (value) =>
+            value.clamp(0, MediaLibraryViewMode.values.length - 1),
         apply: (service, value) => service.mediaLibraryViewMode = value,
+      ),
+      _stringSetting(
+        key: 'mediaTableSortKey',
+        defaultValue: MediaTableSortKey.manual.name,
+        normalize: (value) => MediaTableSortKey.fromStorage(value).name,
+        apply: (service, value) => service.mediaTableSortKey = value,
+      ),
+      _boolSetting(
+        key: 'mediaTableSortDescending',
+        defaultValue: false,
+        apply: (service, value) => service.mediaTableSortDescending = value,
+      ),
+      _intSetting(
+        key: 'mediaTreeContentMode',
+        defaultValue: MediaLibraryContentLayout.rows.index,
+        normalize: (value) =>
+            value.clamp(0, MediaLibraryContentLayout.values.length - 1),
+        apply: (service, value) => service.mediaTreeContentMode = value,
+      ),
+      _doubleSetting(
+        key: 'mediaTreeSidebarWidth',
+        defaultValue: MediaLibraryViewDefaults.treeSidebarWidth,
+        normalize: (value) => value.clamp(
+          MediaLibraryViewDefaults.minTreeSidebarWidth,
+          MediaLibraryViewDefaults.maxTreeSidebarWidth,
+        ),
+        apply: (service, value) => service.mediaTreeSidebarWidth = value,
+      ),
+      _boolSetting(
+        key: 'mediaTreeShowCounts',
+        defaultValue: true,
+        apply: (service, value) => service.mediaTreeShowCounts = value,
+      ),
+      _boolSetting(
+        key: 'mediaTreeSidebarCollapsed',
+        defaultValue: false,
+        apply: (service, value) => service.mediaTreeSidebarCollapsed = value,
       ),
       _stringSetting(
         key: 'mediaLibraryRootEntry',
@@ -1888,7 +2485,7 @@ class SettingsService extends ChangeNotifier {
       ),
       _boolSetting(
         key: 'mediaLibraryRestoreLastPage',
-        defaultValue: true,
+        defaultValue: false,
         apply: (service, value) => service.mediaLibraryRestoreLastPage = value,
       ),
       _boolSetting(
@@ -2122,16 +2719,39 @@ class SettingsService extends ChangeNotifier {
         apply: (service, value) => service.portraitSidebarFontSizeScale = value,
       ),
       _boolSetting(
-        key: 'landscapeSidebarShowTimestamps',
+        key: 'landscapeSidebarToolbarExpanded',
         defaultValue: true,
+        apply: (service, value) =>
+            service.landscapeSidebarToolbarExpanded = value,
+      ),
+      _boolSetting(
+        key: 'portraitSidebarToolbarExpanded',
+        defaultValue: true,
+        apply: (service, value) =>
+            service.portraitSidebarToolbarExpanded = value,
+      ),
+      _boolSetting(
+        key: 'landscapeSidebarShowTimestamps',
+        defaultValue: false,
         apply: (service, value) =>
             service.landscapeSidebarShowTimestamps = value,
       ),
       _boolSetting(
         key: 'portraitSidebarShowTimestamps',
-        defaultValue: true,
+        defaultValue: false,
         apply: (service, value) =>
             service.portraitSidebarShowTimestamps = value,
+      ),
+      _doubleSetting(
+        key: 'transcriptFontWeight',
+        defaultValue: TranscriptTypography.defaultFontWeight,
+        normalize: TranscriptTypography.normalizeFontWeight,
+        apply: (service, value) => service.transcriptFontWeight = value,
+      ),
+      _boolSetting(
+        key: 'transcriptShowDividers',
+        defaultValue: false,
+        apply: (service, value) => service.transcriptShowDividers = value,
       ),
       _doubleSetting(
         key: 'landscapeSidebarTimeColumnRatio',
@@ -2268,6 +2888,27 @@ class SettingsService extends ChangeNotifier {
             service.musicLyricSpacingScaleLandscape = value,
       ),
       _doubleSetting(
+        key: 'musicLyricSecondaryRatioPortrait',
+        defaultValue: MusicLyricTypography.defaultSecondaryRatio,
+        normalize: MusicLyricTypography.normalizeSecondaryRatio,
+        apply: (service, value) =>
+            service.musicLyricSecondaryRatioPortrait = value,
+      ),
+      _doubleSetting(
+        key: 'musicLyricSecondaryRatioLandscape',
+        defaultValue: MusicLyricTypography.defaultSecondaryRatio,
+        normalize: MusicLyricTypography.normalizeSecondaryRatio,
+        apply: (service, value) =>
+            service.musicLyricSecondaryRatioLandscape = value,
+      ),
+      _stringSetting(
+        key: 'musicLyricTextStyle',
+        defaultValue: MusicLyricFont.defaultStorage,
+        normalize: MusicLyricFont.normalizeStorage,
+        apply: (service, value) =>
+            service.musicLyricTextStyle = MusicLyricFont.decode(value),
+      ),
+      _doubleSetting(
         key: 'musicLyricAnchorPortrait',
         defaultValue: MusicLyricAnchor.automatic,
         normalize: MusicLyricAnchor.normalize,
@@ -2297,6 +2938,13 @@ class SettingsService extends ChangeNotifier {
         apply: (service, value) =>
             service.musicPortraitControlsAutoHide = value,
       ),
+      // 缺省显示总时长。点一下改成剩余时间后，下次打开仍是剩余时间。
+      _boolSetting(
+        key: 'musicProgressShowsRemaining',
+        defaultValue: false,
+        apply: (service, value) =>
+            service.musicProgressShowsRemaining = value,
+      ),
       _stringSetting(
         key: 'musicLyricTrackDisplayMode',
         defaultValue: 'both',
@@ -2312,6 +2960,13 @@ class SettingsService extends ChangeNotifier {
         key: 'processingScreenProtection',
         defaultValue: true,
         apply: (service, value) => service.processingScreenProtection = value,
+      ),
+      _intSetting(
+        key: 'processingScreenProtectionWaitSeconds',
+        defaultValue: ProcessingScreenProtectionTiming.defaultSeconds,
+        normalize: ProcessingScreenProtectionTiming.normalize,
+        apply: (service, value) =>
+            service.processingScreenProtectionWaitSeconds = value,
       ),
       _boolSetting(
         key: 'batchSubtitleKeepScreenAwake',
@@ -2391,6 +3046,9 @@ class SettingsService extends ChangeNotifier {
     for (final setting in _registeredSettings) {
       await setting.loadInto(this, _prefs);
     }
+    if (!_prefs.containsKey('skipPortraitPlayer')) {
+      _skipPortraitPlayer = null;
+    }
     // A previously collapsed separate Bilibili panel preferred subtitles.
     // Keep that choice until the user explicitly selects a shared-sidebar tab.
     if (!_prefs.containsKey('bilibiliLandscapeShowsSubtitles')) {
@@ -2438,6 +3096,8 @@ class SettingsService extends ChangeNotifier {
     'showSystemMediaNotification',
     'bilibiliLandscapeShowsSubtitles',
     'landscapeSubtitleSidebarVisible',
+    'landscapeSidebarToolbarExpanded',
+    'portraitSidebarToolbarExpanded',
   };
 
   final Map<String, int> _coalescedBoolEpoch = <String, int>{};
@@ -2457,6 +3117,10 @@ class SettingsService extends ChangeNotifier {
         return bilibiliLandscapeShowsSubtitles;
       case 'landscapeSubtitleSidebarVisible':
         return isLandscapeSubtitleSidebarVisible;
+      case 'landscapeSidebarToolbarExpanded':
+        return landscapeSidebarToolbarExpanded;
+      case 'portraitSidebarToolbarExpanded':
+        return portraitSidebarToolbarExpanded;
       default:
         return false;
     }
@@ -2598,6 +3262,22 @@ class SettingsService extends ChangeNotifier {
     await _updateRegisteredSetting('musicLyricSpacingScaleLandscape', value);
   }
 
+  Future<void> updateMusicLyricSecondaryRatioPortrait(double value) async {
+    await _updateRegisteredSetting('musicLyricSecondaryRatioPortrait', value);
+  }
+
+  Future<void> updateMusicLyricSecondaryRatioLandscape(double value) async {
+    await _updateRegisteredSetting('musicLyricSecondaryRatioLandscape', value);
+  }
+
+  /// Music lyric faces only. Does not write the video subtitle style.
+  Future<void> updateMusicLyricTextStyle(SubtitleTextStyle style) async {
+    await _updateRegisteredSetting(
+      'musicLyricTextStyle',
+      jsonEncode(style.toJson()),
+    );
+  }
+
   Future<void> updateMusicLyricAnchorPortrait(double value) async {
     await _updateRegisteredSetting('musicLyricAnchorPortrait', value);
   }
@@ -2618,6 +3298,11 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> updateMusicPortraitControlsAutoHide(bool value) async {
     await _updateRegisteredSetting('musicPortraitControlsAutoHide', value);
+  }
+
+  /// 进度条右侧是总时长还是剩余时间。内存先改，界面当帧就能跟上。
+  Future<void> updateMusicProgressShowsRemaining(bool value) async {
+    await _updateRegisteredSetting('musicProgressShowsRemaining', value);
   }
 
   /// Persists the music player's lyric role. This is independent of the
@@ -2852,8 +3537,11 @@ class SettingsService extends ChangeNotifier {
     _positionStore = null;
     subtitlePositionSaveError = null;
     _initialized = false;
+    _skipPortraitPlayer = null;
     _restoredDefaultTrialRuntime = null;
     showActionButtonLabels = true;
+    showLocalMediaExtensions = false;
+    localImportFilterMediaExtensions = true;
     mediaLibraryReadableCardDefaults = false;
     bilibiliDanmakuReadableFontDefaults = false;
     mediaLibraryLastFolderIncludeDescendants = false;
@@ -2873,11 +3561,17 @@ class SettingsService extends ChangeNotifier {
         MusicLyricTypography.defaultFontSizeScale;
     musicLyricSpacingScalePortrait = MusicLyricTypography.defaultSpacingScale;
     musicLyricSpacingScaleLandscape = MusicLyricTypography.defaultSpacingScale;
+    musicLyricSecondaryRatioPortrait =
+        MusicLyricTypography.defaultSecondaryRatio;
+    musicLyricSecondaryRatioLandscape =
+        MusicLyricTypography.defaultSecondaryRatio;
+    musicLyricTextStyle = MusicLyricFont.defaultStyle;
     musicLyricAnchorPortrait = MusicLyricAnchor.automatic;
     musicLyricAnchorLandscape = MusicLyricAnchor.automatic;
     musicLyricWordByWordEnabled = true;
     musicLyricBlurEnabled = true;
     musicPortraitControlsAutoHide = false;
+    musicProgressShowsRemaining = false;
     bilibiliCacheLimitBytes = bilibiliCacheLimitDefault;
     importCardPlacement = ImportCardPlacement.libraryRoot.storageValue;
     importSourceFolderNamesJson = '{}';
@@ -3883,6 +4577,10 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> saveEnableHapticFeedback(bool value) async {
     await _updateRegisteredSetting<bool>('enableHapticFeedback', value);
+  }
+
+  Future<void> saveEnableVideoTransformGestures(bool value) async {
+    await _updateRegisteredSetting<bool>('enableVideoTransformGestures', value);
   }
 
   Future<void> saveLeftHandedMode(bool value) async {
@@ -4933,6 +5631,44 @@ class SettingsService extends ChangeNotifier {
     'mediaListShowThumbnailLandscape',
     'mediaListShowIndexPortrait',
     'mediaListShowIndexLandscape',
+    'mediaListRowsColumnsPortrait',
+    'mediaListRowsColumnsLandscape',
+    'mediaListRowsExtentPortrait',
+    'mediaListRowsExtentLandscape',
+    'mediaListRowsTitleSizePortrait',
+    'mediaListRowsTitleSizeLandscape',
+    'mediaListRowsTitleLinesPortrait',
+    'mediaListRowsTitleLinesLandscape',
+    'mediaListRowsCrossSpacingPortrait',
+    'mediaListRowsCrossSpacingLandscape',
+    'mediaListRowsMainSpacingPortrait',
+    'mediaListRowsMainSpacingLandscape',
+    'mediaListRowsOuterPaddingPortrait',
+    'mediaListRowsOuterPaddingLandscape',
+    'mediaListRowsShowThumbnailPortrait',
+    'mediaListRowsShowThumbnailLandscape',
+    'mediaListRowsShowIndexPortrait',
+    'mediaListRowsShowIndexLandscape',
+    'mediaListRowsShowMetaPortrait',
+    'mediaListRowsShowMetaLandscape',
+    'mediaListRowsShowProgressPortrait',
+    'mediaListRowsShowProgressLandscape',
+    'mediaListRowsCardSurfacePortrait',
+    'mediaListRowsCardSurfaceLandscape',
+    'mediaListTableExtentPortrait',
+    'mediaListTableExtentLandscape',
+    'mediaListTableTitleSizePortrait',
+    'mediaListTableTitleSizeLandscape',
+    'mediaListTableOuterPaddingPortrait',
+    'mediaListTableOuterPaddingLandscape',
+    'mediaListTableShowThumbnailPortrait',
+    'mediaListTableShowThumbnailLandscape',
+    'mediaListTableShowIndexPortrait',
+    'mediaListTableShowIndexLandscape',
+    'mediaListTableStripedPortrait',
+    'mediaListTableStripedLandscape',
+    'mediaListTableColumnsPortrait',
+    'mediaListTableColumnsLandscape',
   ];
 
   Map<String, dynamic> _subtitleSettingsSnapshot({
@@ -4981,6 +5717,8 @@ class SettingsService extends ChangeNotifier {
     return {
       'general': {
         'processingScreenProtection': processingScreenProtection,
+        'processingScreenProtectionWaitSeconds':
+            processingScreenProtectionWaitSeconds,
         'isLeftHandedMode': isLeftHandedMode,
         'isMirroredH': isMirroredH,
         'isMirroredV': isMirroredV,
@@ -5010,10 +5748,13 @@ class SettingsService extends ChangeNotifier {
         'enableSeekPreview': enableSeekPreview,
         'experimentalAmbientLetterbox': experimentalAmbientLetterbox,
         'enableHapticFeedback': enableHapticFeedback,
+        'enableVideoTransformGestures': enableVideoTransformGestures,
         'isActionButtonsCollapsed': isActionButtonsCollapsed,
       },
       'layout': {
         'showActionButtonLabels': showActionButtonLabels,
+        'showLocalMediaExtensions': showLocalMediaExtensions,
+        'localImportFilterMediaExtensions': localImportFilterMediaExtensions,
         'userSubtitleSidebarWidth': userSubtitleSidebarWidth,
         'userAiSidebarWidth': userAiSidebarWidth,
         'landscapeSubtitleSidebarVisible': isLandscapeSubtitleSidebarVisible,
@@ -5023,8 +5764,12 @@ class SettingsService extends ChangeNotifier {
         'bilibiliLandscapeShowsSubtitles': bilibiliLandscapeShowsSubtitles,
         'landscapeSidebarFontSizeScale': landscapeSidebarFontSizeScale,
         'portraitSidebarFontSizeScale': portraitSidebarFontSizeScale,
+        'landscapeSidebarToolbarExpanded': landscapeSidebarToolbarExpanded,
+        'portraitSidebarToolbarExpanded': portraitSidebarToolbarExpanded,
         'landscapeSidebarShowTimestamps': landscapeSidebarShowTimestamps,
         'portraitSidebarShowTimestamps': portraitSidebarShowTimestamps,
+        'transcriptFontWeight': transcriptFontWeight,
+        'transcriptShowDividers': transcriptShowDividers,
         'landscapeSidebarTimeColumnRatio': landscapeSidebarTimeColumnRatio,
         'portraitSidebarTimeColumnRatio': portraitSidebarTimeColumnRatio,
         'landscapeSidebarLocatePositionPercent':
@@ -5056,6 +5801,12 @@ class SettingsService extends ChangeNotifier {
         'homeCardTitleFontSize': homeCardTitleFontSize,
         'homeCardAspectRatio': homeCardAspectRatio,
         'mediaLibraryViewMode': mediaLibraryViewMode,
+        'mediaTableSortKey': mediaTableSortKey,
+        'mediaTableSortDescending': mediaTableSortDescending,
+        'mediaTreeContentMode': mediaTreeContentMode,
+        'mediaTreeSidebarWidth': mediaTreeSidebarWidth,
+        'mediaTreeShowCounts': mediaTreeShowCounts,
+        'mediaTreeSidebarCollapsed': mediaTreeSidebarCollapsed,
         'mediaLibraryRootEntryOrder': mediaLibraryRootEntryOrder,
         'mediaLibraryRestoreLastPage': mediaLibraryRestoreLastPage,
         'mediaLibraryReadableCardDefaults': mediaLibraryReadableCardDefaults,
@@ -5167,19 +5918,25 @@ class SettingsService extends ChangeNotifier {
         'musicLyricFontSizeScaleLandscape': musicLyricFontSizeScaleLandscape,
         'musicLyricSpacingScalePortrait': musicLyricSpacingScalePortrait,
         'musicLyricSpacingScaleLandscape': musicLyricSpacingScaleLandscape,
+        'musicLyricSecondaryRatioPortrait': musicLyricSecondaryRatioPortrait,
+        'musicLyricSecondaryRatioLandscape': musicLyricSecondaryRatioLandscape,
+        'musicLyricTextStyle': musicLyricTextStyle.toJson(),
         'musicLyricAnchorPortrait': musicLyricAnchorPortrait,
         'musicLyricAnchorLandscape': musicLyricAnchorLandscape,
         'musicLyricTrackDisplayMode': musicLyricTrackDisplayMode,
         'musicLyricWordByWordEnabled': musicLyricWordByWordEnabled,
         'musicLyricBlurEnabled': musicLyricBlurEnabled,
         'musicPortraitControlsAutoHide': musicPortraitControlsAutoHide,
+        'musicProgressShowsRemaining': musicProgressShowsRemaining,
       },
     };
   }
 
   Map<String, dynamic> _exportLibraryLayout(Size size) {
     final cards = homeCardStyleFor(size);
-    final list = listStyleFor(size);
+    final list = legacyListStyleFor(size);
+    final rows = rowsStyleFor(size);
+    final table = tableStyleFor(size);
     return {
       'cards': {
         'crossAxisCount': cards.crossAxisCount,
@@ -5196,6 +5953,29 @@ class SettingsService extends ChangeNotifier {
         'mainSpacingScale': list.mainSpacingScale,
         'showThumbnail': list.showThumbnail,
         'showIndex': list.showIndex,
+      },
+      'rows': {
+        'columns': rows.crossAxisCount,
+        'rowExtent': rows.rowExtent,
+        'titleSize': rows.titleSize,
+        'titleLines': rows.titleLines,
+        'crossSpacing': rows.crossSpacing,
+        'mainSpacing': rows.mainSpacing,
+        'outerPadding': rows.outerPadding,
+        'showThumbnail': rows.showThumbnail,
+        'showIndex': rows.showIndex,
+        'showMeta': rows.showMeta,
+        'showProgress': rows.showProgress,
+        'cardSurface': rows.cardSurface,
+      },
+      'table': {
+        'rowExtent': table.rowExtent,
+        'titleSize': table.titleSize,
+        'outerPadding': table.outerPadding,
+        'showThumbnail': table.showThumbnail,
+        'showIndex': table.showIndex,
+        'striped': table.striped,
+        'columns': MediaTableColumn.encode(table.tableColumns),
       },
     };
   }

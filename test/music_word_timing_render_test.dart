@@ -15,7 +15,7 @@ void main() {
   setUpAll(() async {
     for (final entry in {
       'Inter': 'assets/fonts/Inter-ExtraBold.otf',
-      'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Medium.otf',
+      'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
     }.entries) {
       await (FontLoader(
         entry.key,

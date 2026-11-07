@@ -180,7 +180,7 @@ void main() {
     expect(settings.bilibiliDanmakuShadowScale, 1.5);
     expect(settings.bilibiliDanmakuLetterSpacing, .12);
     expect(settings.bilibiliDanmakuOpacity, 0.55);
-    expect(settings.bilibiliDanmakuFontFamily, 'MiSans');
+    expect(settings.bilibiliDanmakuFontFamily, 'Noto Sans SC');
     expect(settings.bilibiliDanmakuFontWeight, 800);
     expect(settings.bilibiliDanmakuOutlineType, DanmakuOutlineType.projection);
 

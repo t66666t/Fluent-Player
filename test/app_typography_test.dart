@@ -14,7 +14,7 @@ import 'package:video_player_app/widgets/bilibili_restricted_dialog.dart';
 ThemeData previewTheme() => ThemeData(
   brightness: Brightness.dark,
   useMaterial3: true,
-  fontFamily: 'MiSans',
+  fontFamily: 'Noto Sans SC',
   textTheme: appTextTheme(),
   scaffoldBackgroundColor: const Color(0xFF121212),
   colorScheme: const ColorScheme.dark(
@@ -94,14 +94,12 @@ void main() {
     final output = Platform.environment['TYPOGRAPHY_PREVIEW_DIR'];
     if (output == null) return;
     await tester.runAsync(() async {
-      final fonts = FontLoader('MiSans');
-      for (final weight in ['Regular']) {
-        fonts.addFont(rootBundle.load('assets/fonts/MiSans-$weight.otf'));
-      }
+      final fonts = FontLoader('Noto Sans SC');
+      fonts.addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
       await fonts.load();
       await (FontLoader(
         'App Reading',
-      )..addFont(rootBundle.load('assets/fonts/MiSans-Normal.otf'))).load();
+      )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     });
     tester.view.physicalSize = const Size(1080, 640);
     tester.view.devicePixelRatio = 1;

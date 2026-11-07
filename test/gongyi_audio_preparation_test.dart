@@ -3,6 +3,40 @@ import 'package:video_player_app/services/gongyi_asr_service.dart';
 import 'package:video_player_app/services/gongyi_audio_preparation.dart';
 
 void main() {
+  test(
+    'public speech uploads prefer MP3 while existing planning defaults remain compatible',
+    () {
+      for (final codec in ['aac', 'flac']) {
+        expect(
+          GongyiAudioPreparationPlan.choose(
+            path: 'audio.m4a',
+            codec: codec,
+            durationSeconds: 300,
+            sliceSeconds: 300,
+            wholeFile: true,
+            isAudioInput: true,
+            fileBytes: 1000000,
+            preferMp3: true,
+          ),
+          GongyiAudioPreparation.transcode,
+        );
+      }
+      expect(
+        GongyiAudioPreparationPlan.choose(
+          path: 'audio.mp3',
+          codec: 'mp3',
+          durationSeconds: 300,
+          sliceSeconds: 300,
+          wholeFile: true,
+          isAudioInput: true,
+          fileBytes: 1000000,
+          preferMp3: true,
+        ),
+        GongyiAudioPreparation.direct,
+      );
+    },
+  );
+
   GongyiAudioPreparation plan({
     String path = 'speech.m4a',
     String? codec = 'aac',

@@ -113,12 +113,29 @@ class AiChatTextMetrics {
   final double fontSize;
   final double baseFontSize;
   final bool dense;
-  double get lineHeight => dense ? 1.45 : 1.6;
+  double get horizontalInset => dense ? 8 : 12;
+
+  /// CJK prose needs more leading than Latin defaults: mainstream chat UIs
+  /// set Latin body at ~1.5–1.63, while Chinese reading guidance calls for
+  /// 1.7–1.8. Dense layouts keep a tighter 1.55 instead of 1.45 so landscape
+  /// answers never collide.
+  double get lineHeight => dense ? 1.55 : 1.72;
+
   double get codeSize => fontSize - 1;
   double get heading1 => fontSize * (dense ? 1.4 : 1.55);
   double get heading2 => fontSize * (dense ? 1.25 : 1.35);
   double get heading3 => fontSize * 1.14;
-  double get blockSpacing => dense ? 6 : 10;
+
+  /// Paragraph gaps must scale with the reading size so scaled-up text keeps
+  /// separable paragraphs (a fixed gap shrank to ~0.4em at 1.6x scale), and
+  /// must stay clearly larger than the in-paragraph leading (~0.85em vs the
+  /// 0.7em between lines) so the eye can find the next paragraph.
+  double get blockSpacing => fontSize * (dense ? .6 : .95);
+
+  /// Widest comfortable measure for one reading column (about 45 CJK glyphs
+  /// at 16px), matching the welcome column and mainstream chat widths.
+  static const double measure = 720;
+
   TextStyle get bodyStyle =>
       appReadingStyle.copyWith(fontSize: fontSize, height: lineHeight);
 

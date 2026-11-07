@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../utils/subtitle_parser.dart';
 import '../models/subtitle_model.dart';
+import '../widgets/media_library_page_shortcuts.dart';
 
 class SubtitlePreviewScreen extends StatefulWidget {
   final String subtitlePath;
@@ -56,7 +57,10 @@ class _SubtitlePreviewScreenState extends State<SubtitlePreviewScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      MediaLibraryPageShortcuts(child: _buildPreview());
+
+  Widget _buildPreview() {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(

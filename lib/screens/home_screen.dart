@@ -1,4 +1,4 @@
-import '../widgets/bilibili_restricted_dialog.dart';
+import '../utils/app_branding.dart';
 import '../widgets/bilibili_part_cover.dart';
 import '../widgets/media_library_card_preload.dart';
 import '../widgets/library_card_rebuild.dart';
@@ -11,8 +11,6 @@ import '../widgets/media_library_card_scale.dart';
 import '../widgets/storage_settings_dialog.dart';
 import '../widgets/keyboard_shortcut_help.dart';
 import '../utils/keyboard_shortcut_hints.dart';
-import '../features/cloud_drive/presentation/cloud_drive_screen.dart';
-import '../features/cloud_drive/presentation/cloud_drive_navigation.dart';
 import 'dart:io';
 import '../features/podcasts/podcast_pages.dart';
 import '../features/podcasts/podcast_widgets.dart';
@@ -46,8 +44,10 @@ import '../widgets/cached_thumbnail_widget.dart';
 import '../widgets/folder_placeholder_cover.dart';
 import '../widgets/library_rename_dialog.dart';
 import '../widgets/media_library_list_tile.dart';
+import '../widgets/media_display_title.dart';
 import '../widgets/media_library_item_interaction_wrapper.dart';
 import '../widgets/media_library_grid_card.dart';
+import '../widgets/media_library_keyboard_navigation.dart';
 import '../widgets/media_library_gestures.dart';
 import '../widgets/media_library_activity_menu.dart';
 import '../widgets/media_library_action_dock.dart';
@@ -62,13 +62,17 @@ import '../widgets/media_library_settings_sheet.dart';
 import '../widgets/media_library_search_prompt.dart';
 import '../services/home_search_navigation.dart';
 import '../widgets/media_library_compact_app_bar.dart';
+import '../features/external_ai/external_ai_toolbar_action.dart';
+import '../features/external_ai/external_ai_workspace_context.dart';
 import '../widgets/media_library_entry_switcher.dart';
 import '../widgets/media_library_recent_intent.dart';
 import '../widgets/media_library_recent_view.dart';
 import '../widgets/media_library_continue_view.dart';
 import '../widgets/media_library_root_surface_host.dart';
-import 'bilibili/bilibili_home_page.dart';
 import '../models/media_library_root_entry.dart';
+import '../models/media_library_view_mode.dart';
+import '../widgets/media_library_table_header.dart';
+import '../widgets/media_library_table_sort.dart';
 import '../models/media_library_root_entry_order.dart';
 import '../services/media_library_navigation.dart';
 import '../widgets/media_library_selection_bottom_bar.dart';
@@ -78,10 +82,7 @@ import '../widgets/media_library_virtual_selection_host.dart';
 import '../utils/media_library_virtual_selection_actions.dart';
 import '../features/portable_transfer/portable_transfer_navigation.dart';
 import 'package:flutter/services.dart';
-import '../services/bilibili/bilibili_api_service.dart';
-import '../services/bilibili/bilibili_download_service.dart';
 
-import 'package:video_player_app/widgets/bilibili_login_dialogs.dart';
 import '../widgets/playback_card_layout.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import '../widgets/video_action_buttons.dart';
@@ -90,7 +91,7 @@ import '../widgets/sleep_timer_dialog.dart';
 import '../services/media_playback_service.dart';
 import '../services/playback_navigation_service.dart';
 import '../services/playlist_manager.dart';
-import '../services/system_media_session_service.dart';
+import '../services/startup_notification_permission.dart';
 import 'dart:convert';
 import '../utils/app_toast.dart';
 import '../utils/media_library_range_selection.dart';
@@ -100,7 +101,6 @@ import '../utils/hardware_keyboard_shortcuts.dart';
 import '../utils/page_shortcut_keys.dart';
 import '../utils/media_library_entry_shortcuts.dart';
 
-import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 class _BoxSelectionPainter extends CustomPainter {
@@ -190,8 +190,9 @@ class _HomeScreenState extends State<HomeScreen>
   );
   bool _showExportSettingsButton = false;
   final FocusNode _shortcutFocusNode = FocusNode();
+  final GlobalKey<MediaLibraryKeyboardRegionState> _keyboardRegionKey =
+      GlobalKey<MediaLibraryKeyboardRegionState>();
   bool? _lastIsFullScreen;
-  bool _bilibiliLoginCheckQueued = false;
   late final AnimationController _revealHighlightController;
   Timer? _revealHighlightTimer;
   bool _didScheduleReveal = false;
@@ -224,15 +225,130 @@ class _HomeScreenState extends State<HomeScreen>
     MediaLibraryRootEntry.continueLearning,
     MediaLibraryRootEntry.recent,
     MediaLibraryRootEntry.folders,
-    MediaLibraryRootEntry.bilibili,
     MediaLibraryRootEntry.podcasts,
-    MediaLibraryRootEntry.cloudDrive,
   };
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _libraryShell = MediaLibraryShell.maybeOf(context);
+    _publishExternalAiWorkspace();
+  }
+
+  void _publishExternalAiWorkspace() {
+    final workspace = ExternalAiWorkspaceContext.instance;
+    if (!mounted || !isMediaLibraryRouteCurrent(context)) {
+      workspace.clear(this);
+      return;
+    }
+    final library = context.read<LibraryService>();
+    final view = !library.isInitialized || !_rootSwipeSettled.value
+        ? ExternalAiWorkspaceView.unknown
+        : switch (_displayedRootEntry()) {
+            MediaLibraryRootEntry.folders =>
+              ExternalAiWorkspaceView.libraryRoot,
+            MediaLibraryRootEntry.recent => ExternalAiWorkspaceView.recent,
+            MediaLibraryRootEntry.continueLearning =>
+              ExternalAiWorkspaceView.continueLearning,
+            _ => ExternalAiWorkspaceView.unknown,
+          };
+    workspace.publish(owner: this, viewType: view);
+  }
+
+  List<dynamic> _visibleBrowseContents(
+    LibraryService library,
+    SettingsService settings,
+  ) {
+    final raw = library.browseContents(null);
+    if (settings.mediaLibraryContentLayout == MediaLibraryContentLayout.table) {
+      return sortMediaLibraryContents(
+        raw,
+        settings.mediaTableSort,
+        settings.mediaTableSortDescending,
+        library: library,
+      );
+    }
+    return raw;
+  }
+
+  bool _showUndockedFolderTreeButton(SettingsService settings) {
+    if (!settings.mediaLibraryShowsFolderTree) return false;
+    final shell = _libraryShell ?? MediaLibraryShell.maybeOf(context);
+    return shell != null && !shell.folderTreeDocked;
+  }
+
+  Widget _buildFolderTreeToolbarButton({required bool compact}) {
+    void openTree() => _libraryShell?.openFolderTree();
+    if (compact) {
+      return MediaLibraryCompactIconButton(
+        icon: Icons.account_tree_outlined,
+        tooltip: '文件夹树',
+        onPressed: openTree,
+      );
+    }
+    return DesktopButtonClickRegion(
+      child: IconButton(
+        icon: const Icon(Icons.account_tree_outlined, color: AppTokens.text2),
+        tooltip: '文件夹树',
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+        onPressed: openTree,
+      ),
+    );
+  }
+
+  Widget _wrapScrollAreaWithTableHeader({
+    required BuildContext context,
+    required SettingsService settings,
+    required Widget child,
+  }) {
+    final isTable =
+        settings.mediaLibraryContentLayout == MediaLibraryContentLayout.table;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final duration = disableAnimations
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final style = settings.listStyleFor(MediaQuery.sizeOf(context));
+        final headerHeight = isTable
+            ? MediaLibraryTableHeader.heightFor(style, width: width)
+            : 0.0;
+
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            AnimatedPadding(
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(top: headerHeight),
+              child: child,
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedSize(
+                duration: duration,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedOpacity(
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  opacity: isTable ? 1 : 0,
+                  child: isTable
+                      ? MediaLibraryTableHeader(style: style, width: width)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// The drop cover dims the frame's mini player as well as this page.
@@ -355,6 +471,14 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     return [
+      if (ExternalAiToolbarAction.isSupported)
+        const ExternalAiToolbarAction(compact: true),
+      // An active timer stays outside the trio so it cannot split them.
+      _buildCompactSleepTimerButton(),
+      // Search, library settings, and more stay on the bar at every compact
+      // width. Settings used to live only inside「更多」; it is opened too
+      // often to fold. The shared narrow slot keeps the cluster from
+      // outweighing the page titles on the left.
       MediaLibraryCompactIconButton(
         icon: Icons.search_rounded,
         tooltip: _managementTooltip(
@@ -362,15 +486,26 @@ class _HomeScreenState extends State<HomeScreen>
           DesktopMediaManagementShortcutAction.openSearch,
         ),
         onPressed: _openSearch,
-        width: 40,
-        iconSize: 20,
+        width: mediaLibraryHomePinnedActionWidth,
+        iconSize: mediaLibraryHomePinnedActionIconSize,
       ),
-      _buildCompactSleepTimerButton(),
+      MediaLibraryCompactIconButton(
+        icon: Icons.settings_outlined,
+        tooltip: _managementTooltip(
+          '媒体库设置',
+          DesktopMediaManagementShortcutAction.openLibrarySettings,
+        ),
+        onPressed: () => showMediaLibrarySettingsBottomSheet(context, settings),
+        onLongPress: () => unawaited(toggleDebugDeveloperMode(context)),
+        width: mediaLibraryHomePinnedActionWidth,
+        iconSize: mediaLibraryHomePinnedActionIconSize,
+      ),
       SizedBox(
-        width: 40,
+        width: mediaLibraryHomePinnedActionWidth,
         height: 48,
         child: MediaLibraryCompactMoreButton(
-          iconSize: 20,
+          width: mediaLibraryHomePinnedActionWidth,
+          iconSize: mediaLibraryHomePinnedActionIconSize,
           itemBuilder: (menuContext) => [
             mediaLibraryCompactMenuItem(
               icon: Icons.schedule_rounded,
@@ -450,16 +585,6 @@ class _HomeScreenState extends State<HomeScreen>
                 DesktopMediaManagementShortcutAction.openCardStyle,
               ),
               onSelected: () => _openCardStyleSheet(),
-            ),
-            mediaLibraryCompactMenuItem(
-              icon: Icons.settings_outlined,
-              label: _managementTooltip(
-                '媒体库设置',
-                DesktopMediaManagementShortcutAction.openLibrarySettings,
-              ),
-              onSelected: () =>
-                  showMediaLibrarySettingsBottomSheet(context, settings),
-              onLongPress: () => unawaited(toggleDebugDeveloperMode(context)),
             ),
             mediaLibraryCompactMenuItem(
               icon: Icons.checklist,
@@ -698,6 +823,18 @@ class _HomeScreenState extends State<HomeScreen>
     ];
   }
 
+  List<String> _keyboardOrderedIds() {
+    if (_displayedRootEntry() == MediaLibraryRootEntry.podcasts) {
+      return _podcastOverviewController.visibleKeyboardIds;
+    }
+    final host = _virtualSelectionHost();
+    if (host != null) return host.orderedIds;
+    return [
+      for (final item in context.read<LibraryService>().browseContents(null))
+        (item as dynamic).id as String,
+    ];
+  }
+
   /// Helper: Get content ID at index
   String? _getItemId(int index) {
     final host = _virtualSelectionHost();
@@ -736,19 +873,15 @@ class _HomeScreenState extends State<HomeScreen>
       scrollBox?.size.width ?? mediaSize.width,
       mediaSize.height,
     );
-    if (settings.mediaLibraryViewMode == 1) {
+    if (settings.mediaLibraryUsesRowPipeline) {
       final listStyle = settings.listStyleFor(mediaSize);
-      final metrics = MediaListLayoutMetrics.forGrid(
+      final metrics = MediaListLayoutMetrics.forStyle(
+        style: listStyle,
         screenShortestSide: mediaSize.shortestSide,
         availableWidth: viewportSize.width,
-        crossAxisCount: listStyle.crossAxisCount,
-        heightSetting: listStyle.heightScale,
-        titleSetting: listStyle.titleScale,
-        mainSpacingSetting: listStyle.mainSpacingScale,
-        crossSpacingSetting: listStyle.crossSpacingScale,
       );
       return MediaLibraryGridGeometry(
-        crossAxisCount: listStyle.crossAxisCount,
+        crossAxisCount: listStyle.isTable ? 1 : listStyle.crossAxisCount,
         itemWidth: metrics.cellWidth,
         itemHeight: metrics.rowHeight,
         horizontalSpacing: metrics.crossSpacing,
@@ -1284,28 +1417,27 @@ class _HomeScreenState extends State<HomeScreen>
           return;
         }
         await OnboardingFlow.open(context, context.read<SettingsService>());
-        if (mounted) {
-          await ClipboardDetectionScope.maybeOf(context)?.completeStartup();
-        }
-        return;
       }
       if (offer) await OnboardingStore.markHandled();
     } catch (error) {
       debugPrint('新手引导启动失败: $error');
     }
     if (!mounted) return;
-    unawaited(_requestNotificationPermission());
+    // Finish first-use setup before presenting the one-time system prompt.
+    // Keep clipboard prompts behind it so dialogs cannot overlap.
+    await _requestNotificationPermission();
+    if (!mounted) return;
     await ClipboardDetectionScope.maybeOf(context)?.completeStartup();
-    if (mounted) unawaited(_checkBilibiliLogin());
   }
 
   @override
   void initState() {
     super.initState();
+    _rootEntryOverride.addListener(_publishExternalAiWorkspace);
+    _rootSwipeSettled.addListener(_publishExternalAiWorkspace);
     _podcastOverviewController.addListener(_podcastSelectionChanged);
     ExperimentalLayout.instance.addListener(_layoutChanged);
     unawaited(ExperimentalLayout.instance.initialize());
-    CloudDriveNavigation.request.addListener(_onCloudDriveRequested);
     AndroidHardwareInputBridge.addKeyListener(_handleAndroidHardwareKeyEvent);
     HardwareKeyboard.instance.addHandler(_handleGlobalHardwareKeyEvent);
     MediaLibraryRecentIntent.pendingBatchId.addListener(
@@ -1351,6 +1483,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    ExternalAiWorkspaceContext.instance.clear(this);
+    _rootEntryOverride.removeListener(_publishExternalAiWorkspace);
+    _rootSwipeSettled.removeListener(_publishExternalAiWorkspace);
     _podcastOverviewController.removeListener(_podcastSelectionChanged);
     _podcastOverviewController.dispose();
     ExperimentalLayout.instance.removeListener(_layoutChanged);
@@ -1368,7 +1503,6 @@ class _HomeScreenState extends State<HomeScreen>
     _continueScrollController.dispose();
     _bilibiliScrollController.dispose();
     _podcastsScrollController.dispose();
-    CloudDriveNavigation.request.removeListener(_onCloudDriveRequested);
     _rootEntryOverride.dispose();
     _rootSwipeHighlight.dispose();
     _rootSwipeSettled.dispose();
@@ -1513,7 +1647,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   MediaLibraryRootEntry _effectiveRootEntry(MediaLibraryNavigationPlan plan) {
     if (plan.forceFoldersForLocate) return MediaLibraryRootEntry.folders;
-    return _rootEntryOverride.value ?? plan.displayedEntry;
+    final entry = _rootEntryOverride.value ?? plan.displayedEntry;
+    return entry.isAvailable ? entry : MediaLibraryRootEntry.folders;
   }
 
   void _syncRootEntryOrder(SettingsService settings) {
@@ -1550,21 +1685,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _selectRootEntry(
-    MediaLibraryRootEntry entry,
-    SettingsService settings, {
-    String? cloudDriveTargetFolderId,
-  }) {
+  void _selectRootEntry(MediaLibraryRootEntry entry, SettingsService settings) {
     if (!_mountedRootEntries.contains(entry)) return;
     final library = Provider.of<LibraryService>(context, listen: false);
     final plan = _rootNavigationPlan(library, settings);
     if (plan.forceFoldersForLocate) return;
-    if (entry == MediaLibraryRootEntry.cloudDrive &&
-        _cloudDriveTargetFolderId != cloudDriveTargetFolderId) {
-      // Direct tab entry starts at the library root; only a folder's import
-      // action carries a destination. Do not reuse an earlier entry's folder.
-      setState(() => _cloudDriveTargetFolderId = cloudDriveTargetFolderId);
-    }
     final leaving = _effectiveRootEntry(plan);
     if (leaving == entry) return;
     if (_isSelectionMode) {
@@ -1589,34 +1714,6 @@ class _HomeScreenState extends State<HomeScreen>
           capturedOffset: capturedOffset,
         );
       }),
-    );
-  }
-
-  String? _cloudDriveTargetFolderId;
-  bool _cloudDriveSelecting = false;
-
-  void _onCloudDriveRequested() {
-    final request = CloudDriveNavigation.request.value;
-    if (request == null || !mounted || widget.returnToSearchResults) return;
-    CloudDriveNavigation.request.value = null;
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    if (request.showImportedFolder) {
-      _selectRootEntry(MediaLibraryRootEntry.folders, SettingsService());
-      if (request.targetFolderId != null) {
-        Navigator.of(context).push(
-          buildMediaLibraryFolderRoute<void>(
-            folderId: request.targetFolderId!,
-            builder: (_) =>
-                CollectionScreen(collectionId: request.targetFolderId!),
-          ),
-        );
-      }
-      return;
-    }
-    _selectRootEntry(
-      MediaLibraryRootEntry.cloudDrive,
-      SettingsService(),
-      cloudDriveTargetFolderId: request.targetFolderId,
     );
   }
 
@@ -1883,8 +1980,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
         return KeyEventResult.ignored;
       case DesktopMediaManagementShortcutAction.toggleViewMode:
-        final nextMode = settings.mediaLibraryViewMode == 0 ? 1 : 0;
-        settings.updateSetting('mediaLibraryViewMode', nextMode);
+        unawaited(settings.cycleMediaLibraryViewStyle());
         return KeyEventResult.handled;
       case DesktopMediaManagementShortcutAction.toggleFullScreen:
         if (!_isDesktopPlatform) {
@@ -1933,6 +2029,12 @@ class _HomeScreenState extends State<HomeScreen>
       case DesktopMediaManagementShortcutAction.openLibrarySettings:
         if (_isSelectionMode) return KeyEventResult.handled;
         showMediaLibrarySettingsBottomSheet(context, settings);
+        return KeyEventResult.handled;
+      case DesktopMediaManagementShortcutAction.openExternalAi:
+        if (_isSelectionMode || _podcastSelectionActive) {
+          return KeyEventResult.handled;
+        }
+        ExternalAiToolbarAction.open(context);
         return KeyEventResult.handled;
       case DesktopMediaManagementShortcutAction.openSleepTimer:
         unawaited(showSleepTimerDialog(context));
@@ -2018,10 +2120,64 @@ class _HomeScreenState extends State<HomeScreen>
     if (!_supportsDesktopManagementShortcuts) return KeyEventResult.ignored;
     // 当视频播放页或其他子页面活跃时，不处理键盘事件，避免与播放器快捷键冲突
     if (!isMediaLibraryRouteCurrent(context)) return KeyEventResult.ignored;
+    if (!_isTextInputFocused()) {
+      final keyboardForCards = HardwareKeyboard.instance;
+      final keyForCards = event.logicalKey;
+      final isArrow =
+          keyForCards == LogicalKeyboardKey.arrowLeft ||
+          keyForCards == LogicalKeyboardKey.arrowRight ||
+          keyForCards == LogicalKeyboardKey.arrowUp ||
+          keyForCards == LogicalKeyboardKey.arrowDown;
+      final shiftForCards =
+          shiftPressedOverride ?? keyboardForCards.isShiftPressed;
+      final blockingForCards =
+          hasBlockingModifierOverride ??
+          (keyboardForCards.isControlPressed ||
+              keyboardForCards.isAltPressed ||
+              keyboardForCards.isMetaPressed);
+      if (event is KeyDownEvent &&
+          _shortcutFocusNode.hasPrimaryFocus &&
+          isArrow &&
+          !blockingForCards &&
+          !shiftForCards &&
+          (_keyboardRegionKey.currentState?.focusInitial(
+                event: event,
+                fromNativeBridge: fromAndroidNativeBridge,
+              ) ??
+              false)) {
+        return KeyEventResult.handled;
+      }
+      if (fromAndroidNativeBridge &&
+          MediaLibraryKeyboardItem.handlesNativeKey(
+            keyForCards,
+            shift: shiftForCards,
+          )) {
+        return KeyEventResult.ignored;
+      }
+      if (!fromAndroidNativeBridge &&
+          _isSelectionMode &&
+          event is KeyDownEvent &&
+          keyForCards == LogicalKeyboardKey.keyA &&
+          (keyboardForCards.isControlPressed ||
+              keyboardForCards.isMetaPressed) &&
+          !keyboardForCards.isAltPressed &&
+          !keyboardForCards.isShiftPressed) {
+        setState(() {
+          _selectedIds.addAll(_keyboardOrderedIds());
+        });
+        return KeyEventResult.handled;
+      }
+      if ((keyForCards == LogicalKeyboardKey.space ||
+              keyForCards == LogicalKeyboardKey.arrowLeft ||
+              keyForCards == LogicalKeyboardKey.arrowRight) &&
+          MediaLibraryKeyboardItem.interactiveControlHasFocus) {
+        return KeyEventResult.ignored;
+      }
+    }
     if (!_isTextInputFocused() &&
         !_isSelectionMode &&
         !_podcastSelectionActive &&
-        !_cloudDriveSelecting) {
+        !false) {
       final settings = context.read<SettingsService>();
       final plan = _rootNavigationPlan(
         context.read<LibraryService>(),
@@ -2048,12 +2204,23 @@ class _HomeScreenState extends State<HomeScreen>
             )) {
           return KeyEventResult.handled;
         }
-        if (event is KeyDownEvent) _selectRootEntry(order[index], settings);
+        if (event is KeyDownEvent) {
+          _selectRootEntry(order[index], settings);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && isMediaLibraryRouteCurrent(context)) {
+              MediaLibrarySpatialNavigation.focusInitial(context);
+            }
+          });
+        }
         return KeyEventResult.handled;
       }
     }
-    if ((_displayedRootEntry() == MediaLibraryRootEntry.podcasts ||
-        _displayedRootEntry() == MediaLibraryRootEntry.cloudDrive)) {
+    final isExternalAiShortcut =
+        DesktopMediaManagementShortcuts.matchAction(event.logicalKey) ==
+        DesktopMediaManagementShortcutAction.openExternalAi;
+    if (!isExternalAiShortcut &&
+        (_displayedRootEntry() == MediaLibraryRootEntry.podcasts ||
+            _displayedRootEntry() == MediaLibraryRootEntry.cloudDrive)) {
       return KeyEventResult.ignored;
     }
     if (Platform.isAndroid &&
@@ -2091,6 +2258,8 @@ class _HomeScreenState extends State<HomeScreen>
     }
     // Library management keys have nothing to act on in the online page.
     if (managementAction != null &&
+        managementAction !=
+            DesktopMediaManagementShortcutAction.openExternalAi &&
         (_displayedRootEntry() == MediaLibraryRootEntry.bilibili ||
             (_displayedRootEntry() == MediaLibraryRootEntry.podcasts ||
                 _displayedRootEntry() == MediaLibraryRootEntry.cloudDrive))) {
@@ -2168,174 +2337,14 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _requestNotificationPermission() async {
-    if (!Platform.isAndroid) return;
-    final status = await Permission.notification.status;
-    debugPrint('HomeScreen: notification permission status=$status');
-    if (status.isGranted || status.isLimited || status.isProvisional) {
-      if (MediaPlaybackService().currentItem != null) {
-        await SystemMediaSessionService.instance.refreshNow(
-          ensureNotificationVisible: true,
-        );
-      }
+    if (!mounted ||
+        OnboardingFlow.isShowing ||
+        mediaLibraryRouteIsCurrent(context) == false ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) {
       return;
     }
-    if (status.isDenied) {
-      final result = await Permission.notification.request();
-      debugPrint('HomeScreen: notification permission request result=$result');
-      if (result.isGranted || result.isLimited || result.isProvisional) {
-        await SystemMediaSessionService.instance.refreshNow(
-          ensureNotificationVisible: true,
-        );
-      }
-      return;
-    }
-    if (status.isPermanentlyDenied) {
-      debugPrint(
-        'HomeScreen: notification permission permanently denied, media notification may be hidden',
-      );
-    }
+    await StartupNotificationPermission.instance.requestOnce();
   }
-
-  Future<void> _checkBilibiliLogin() async {
-    if (!mounted || OnboardingFlow.isShowing) return;
-
-    try {
-      final service = Provider.of<BilibiliDownloadService>(
-        context,
-        listen: false,
-      );
-      bool initReady = true;
-      final initFuture = service.init();
-      await initFuture.timeout(
-        const Duration(milliseconds: 800),
-        onTimeout: () {
-          initReady = false;
-        },
-      );
-      if (!initReady) {
-        if (!_bilibiliLoginCheckQueued) {
-          _bilibiliLoginCheckQueued = true;
-          initFuture.then((_) {
-            if (!mounted) return;
-            _bilibiliLoginCheckQueued = false;
-            _checkBilibiliLogin();
-          });
-        }
-        return;
-      }
-      if (!mounted) return;
-      final settings = Provider.of<SettingsService>(context, listen: false);
-
-      if (settings.suppressBilibiliRestrictedDialog) return;
-
-      // Check if login is valid (calls Bilibili API)
-      // We only check this on startup to avoid spamming the user
-      // 添加超时处理,避免网络请求卡住UI
-      final loginStatus = await service.apiService
-          .checkLoginStatusDetailed()
-          .timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              debugPrint('B站登录状态检查超时');
-              return BilibiliLoginStatus.networkError;
-            },
-          );
-
-      // Offline, timeout and Bilibili service failures cannot prove that the
-      // persisted login has expired. Keep the cookie and do not disturb users
-      // who only want to use local/offline features.
-      if (loginStatus == BilibiliLoginStatus.networkError) {
-        debugPrint('暂时无法验证B站登录状态，保留本地登录信息并跳过提示');
-        return;
-      }
-
-      if (loginStatus == BilibiliLoginStatus.loggedOut ||
-          loginStatus == BilibiliLoginStatus.expired) {
-        if (!mounted || OnboardingFlow.isShowing || !_canPresentLibraryDialog) {
-          return;
-        }
-
-        bool dontShowAgain = false;
-
-        await showDialog(
-          context: context,
-          builder: (context) => StatefulBuilder(
-            builder: (context, setState) => BilibiliRestrictedDialog(
-              dontShowAgain: dontShowAgain,
-              onDontShowAgainChanged: (value) {
-                setState(() => dontShowAgain = value);
-              },
-              onDefer: () async {
-                if (dontShowAgain) {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: const Color(0xFF2C2C2C),
-                      title: const Text(
-                        "确认不再提示",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      content: const Text(
-                        "您选择了不再提示。\n\n后续可在 B 站页面右上角打开账号图标登录，也可以从“使用前设置”进入 B 站登录。",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      actions: [
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text(
-                              "取消",
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ),
-                        ),
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text(
-                              "确认",
-                              style: TextStyle(color: Color(0xFFFB7299)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm == true) {
-                    if (context.mounted) {
-                      Provider.of<SettingsService>(
-                        context,
-                        listen: false,
-                      ).updateSetting('suppressBilibiliRestrictedDialog', true);
-                      Navigator.pop(context);
-                    }
-                  }
-                } else {
-                  Navigator.pop(context);
-                }
-              },
-              onLogin: () {
-                Navigator.pop(context);
-                showBilibiliLoginDialog(context);
-              },
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      // 静默处理错误,不影响应用启动
-      debugPrint('B站登录状态检查失败: $e');
-    }
-  }
-
-  bool get _canPresentLibraryDialog =>
-      mounted &&
-      !OnboardingFlow.isShowing &&
-      (WidgetsBinding.instance.lifecycleState == null ||
-          WidgetsBinding.instance.lifecycleState ==
-              AppLifecycleState.resumed) &&
-      mediaLibraryRouteIsCurrent(context) != false;
 
   @override
   Widget build(BuildContext context) {
@@ -2347,6 +2356,7 @@ class _HomeScreenState extends State<HomeScreen>
     final useCompactTopBar =
         experimental || useCompactMediaLibraryTopBar(context);
     final rootNavPlan = _rootNavigationPlan(library, settings);
+    _publishExternalAiWorkspace();
     final podcastSelecting = _podcastSelectionActive;
     final homeSelecting = _isSelectionMode || podcastSelecting;
     // The root tabs share the cards' left edge, including user spacing and
@@ -2366,13 +2376,19 @@ class _HomeScreenState extends State<HomeScreen>
         : 8.0;
     // Align the visible icon, preserving the larger touch target around it.
     // Both action layouts already include a trailing 2px spacer.
+    // The compact home's last control is the pinned "more" button, which is
+    // narrower than the selection-mode slot.
     final actionSize = (MediaQuery.sizeOf(context).width * .032).clamp(
       32.0,
       40.0,
     );
     final actionIconSize = (actionSize * .58).clamp(20.0, 24.0);
     final actionInnerInset = useCompactTopBar
-        ? (homeSelecting ? (40 - 21) / 2 : (40 - 20) / 2)
+        ? (homeSelecting
+              ? (40 - 21) / 2
+              : (mediaLibraryHomePinnedActionWidth -
+                        mediaLibraryHomePinnedActionIconSize) /
+                    2)
         : (actionSize - actionIconSize) / 2;
     if (library.isInitialized && !_libraryNavigationScheduled) {
       _libraryNavigationScheduled = true;
@@ -2446,7 +2462,7 @@ class _HomeScreenState extends State<HomeScreen>
           titleSpacing: useCompactTopBar ? 2 : titleInset,
           title: experimental && !homeSelecting
               ? const Text(
-                  'Fluent Player',
+                  kAppDisplayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -2499,8 +2515,26 @@ class _HomeScreenState extends State<HomeScreen>
                                           settings,
                                           rootNavPlan,
                                         ),
-                                    onSelected: (entry) =>
-                                        _selectRootEntry(entry, settings),
+                                    onSelected: (entry) {
+                                      final keyboard =
+                                          HardwareKeyboard.instance;
+                                      final fromKeyboard =
+                                          keyboard.isLogicalKeyPressed(
+                                            LogicalKeyboardKey.enter,
+                                          ) ||
+                                          keyboard.isLogicalKeyPressed(
+                                            LogicalKeyboardKey.numpadEnter,
+                                          ) ||
+                                          keyboard.isLogicalKeyPressed(
+                                            LogicalKeyboardKey.space,
+                                          );
+                                      _selectRootEntry(entry, settings);
+                                      if (fromKeyboard) {
+                                        MediaLibrarySpatialNavigation.focusInitial(
+                                          context,
+                                        );
+                                      }
+                                    },
                                   ),
                                 );
                               },
@@ -2544,6 +2578,8 @@ class _HomeScreenState extends State<HomeScreen>
                           onPressed: () => Navigator.of(context).maybePop(),
                         ),
                       ))
+              : _showUndockedFolderTreeButton(settings)
+              ? _buildFolderTreeToolbarButton(compact: useCompactTopBar)
               : null,
           actionsPadding: EdgeInsets.only(
             right: (cardInset - actionInnerInset - 2).clamp(
@@ -2574,6 +2610,8 @@ class _HomeScreenState extends State<HomeScreen>
                     spacing: 2,
                     buttons: [
                       if (!_isSelectionMode) ...[
+                        if (ExternalAiToolbarAction.isSupported)
+                          const ExternalAiToolbarAction(),
                         if (KeyboardShortcutHints.of(context))
                           ResponsiveIconButton(
                             icon: Icons.keyboard_outlined,
@@ -2743,509 +2781,519 @@ class _HomeScreenState extends State<HomeScreen>
                 focusNode: _shortcutFocusNode,
                 autofocus: _supportsDesktopManagementShortcuts,
                 onKeyEvent: (node, event) => _handleShortcutKeyEvent(event),
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (event) {
-                    _selectionPointer.down(event.pointer);
-                    if (_supportsDesktopManagementShortcuts &&
-                        !_shortcutFocusNode.hasFocus) {
-                      _shortcutFocusNode.requestFocus();
+                child: MediaLibraryKeyboardRegion(
+                  key: _keyboardRegionKey,
+                  surface: _displayedRootEntry,
+                  orderedIds: _keyboardOrderedIds,
+                  selectionMode: () =>
+                      _isSelectionMode || _podcastSelectionActive,
+                  selectedIds: () => _podcastSelectionActive
+                      ? _podcastOverviewController.selectedIds
+                      : _selectedIds,
+                  onSelectionChanged: (ids) {
+                    if (_podcastSelectionActive) {
+                      _podcastOverviewController.setKeyboardSelection(ids);
+                    } else {
+                      setState(() {
+                        _selectedIds
+                          ..clear()
+                          ..addAll(ids);
+                      });
                     }
                   },
-                  onPointerMove: (event) {
-                    if (!_selectionPointer.move(event.pointer)) return;
-                    _followActiveSelectionPointer(event.position);
-                  },
-                  onPointerUp: _endLibraryPointer,
-                  onPointerCancel: _endLibraryPointer,
-                  child: Selector<LibraryService, int>(
-                    selector: (_, service) => service.browseRevision,
-                    builder: (context, _, child) {
-                      final library = context.read<LibraryService>();
-                      final contents = library.browseContents(null);
-                      _scheduleRevealIfNeeded(contents);
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (event) {
+                      _selectionPointer.down(event.pointer);
+                      if (_supportsDesktopManagementShortcuts &&
+                          !_shortcutFocusNode.hasFocus) {
+                        _shortcutFocusNode.requestFocus();
+                      }
+                    },
+                    onPointerMove: (event) {
+                      if (!_selectionPointer.move(event.pointer)) return;
+                      _followActiveSelectionPointer(event.position);
+                    },
+                    onPointerUp: _endLibraryPointer,
+                    onPointerCancel: _endLibraryPointer,
+                    child: Selector<LibraryService, int>(
+                      selector: (_, service) => service.browseRevision,
+                      builder: (context, _, child) {
+                        final library = context.read<LibraryService>();
+                        final contents = _visibleBrowseContents(
+                          library,
+                          settings,
+                        );
+                        _scheduleRevealIfNeeded(contents);
 
-                      return DropTarget(
-                        onDragDone: (details) {
-                          if (!isMediaLibraryRouteCurrent(context)) return;
-                          _setDraggingFiles(false);
-                          final paths = details.files
-                              .map((f) => f.path)
-                              .toList();
-                          if (paths.isNotEmpty) {
-                            VideoActionButtons.processDroppedPaths(
-                              context,
-                              paths,
-                              null,
-                            );
-                          }
-                        },
-                        onDragEntered: (_) {
-                          if (!isMediaLibraryRouteCurrent(context)) return;
-                          _setDraggingFiles(true);
-                        },
-                        onDragExited: (_) => _setDraggingFiles(false),
-                        child: ValueListenableBuilder<MediaLibraryRootEntry?>(
-                          valueListenable: _rootEntryOverride,
-                          builder: (context, selectedOverride, child) {
-                            final displayed = _effectiveRootEntry(rootNavPlan);
-                            final showingVirtual =
-                                !rootNavPlan.forceFoldersForLocate &&
-                                displayed != MediaLibraryRootEntry.folders;
-                            return Stack(
-                              children: [
-                                Listener(
-                                  onPointerDown: (event) {
-                                    _activePointerKind = event.kind;
-                                  },
-                                  child: RawGestureDetector(
-                                    gestures: {
-                                      _MouseOrPinchScaleRecognizer:
-                                          GestureRecognizerFactoryWithHandlers<
-                                            _MouseOrPinchScaleRecognizer
-                                          >(_createScaleRecognizer, (
-                                            recognizer,
-                                          ) {
-                                            recognizer
-                                              ..onStart = (details) {
-                                                if (_tryStartMouseBoxSelection(
-                                                  pointerCount:
-                                                      details.pointerCount,
-                                                  globalPos: details.focalPoint,
-                                                )) {
-                                                  return;
+                        return DropTarget(
+                          onDragDone: (details) {
+                            if (!isMediaLibraryRouteCurrent(context)) return;
+                            _setDraggingFiles(false);
+                            final paths = details.files
+                                .map((f) => f.path)
+                                .toList();
+                            if (paths.isNotEmpty) {
+                              VideoActionButtons.processDroppedPaths(
+                                context,
+                                paths,
+                                null,
+                              );
+                            }
+                          },
+                          onDragEntered: (_) {
+                            if (!isMediaLibraryRouteCurrent(context)) return;
+                            _setDraggingFiles(true);
+                          },
+                          onDragExited: (_) => _setDraggingFiles(false),
+                          child: ValueListenableBuilder<MediaLibraryRootEntry?>(
+                            valueListenable: _rootEntryOverride,
+                            builder: (context, selectedOverride, child) {
+                              final displayed = _effectiveRootEntry(
+                                rootNavPlan,
+                              );
+                              final showingVirtual =
+                                  !rootNavPlan.forceFoldersForLocate &&
+                                  displayed != MediaLibraryRootEntry.folders;
+                              return Stack(
+                                children: [
+                                  Listener(
+                                    onPointerDown: (event) {
+                                      _activePointerKind = event.kind;
+                                    },
+                                    child: RawGestureDetector(
+                                      gestures: {
+                                        _MouseOrPinchScaleRecognizer:
+                                            GestureRecognizerFactoryWithHandlers<
+                                              _MouseOrPinchScaleRecognizer
+                                            >(_createScaleRecognizer, (
+                                              recognizer,
+                                            ) {
+                                              recognizer
+                                                ..onStart = (details) {
+                                                  if (_tryStartMouseBoxSelection(
+                                                    pointerCount:
+                                                        details.pointerCount,
+                                                    globalPos:
+                                                        details.focalPoint,
+                                                  )) {
+                                                    return;
+                                                  }
+                                                  _baseCrossAxisCount =
+                                                      settings
+                                                          .mediaLibraryUsesRowPipeline
+                                                      ? _listStyle()
+                                                            .crossAxisCount
+                                                      : _homeCardStyle()
+                                                            .crossAxisCount;
                                                 }
-                                                _baseCrossAxisCount =
-                                                    settings.mediaLibraryViewMode ==
-                                                        1
-                                                    ? _listStyle()
-                                                          .crossAxisCount
-                                                    : _homeCardStyle()
-                                                          .crossAxisCount;
-                                              }
-                                              ..onUpdate = (details) {
-                                                if (_isBoxSelecting) {
-                                                  _applyMouseBoxSelectionAt(
-                                                    details.focalPoint,
-                                                  );
-                                                  _syncSelectionAutoScroll(
-                                                    details.focalPoint,
-                                                  );
-                                                  return;
-                                                }
-                                                if (details.pointerCount < 2) {
-                                                  return;
-                                                }
+                                                ..onUpdate = (details) {
+                                                  if (_isBoxSelecting) {
+                                                    _applyMouseBoxSelectionAt(
+                                                      details.focalPoint,
+                                                    );
+                                                    _syncSelectionAutoScroll(
+                                                      details.focalPoint,
+                                                    );
+                                                    return;
+                                                  }
+                                                  if (details.pointerCount <
+                                                      2) {
+                                                    return;
+                                                  }
 
-                                                double newScale = details.scale;
-                                                int newCount =
-                                                    _baseCrossAxisCount;
+                                                  double newScale =
+                                                      details.scale;
+                                                  int newCount =
+                                                      _baseCrossAxisCount;
 
-                                                if (newScale > 1.3) {
-                                                  newCount =
-                                                      (_baseCrossAxisCount - 1)
-                                                          .clamp(1, 20);
-                                                } else if (newScale < 0.7) {
-                                                  newCount =
-                                                      (_baseCrossAxisCount + 1)
-                                                          .clamp(1, 20);
-                                                }
+                                                  if (newScale > 1.3) {
+                                                    newCount =
+                                                        (_baseCrossAxisCount -
+                                                                1)
+                                                            .clamp(1, 20);
+                                                  } else if (newScale < 0.7) {
+                                                    newCount =
+                                                        (_baseCrossAxisCount +
+                                                                1)
+                                                            .clamp(1, 20);
+                                                  }
 
-                                                final currentCount =
-                                                    settings.mediaLibraryViewMode ==
-                                                        1
-                                                    ? _listStyle()
-                                                          .crossAxisCount
-                                                    : _homeCardStyle()
-                                                          .crossAxisCount;
-                                                if (newCount != currentCount) {
-                                                  final size =
-                                                      MediaQuery.sizeOf(
-                                                        context,
+                                                  final currentCount =
+                                                      settings
+                                                          .mediaLibraryUsesRowPipeline
+                                                      ? _listStyle()
+                                                            .crossAxisCount
+                                                      : _homeCardStyle()
+                                                            .crossAxisCount;
+                                                  if (newCount !=
+                                                      currentCount) {
+                                                    final size =
+                                                        MediaQuery.sizeOf(
+                                                          context,
+                                                        );
+                                                    if (settings
+                                                        .mediaLibraryUsesRowPipeline) {
+                                                      unawaited(
+                                                        settings
+                                                            .updateActiveListColumnsFor(
+                                                              size,
+                                                              newCount,
+                                                            ),
                                                       );
-                                                  if (settings
-                                                          .mediaLibraryViewMode ==
-                                                      1) {
-                                                    unawaited(
-                                                      settings
-                                                          .updateListStyleFor(
-                                                            size,
-                                                            crossAxisCount:
-                                                                newCount,
-                                                          ),
-                                                    );
-                                                  } else {
-                                                    unawaited(
-                                                      settings
-                                                          .updateHomeCardStyleFor(
-                                                            size,
-                                                            crossAxisCount:
-                                                                newCount,
-                                                          ),
-                                                    );
+                                                    } else {
+                                                      unawaited(
+                                                        settings
+                                                            .updateHomeCardStyleFor(
+                                                              size,
+                                                              crossAxisCount:
+                                                                  newCount,
+                                                            ),
+                                                      );
+                                                    }
                                                   }
                                                 }
-                                              }
-                                              ..onEnd = (details) {
-                                                if (_isBoxSelecting) {
-                                                  _finishMouseBoxSelection();
-                                                }
-                                              };
-                                          }),
-                                    },
-                                    child: Selector<MediaPlaybackService, bool>(
-                                      selector: (_, playbackService) =>
-                                          playbackService
-                                              .shouldShowMiniPlaybackCard,
-                                      builder: (context, isCardVisible, child) {
-                                        final cardBottomPadding =
-                                            PlaybackCardOverlayLayout.contentBottomPadding(
-                                              stableBottomInset:
-                                                  _stablePlaybackBottomInset,
-                                              selectionBarHeight:
-                                                  selectionBarObstruction,
-                                              cardHeight:
-                                                  PlaybackCardLayout.calculate(
-                                                    context,
-                                                  ).height,
-                                              isCardVisible:
-                                                  isCardVisible ||
-                                                  _hasPendingPlaybackState,
-                                            );
+                                                ..onEnd = (details) {
+                                                  if (_isBoxSelecting) {
+                                                    _finishMouseBoxSelection();
+                                                  }
+                                                };
+                                            }),
+                                      },
+                                      child: Selector<MediaPlaybackService, bool>(
+                                        selector: (_, playbackService) =>
+                                            playbackService
+                                                .shouldShowMiniPlaybackCard,
+                                        builder: (context, isCardVisible, child) {
+                                          final cardBottomPadding =
+                                              PlaybackCardOverlayLayout.contentBottomPadding(
+                                                stableBottomInset:
+                                                    _stablePlaybackBottomInset,
+                                                selectionBarHeight:
+                                                    selectionBarObstruction,
+                                                cardHeight:
+                                                    PlaybackCardLayout.calculate(
+                                                      context,
+                                                    ).height,
+                                                isCardVisible:
+                                                    isCardVisible ||
+                                                    _hasPendingPlaybackState,
+                                              );
 
-                                        return ValueListenableBuilder<
-                                          List<MediaLibraryRootEntry>
-                                        >(
-                                          valueListenable: _rootEntryOrder,
-                                          builder: (context, order, child) {
-                                            return MediaLibraryRootSurfaceHost(
-                                              key: _rootSurfaceHostKey,
-                                              displayedEntry: displayed,
-                                              entryOrder: order,
-                                              swipeEnabled:
-                                                  !_isSelectionMode &&
-                                                  !podcastSelecting &&
-                                                  !_cloudDriveSelecting,
-                                              swipeHighlightIndex:
-                                                  _rootSwipeHighlight,
-                                              swipeSettled: _rootSwipeSettled,
-                                              onUserSwipe: (entry) =>
-                                                  _selectRootEntry(
-                                                    entry,
-                                                    settings,
-                                                  ),
-                                              continueBuilder: (context, active) {
-                                                if (active &&
-                                                    _isSelectionMode) {
-                                                  WidgetsBinding.instance
-                                                      .addPostFrameCallback((
-                                                        _,
-                                                      ) {
-                                                        _pruneVirtualSelectionToVisible();
-                                                      });
-                                                }
-                                                return MediaLibraryScrollViewport.library(
-                                                  settings: settings,
-                                                  screenSize: MediaQuery.sizeOf(
-                                                    context,
-                                                  ),
-                                                  controller:
-                                                      _continueScrollController,
-                                                  isActive: active,
-                                                  bottomObstruction:
-                                                      cardBottomPadding,
-                                                  child: MediaLibraryContinueView(
-                                                    onBrowseLibrary: () =>
-                                                        _selectRootEntry(
-                                                          MediaLibraryRootEntry
-                                                              .folders,
-                                                          settings,
-                                                        ),
-                                                    isActive: active,
-                                                    scrollController:
-                                                        _continueScrollController,
-                                                    cardBottomPadding:
-                                                        cardBottomPadding,
-                                                    selection: active
-                                                        ? _virtualSelectionBinding(
-                                                            _continueSelectionHost,
-                                                          )
-                                                        : null,
-                                                    onOpenMedia: (item) {
-                                                      final playback =
-                                                          Provider.of<
-                                                            MediaPlaybackService
-                                                          >(
-                                                            context,
-                                                            listen: false,
-                                                          );
-                                                      final controller =
-                                                          playback
-                                                                  .currentItem
-                                                                  ?.id ==
-                                                              item.id
-                                                          ? playback.controller
-                                                          : null;
-                                                      _openPlaybackScreen(
-                                                        item,
-                                                        existingController:
-                                                            controller,
-                                                      );
-                                                    },
-                                                    onOpenFolder: (collection) {
-                                                      Navigator.of(
-                                                        context,
-                                                      ).push(
-                                                        buildMediaLibraryFolderRoute<
-                                                          void
-                                                        >(
-                                                          folderId:
-                                                              collection.id,
-                                                          builder: (_) =>
-                                                              CollectionScreen(
-                                                                collectionId:
-                                                                    collection
-                                                                        .id,
-                                                              ),
-                                                        ),
-                                                      );
-                                                    },
-                                                    onLocateMedia:
-                                                        _locateLibraryItem,
-                                                    onLocateFolder:
-                                                        (collection) =>
-                                                            _locateLibraryEntry(
-                                                              id: collection.id,
-                                                              parentId:
-                                                                  collection
-                                                                      .parentId,
-                                                            ),
-                                                  ),
-                                                );
-                                              },
-                                              recentBuilder: (context, active) {
-                                                if (active &&
-                                                    _isSelectionMode) {
-                                                  WidgetsBinding.instance
-                                                      .addPostFrameCallback((
-                                                        _,
-                                                      ) {
-                                                        _pruneVirtualSelectionToVisible();
-                                                      });
-                                                }
-                                                return MediaLibraryScrollViewport.library(
-                                                  settings: settings,
-                                                  screenSize: MediaQuery.sizeOf(
-                                                    context,
-                                                  ),
-                                                  controller:
-                                                      _recentScrollController,
-                                                  isActive: active,
-                                                  bottomObstruction:
-                                                      cardBottomPadding,
-                                                  child: MediaLibraryRecentView(
-                                                    onBrowseLibrary: () =>
-                                                        _selectRootEntry(
-                                                          MediaLibraryRootEntry
-                                                              .folders,
-                                                          settings,
-                                                        ),
-                                                    isActive: active,
-                                                    scrollController:
-                                                        _recentScrollController,
-                                                    cardBottomPadding:
-                                                        cardBottomPadding,
-                                                    expandBatchId:
-                                                        _pendingRecentBatchId,
-                                                    selection: active
-                                                        ? _virtualSelectionBinding(
-                                                            _recentSelectionHost,
-                                                          )
-                                                        : null,
-                                                    onOpenMedia: (item) {
-                                                      final playback =
-                                                          Provider.of<
-                                                            MediaPlaybackService
-                                                          >(
-                                                            context,
-                                                            listen: false,
-                                                          );
-                                                      final controller =
-                                                          playback
-                                                                  .currentItem
-                                                                  ?.id ==
-                                                              item.id
-                                                          ? playback.controller
-                                                          : null;
-                                                      _openPlaybackScreen(
-                                                        item,
-                                                        existingController:
-                                                            controller,
-                                                      );
-                                                    },
-                                                    onOpenFolder: (collection) {
-                                                      Navigator.of(
-                                                        context,
-                                                      ).push(
-                                                        buildMediaLibraryFolderRoute<
-                                                          void
-                                                        >(
-                                                          folderId:
-                                                              collection.id,
-                                                          builder: (_) =>
-                                                              CollectionScreen(
-                                                                collectionId:
-                                                                    collection
-                                                                        .id,
-                                                              ),
-                                                        ),
-                                                      );
-                                                    },
-                                                    onLocateMedia:
-                                                        _locateLibraryItem,
-                                                    onLocateFolder:
-                                                        (collection) =>
-                                                            _locateLibraryEntry(
-                                                              id: collection.id,
-                                                              parentId:
-                                                                  collection
-                                                                      .parentId,
-                                                            ),
-                                                  ),
-                                                );
-                                              },
-                                              foldersBuilder: (context, active) {
-                                                if (contents.isEmpty) {
-                                                  return MediaLibraryEmptyState(
-                                                    icon: Icons
-                                                        .folder_open_outlined,
-                                                    message: '暂无媒体内容',
-                                                    actionLabel: '导入媒体',
-                                                    onAction: () =>
-                                                        VideoActionButtons.showImportMenu(
+                                          return ValueListenableBuilder<
+                                            List<MediaLibraryRootEntry>
+                                          >(
+                                            valueListenable: _rootEntryOrder,
+                                            builder: (context, order, child) {
+                                              return MediaLibraryRootSurfaceHost(
+                                                key: _rootSurfaceHostKey,
+                                                displayedEntry: displayed,
+                                                entryOrder: order,
+                                                swipeEnabled:
+                                                    !_isSelectionMode &&
+                                                    !podcastSelecting &&
+                                                    !false,
+                                                swipeHighlightIndex:
+                                                    _rootSwipeHighlight,
+                                                swipeSettled: _rootSwipeSettled,
+                                                onUserSwipe: (entry) =>
+                                                    _selectRootEntry(
+                                                      entry,
+                                                      settings,
+                                                    ),
+                                                continueBuilder: (context, active) {
+                                                  if (active &&
+                                                      _isSelectionMode) {
+                                                    WidgetsBinding.instance
+                                                        .addPostFrameCallback((
+                                                          _,
+                                                        ) {
+                                                          _pruneVirtualSelectionToVisible();
+                                                        });
+                                                  }
+                                                  return MediaLibraryScrollViewport.library(
+                                                    settings: settings,
+                                                    screenSize:
+                                                        MediaQuery.sizeOf(
                                                           context,
-                                                          null,
                                                         ),
-                                                    bottomPadding:
+                                                    controller:
+                                                        _continueScrollController,
+                                                    isActive: active,
+                                                    bottomObstruction:
                                                         cardBottomPadding,
-                                                  );
-                                                }
-                                                return _buildMediaGridOrList(
-                                                  context: context,
-                                                  library: library,
-                                                  settings: settings,
-                                                  contents: contents,
-                                                  cardBottomPadding:
-                                                      cardBottomPadding,
-                                                  isActive: active,
-                                                );
-                                              },
-                                              bilibiliBuilder:
-                                                  (context, active) {
-                                                    return BilibiliHomePage(
+                                                    child: MediaLibraryContinueView(
+                                                      onBrowseLibrary: () =>
+                                                          _selectRootEntry(
+                                                            MediaLibraryRootEntry
+                                                                .folders,
+                                                            settings,
+                                                          ),
                                                       isActive: active,
+                                                      scrollController:
+                                                          _continueScrollController,
+                                                      cardBottomPadding:
+                                                          cardBottomPadding,
+                                                      selection: active
+                                                          ? _virtualSelectionBinding(
+                                                              _continueSelectionHost,
+                                                            )
+                                                          : null,
+                                                      onOpenMedia: (item) {
+                                                        final playback =
+                                                            Provider.of<
+                                                              MediaPlaybackService
+                                                            >(
+                                                              context,
+                                                              listen: false,
+                                                            );
+                                                        final controller =
+                                                            playback
+                                                                    .currentItem
+                                                                    ?.id ==
+                                                                item.id
+                                                            ? playback
+                                                                  .controller
+                                                            : null;
+                                                        _openPlaybackScreen(
+                                                          item,
+                                                          existingController:
+                                                              controller,
+                                                        );
+                                                      },
+                                                      onOpenFolder: (collection) {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).push(
+                                                          buildMediaLibraryFolderRoute<
+                                                            void
+                                                          >(
+                                                            folderId:
+                                                                collection.id,
+                                                            builder: (_) =>
+                                                                CollectionScreen(
+                                                                  collectionId:
+                                                                      collection
+                                                                          .id,
+                                                                ),
+                                                          ),
+                                                        );
+                                                      },
+                                                      onLocateMedia:
+                                                          _locateLibraryItem,
+                                                      onLocateFolder:
+                                                          (
+                                                            collection,
+                                                          ) => _locateLibraryEntry(
+                                                            id: collection.id,
+                                                            parentId: collection
+                                                                .parentId,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
+                                                recentBuilder: (context, active) {
+                                                  if (active &&
+                                                      _isSelectionMode) {
+                                                    WidgetsBinding.instance
+                                                        .addPostFrameCallback((
+                                                          _,
+                                                        ) {
+                                                          _pruneVirtualSelectionToVisible();
+                                                        });
+                                                  }
+                                                  return MediaLibraryScrollViewport.library(
+                                                    settings: settings,
+                                                    screenSize:
+                                                        MediaQuery.sizeOf(
+                                                          context,
+                                                        ),
+                                                    controller:
+                                                        _recentScrollController,
+                                                    isActive: active,
+                                                    bottomObstruction:
+                                                        cardBottomPadding,
+                                                    child: MediaLibraryRecentView(
+                                                      onBrowseLibrary: () =>
+                                                          _selectRootEntry(
+                                                            MediaLibraryRootEntry
+                                                                .folders,
+                                                            settings,
+                                                          ),
+                                                      isActive: active,
+                                                      scrollController:
+                                                          _recentScrollController,
+                                                      cardBottomPadding:
+                                                          cardBottomPadding,
+                                                      expandBatchId:
+                                                          _pendingRecentBatchId,
+                                                      selection: active
+                                                          ? _virtualSelectionBinding(
+                                                              _recentSelectionHost,
+                                                            )
+                                                          : null,
+                                                      onOpenMedia: (item) {
+                                                        final playback =
+                                                            Provider.of<
+                                                              MediaPlaybackService
+                                                            >(
+                                                              context,
+                                                              listen: false,
+                                                            );
+                                                        final controller =
+                                                            playback
+                                                                    .currentItem
+                                                                    ?.id ==
+                                                                item.id
+                                                            ? playback
+                                                                  .controller
+                                                            : null;
+                                                        _openPlaybackScreen(
+                                                          item,
+                                                          existingController:
+                                                              controller,
+                                                        );
+                                                      },
+                                                      onOpenFolder: (collection) {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).push(
+                                                          buildMediaLibraryFolderRoute<
+                                                            void
+                                                          >(
+                                                            folderId:
+                                                                collection.id,
+                                                            builder: (_) =>
+                                                                CollectionScreen(
+                                                                  collectionId:
+                                                                      collection
+                                                                          .id,
+                                                                ),
+                                                          ),
+                                                        );
+                                                      },
+                                                      onLocateMedia:
+                                                          _locateLibraryItem,
+                                                      onLocateFolder:
+                                                          (
+                                                            collection,
+                                                          ) => _locateLibraryEntry(
+                                                            id: collection.id,
+                                                            parentId: collection
+                                                                .parentId,
+                                                          ),
+                                                    ),
+                                                  );
+                                                },
+                                                foldersBuilder: (context, active) {
+                                                  if (contents.isEmpty) {
+                                                    return MediaLibraryEmptyState(
+                                                      icon: Icons
+                                                          .folder_open_outlined,
+                                                      message: '暂无媒体内容',
+                                                      actionLabel: '导入媒体',
+                                                      onAction: () =>
+                                                          VideoActionButtons.showImportMenu(
+                                                            context,
+                                                            null,
+                                                          ),
                                                       bottomPadding:
                                                           cardBottomPadding,
                                                     );
-                                                  },
-                                              podcastsBuilder:
-                                                  (
-                                                    context,
-                                                    active,
-                                                  ) => PodcastOverviewPage(
-                                                    controller:
-                                                        _podcastOverviewController,
-                                                    bottomPadding:
-                                                        cardBottomPadding,
-                                                    isActive: active,
-                                                  ),
-                                              cloudDriveBuilder:
-                                                  (
-                                                    context,
-                                                    active,
-                                                  ) => CloudDriveScreen(
-                                                    embedded: true,
-                                                    onSelectionChanged: (value) {
-                                                      if (mounted &&
-                                                          _cloudDriveSelecting !=
-                                                              value) {
-                                                        setState(
-                                                          () =>
-                                                              _cloudDriveSelecting =
-                                                                  value,
-                                                        );
-                                                      }
-                                                    },
-                                                    isActive: active,
-                                                    targetFolderId:
-                                                        _cloudDriveTargetFolderId,
-                                                  ),
-                                            );
-                                          },
-                                        );
-                                      },
+                                                  }
+                                                  return _wrapScrollAreaWithTableHeader(
+                                                    context: context,
+                                                    settings: settings,
+                                                    child:
+                                                        _buildMediaGridOrList(
+                                                          context: context,
+                                                          library: library,
+                                                          settings: settings,
+                                                          contents: contents,
+                                                          cardBottomPadding:
+                                                              cardBottomPadding,
+                                                          isActive: active,
+                                                        ),
+                                                  );
+                                                },
+                                                podcastsBuilder:
+                                                    (
+                                                      context,
+                                                      active,
+                                                    ) => PodcastOverviewPage(
+                                                      controller:
+                                                          _podcastOverviewController,
+                                                      bottomPadding:
+                                                          cardBottomPadding,
+                                                      isActive: active,
+                                                    ),
+                                              );
+                                            },
+                                          );
+                                        },
+                                      ),
                                     ),
                                   ),
-                                ),
-                                if (!showingVirtual && contents.length < 20)
-                                  Positioned.fill(
-                                    key: MediaLibraryOverlayKeys
-                                        .emptySpaceHitTarget,
-                                    child: Listener(
-                                      behavior: HitTestBehavior.translucent,
-                                      onPointerDown: (_) {},
+                                  if (!showingVirtual && contents.length < 20)
+                                    Positioned.fill(
+                                      key: MediaLibraryOverlayKeys
+                                          .emptySpaceHitTarget,
+                                      child: Listener(
+                                        behavior: HitTestBehavior.translucent,
+                                        onPointerDown: (_) {},
+                                      ),
                                     ),
-                                  ),
-                                if (_isBoxSelecting &&
-                                    _boxStartPos != null &&
-                                    _boxCurrentPos != null)
-                                  Positioned.fill(
-                                    key: MediaLibraryOverlayKeys.boxSelection,
-                                    child: IgnorePointer(
-                                      child: CustomPaint(
-                                        painter: _BoxSelectionPainter(
-                                          selectionRect: Rect.fromPoints(
-                                            _boxStartPos!,
-                                            _boxCurrentPos!,
+                                  if (_isBoxSelecting &&
+                                      _boxStartPos != null &&
+                                      _boxCurrentPos != null)
+                                    Positioned.fill(
+                                      key: MediaLibraryOverlayKeys.boxSelection,
+                                      child: IgnorePointer(
+                                        child: CustomPaint(
+                                          painter: _BoxSelectionPainter(
+                                            selectionRect: Rect.fromPoints(
+                                              _boxStartPos!,
+                                              _boxCurrentPos!,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                if (_isDraggingFiles)
-                                  Positioned.fill(
-                                    key: MediaLibraryOverlayKeys.fileDrop,
-                                    child: Container(
-                                      color: Colors.black54,
-                                      child: const Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.cloud_upload,
-                                              size: 80,
-                                              color: Colors.blueAccent,
-                                            ),
-                                            SizedBox(height: 16),
-                                            Text(
-                                              "松开以导入媒体文件、压缩包或文件夹",
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.bold,
+                                  if (_isDraggingFiles)
+                                    Positioned.fill(
+                                      key: MediaLibraryOverlayKeys.fileDrop,
+                                      child: Container(
+                                        color: Colors.black54,
+                                        child: const Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.cloud_upload,
+                                                size: 80,
+                                                color: Colors.blueAccent,
                                               ),
-                                            ),
-                                          ],
+                                              SizedBox(height: 16),
+                                              Text(
+                                                "松开以导入媒体文件、压缩包或文件夹",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 24,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      );
-                    },
+                                ],
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ), // 关闭 MediaQuery.removePadding 的 child
@@ -3422,7 +3470,7 @@ class _HomeScreenState extends State<HomeScreen>
     required bool isActive,
     required double availableWidth,
   }) {
-    if (settings.mediaLibraryViewMode == 0) {
+    if (!settings.mediaLibraryUsesRowPipeline) {
       final metrics = MediaLibraryLayoutDefaults.cardGrid(
         textScaler: MediaQuery.textScalerOf(context),
         textStyle: DefaultTextStyle.of(context).style,
@@ -3491,14 +3539,11 @@ class _HomeScreenState extends State<HomeScreen>
       child: LayoutBuilder(
         builder: (context, constraints) {
           final listStyle = settings.listStyleFor(MediaQuery.sizeOf(context));
-          final metrics = MediaListLayoutMetrics.forGrid(
+          final columns = listStyle.isTable ? 1 : listStyle.crossAxisCount;
+          final metrics = MediaListLayoutMetrics.forStyle(
+            style: listStyle,
             screenShortestSide: MediaQuery.sizeOf(context).shortestSide,
             availableWidth: constraints.maxWidth,
-            crossAxisCount: listStyle.crossAxisCount,
-            heightSetting: listStyle.heightScale,
-            titleSetting: listStyle.titleScale,
-            mainSpacingSetting: listStyle.mainSpacingScale,
-            crossSpacingSetting: listStyle.crossSpacingScale,
           );
 
           return PlaybackGridView.builder(
@@ -3511,7 +3556,7 @@ class _HomeScreenState extends State<HomeScreen>
               bottom: metrics.outerPadding + cardBottomPadding,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: listStyle.crossAxisCount,
+              crossAxisCount: columns,
               mainAxisExtent: metrics.rowHeight,
               crossAxisSpacing: metrics.crossSpacing,
               mainAxisSpacing: metrics.mainSpacing,
@@ -3552,7 +3597,7 @@ class _HomeScreenState extends State<HomeScreen>
                 }
                 return MediaCoverRevealStamp(
                   index: index,
-                  crossAxisCount: listStyle.crossAxisCount,
+                  crossAxisCount: columns,
                   child: card,
                 );
               },
@@ -3611,6 +3656,7 @@ class _HomeScreenState extends State<HomeScreen>
       isSelected: isSelected,
       isSelectionMode: _isSelectionMode,
       titleScale: listStyle.titleScale,
+      style: listStyle,
       onSelectionTap: () => _toggleListSelection(collection.id),
       onSelectionPanStart: (details) => _startListSelectionGesture(
         index,
@@ -3644,6 +3690,7 @@ class _HomeScreenState extends State<HomeScreen>
       onDragPosition: _updateReorderDragPosition,
       onDragEnd: _endReorderDrag,
       onTap: handleTap,
+      allowReorder: settings.mediaLibraryAllowsManualOrder,
       onReorder: (oldIndex, newIndex) {
         _reorderMediaItems(library, contents, null, oldIndex, newIndex);
       },
@@ -3701,6 +3748,7 @@ class _HomeScreenState extends State<HomeScreen>
       isSelected: isSelected,
       isSelectionMode: _isSelectionMode,
       titleScale: listStyle.titleScale,
+      style: listStyle,
       onSelectionTap: () => _toggleListSelection(item.id),
       onSelectionPanStart: (details) =>
           _startListSelectionGesture(index, item.id, details.globalPosition),
@@ -3717,6 +3765,7 @@ class _HomeScreenState extends State<HomeScreen>
       onTap: handleTap,
       onSecondaryTap: () => _handleCardSecondaryTap(item.id),
       showActivityMenu: !_isSelectionMode,
+      allowHidePodcastFromFolders: true,
     );
     return MediaLibraryItemInteractionWrapper(
       index: index,
@@ -3727,6 +3776,7 @@ class _HomeScreenState extends State<HomeScreen>
       onDragPosition: _updateReorderDragPosition,
       onDragEnd: _endReorderDrag,
       onTap: handleTap,
+      allowReorder: settings.mediaLibraryAllowsManualOrder,
       onReorder: (oldIndex, newIndex) {
         _reorderMediaItems(library, contents, null, oldIndex, newIndex);
       },
@@ -3812,6 +3862,8 @@ class _HomeScreenState extends State<HomeScreen>
     int oldIndex,
     int newIndex,
   ) {
+    final settings = Provider.of<SettingsService>(context, listen: false);
+    if (!settings.mediaLibraryAllowsManualOrder) return;
     if (oldIndex < 0 || oldIndex >= contents.length) return;
     final draggedId = (contents[oldIndex] as dynamic).id as String;
     if (_selectedIds.contains(draggedId)) {
@@ -3998,7 +4050,7 @@ class _HomeScreenState extends State<HomeScreen>
                         child: Text(
                           collection.isPodcast
                               ? podcastLibrarySummary(collection)
-                              : '${collection.childrenIds.length} 个项目',
+                              : '${library.browseContents(collection.id).length} 个项目',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -4046,6 +4098,8 @@ class _HomeScreenState extends State<HomeScreen>
           }
 
           Widget interactiveCard = MediaLibraryGridCard(
+            keyboardItemId: collection.id,
+            isSelectionMode: _isSelectionMode,
             radius: radius,
             isSelected: isSelected,
             onTap: handleTap,
@@ -4140,6 +4194,7 @@ class _HomeScreenState extends State<HomeScreen>
                 child: FolderDropTarget(
                   folderId: collection.id,
                   index: index,
+                  allowReorder: settings.mediaLibraryAllowsManualOrder,
                   onMoveToFolder: (draggedIndex, targetId) async {
                     if (draggedIndex >= 0 && draggedIndex < contents.length) {
                       final draggedItem = contents[draggedIndex];
@@ -4171,6 +4226,7 @@ class _HomeScreenState extends State<HomeScreen>
                     }
                   },
                   onReorder: (oldIndex, newIndex) {
+                    if (!settings.mediaLibraryAllowsManualOrder) return;
                     final draggedItem = contents[oldIndex];
                     final draggedId = (draggedItem as dynamic).id;
 
@@ -4445,7 +4501,7 @@ class _HomeScreenState extends State<HomeScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          item.title,
+                          mediaLibraryItemTitle(context, item),
                           style: TextStyle(
                             fontSize: titleFontSize,
                             fontWeight: FontWeight.w500,
@@ -4508,6 +4564,7 @@ class _HomeScreenState extends State<HomeScreen>
           }
 
           Widget interactiveCard = MediaLibraryGridCard(
+            keyboardItemId: item.id,
             radius: radius,
             isSelected: isSelected,
             onTap: handleTap,
@@ -4593,8 +4650,11 @@ class _HomeScreenState extends State<HomeScreen>
                   child: interactiveCard,
                 ),
                 child: DragTarget<int>(
-                  onWillAcceptWithDetails: (details) => details.data != index,
+                  onWillAcceptWithDetails: (details) =>
+                      settings.mediaLibraryAllowsManualOrder &&
+                      details.data != index,
                   onAcceptWithDetails: (details) {
+                    if (!settings.mediaLibraryAllowsManualOrder) return;
                     final oldIndex = details.data;
                     final library = Provider.of<LibraryService>(
                       context,

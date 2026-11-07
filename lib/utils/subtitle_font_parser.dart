@@ -5,7 +5,58 @@ class ParsedSubtitleFont {
   final String family;
   final List<int> weights;
   final List<List<int>> coverage;
-  const ParsedSubtitleFont(this.family, this.weights, this.coverage);
+  final (int, int)? variableWeightRange;
+  const ParsedSubtitleFont(
+    this.family,
+    this.weights,
+    this.coverage, {
+    this.variableWeightRange,
+  });
+}
+
+Never _invalidFont() => throw const FormatException('字体文件损坏或格式不支持');
+
+/// Returns the supported integer range of a real OpenType `wght` axis.
+(int, int)? _weightAxis(ByteData f) {
+  if (f.lengthInBytes < 16) _invalidFont();
+  final start = f.getUint16(4), n = f.getUint16(8), size = f.getUint16(10);
+  if (size < 20 || start + n * size > f.lengthInBytes) _invalidFont();
+  for (var i = 0; i < n; i++) {
+    final a = start + i * size;
+    if (f.getUint32(a) != 0x77676874) continue;
+    final min = f.getInt32(a + 4) / 65536;
+    final defaultValue = f.getInt32(a + 8) / 65536;
+    final max = f.getInt32(a + 12) / 65536;
+    if (min > defaultValue || defaultValue > max) _invalidFont();
+    if (max < 1 || min > 1000) return null;
+    final low = min.ceil().clamp(1, 1000);
+    final high = max.floor().clamp(1, 1000);
+    return low < high ? (low, high) : null;
+  }
+  return null;
+}
+
+/// Reads just the weight axis when reopening an older saved font. It avoids
+/// rebuilding the much larger glyph-coverage index during font loading.
+(int, int)? parseSubtitleFontWeightAxis(Uint8List bytes) {
+  if (bytes.length < 12 || bytes.length > 64 * 1024 * 1024) _invalidFont();
+  final data = ByteData.sublistView(bytes);
+  final signature = data.getUint32(0);
+  if (signature != 0x00010000 && signature != 0x4f54544f) _invalidFont();
+  final count = data.getUint16(4);
+  if (count == 0 || count > 512 || 12 + count * 16 > bytes.length) {
+    _invalidFont();
+  }
+  for (var i = 0; i < count; i++) {
+    final entry = 12 + 16 * i;
+    final start = data.getUint32(entry + 8),
+        length = data.getUint32(entry + 12);
+    if (start > bytes.length || length > bytes.length - start) _invalidFont();
+    if (data.getUint32(entry) == 0x66766172) {
+      return _weightAxis(ByteData.sublistView(bytes, start, start + length));
+    }
+  }
+  return null;
 }
 
 /// Reads the OpenType tables used by the library. All offsets are bounded by
@@ -85,20 +136,15 @@ ParsedSubtitleFont parseSubtitleFont(Uint8List bytes) {
     weight = table('OS/2', 6).getUint16(4).clamp(100, 900);
   }
   var weights = [((weight / 100).round() * 100).clamp(100, 900)];
+  (int, int)? variableWeightRange;
   if (tables.containsKey('fvar')) {
-    final f = table('fvar', 16);
-    final start = f.getUint16(4), n = f.getUint16(8), size = f.getUint16(10);
-    if (size < 20 || start + n * size > f.lengthInBytes) invalid();
-    for (var i = 0; i < n; i++) {
-      final a = start + i * size;
-      if (f.getUint32(a) == 0x77676874) {
-        final min = f.getInt32(a + 4) / 65536, max = f.getInt32(a + 12) / 65536;
-        weights = [
-          for (var w = 100; w <= 900; w += 100)
-            if (w >= min && w <= max) w,
-        ];
-        if (weights.isEmpty) weights = [weight];
-      }
+    variableWeightRange = _weightAxis(table('fvar', 16));
+    if (variableWeightRange != null) {
+      weights = [
+        for (var w = 100; w <= 900; w += 100)
+          if (w >= variableWeightRange.$1 && w <= variableWeightRange.$2) w,
+      ];
+      if (weights.isEmpty) weights = [weight];
     }
   }
   final cmap = table('cmap', 4);
@@ -175,5 +221,10 @@ ParsedSubtitleFont parseSubtitleFont(Uint8List bytes) {
       ranges.add([cp, cp]);
     }
   }
-  return ParsedSubtitleFont(family, weights, ranges);
+  return ParsedSubtitleFont(
+    family,
+    weights,
+    ranges,
+    variableWeightRange: variableWeightRange,
+  );
 }

@@ -54,7 +54,7 @@ void main() {
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark(useMaterial3: true).copyWith(
             scaffoldBackgroundColor: AppTokens.bgBase,
-            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
             colorScheme: const ColorScheme.dark(primary: AppTokens.accent),
           ),
           builder: (_, child) => MediaQuery(
@@ -217,8 +217,8 @@ void main() {
   testWidgets('render responsive device transfer previews', (tester) async {
     if (Platform.environment['PROGRESS_SYNC_PREVIEW'] != '1') return;
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();

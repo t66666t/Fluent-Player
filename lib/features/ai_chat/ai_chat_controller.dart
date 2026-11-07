@@ -18,6 +18,7 @@ import 'ai_token_usage.dart';
 import 'ai_transcript_preparation.dart';
 import 'ai_turn_plan.dart';
 import 'ai_context_compaction.dart';
+import '../../services/ai_api_connection_sync.dart';
 
 class _AiChatRun {
   bool compactionOnly = false;
@@ -41,11 +42,14 @@ class AiChatController extends ChangeNotifier {
        _store = conversationStore ?? AiConversationStore(),
        _loader = contextLoader ?? AiVideoContextLoader(),
        settings = initialSettings ?? const AiChatSettings(),
-       _initialSettings = initialSettings;
+       _initialSettings = initialSettings {
+    AiApiConnectionSync.changes.addListener(_sharedConnectionChanged);
+  }
 
   VideoItem video;
   Future<void>? _initialization;
   final AiChatTransport _transport;
+
   /// A settings dialog may borrow the idle chat connection. It must not own or
   /// dispose it, and background conversations must keep their active transport.
   AiChatTransport? get settingsTransport =>
@@ -477,6 +481,40 @@ class AiChatController extends ChangeNotifier {
   Future<void> flushPreferencesForTrial() async {
     await _initialization;
     await _settingsWrites;
+  }
+
+  Future<void> refreshApiConnections() async {
+    await _initialization;
+    await _settingsWrites;
+    if (_disposed) return;
+    final updated = await _settingsStore.withSharedApiConnections(settings);
+    if (_disposed) return;
+    settings = updated;
+    _notify();
+  }
+
+  bool _refreshingSharedConnections = false,
+      _sharedConnectionsChangedAgain = false;
+  void _sharedConnectionChanged() {
+    if (_disposed || !ready) return;
+    _sharedConnectionsChangedAgain = true;
+    if (_refreshingSharedConnections) return;
+    _refreshingSharedConnections = true;
+    unawaited(() async {
+      try {
+        do {
+          _sharedConnectionsChangedAgain = false;
+          await refreshApiConnections();
+        } while (_sharedConnectionsChangedAgain && !_disposed);
+      } catch (_) {
+        if (!_disposed) {
+          error = '共享接口未能读取，请检查安全存储后重试。';
+          _notify();
+        }
+      } finally {
+        _refreshingSharedConnections = false;
+      }
+    }());
   }
 
   Future<void> saveSettings(AiChatSettings value) async {
@@ -1472,6 +1510,7 @@ class AiChatController extends ChangeNotifier {
 
   @override
   void dispose() {
+    AiApiConnectionSync.changes.removeListener(_sharedConnectionChanged);
     unawaited(flushDrafts());
     _disposed = true;
     _contextRevision++;

@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../features/media_cache/media_cache_service.dart';
-import '../features/media_cache/media_cache_widgets.dart';
 
 import '../services/network/network_models.dart';
 import '../services/network/network_settings_service.dart';
@@ -222,18 +220,20 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   ),
                 ),
                 if (loadFailed)
-                  DesktopButtonClickRegion(child: TextButton(
-                    onPressed: () async {
-                      try {
-                        await _service.retryLoad();
-                        if (mounted) {
-                          _fillForm();
-                          setState(() {});
-                        }
-                      } catch (_) {}
-                    },
-                    child: const Text('重新加载'),
-                  )),
+                  DesktopButtonClickRegion(
+                    child: TextButton(
+                      onPressed: () async {
+                        try {
+                          await _service.retryLoad();
+                          if (mounted) {
+                            _fillForm();
+                            setState(() {});
+                          }
+                        } catch (_) {}
+                      },
+                      child: const Text('重新加载'),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 CapsuleDropdownButtonFormField<String>(
                   key: ValueKey(
@@ -268,17 +268,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                 Text(
                   unified == null
                       ? '国内服务默认不使用系统代理，国外及其他服务默认跟随设备网络。'
-                      : '所有功能（含播客和下载任务）统一${unified == NetworkMode.custom ? '使用' : ''}${unified.label}。切回按功能分别设置后，恢复原有分项选择。',
+                      : '学习服务和播客统一${unified == NetworkMode.custom ? '使用' : ''}${unified.label}。切回按功能分别设置后，恢复原有分项选择。',
                 ),
                 const SizedBox(height: 16),
-                if (MediaCacheService.instance != null) ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.download_outlined),
-                  title: const Text('媒体缓存传输'),
-                  subtitle: const Text('并发任务、分片连接与自动重试，沿用 B 站和网盘网络方式'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => unawaited(cacheUiAction(() => showMediaCacheSettings(context, networkOnly: true))),
-                ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.auto_awesome),
@@ -403,12 +395,14 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                                         setState(() => _keepPassword = value!),
                                   ),
                                 const SizedBox(height: 12),
-                                DesktopButtonClickRegion(child: FilledButton(
-                                  onPressed: _savingProxy ? null : _saveProxy,
-                                  child: Text(
-                                    _savingProxy ? '正在保存…' : '保存代理配置',
+                                DesktopButtonClickRegion(
+                                  child: FilledButton(
+                                    onPressed: _savingProxy ? null : _saveProxy,
+                                    child: Text(
+                                      _savingProxy ? '正在保存…' : '保存代理配置',
+                                    ),
                                   ),
-                                )),
+                                ),
                               ],
                             ),
                           ),
@@ -418,11 +412,14 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                 ),
                 const SizedBox(height: 16),
                 if (unified == null) ...[
-                  for (final scope in NetworkScope.values.where(
-                    (scope) =>
-                        scope != NetworkScope.podcastsDomestic &&
-                        scope != NetworkScope.podcasts,
-                  ))
+                  for (final scope in const [
+                    NetworkScope.speechRecognition,
+                    NetworkScope.cloudTranscription,
+                    NetworkScope.translation,
+                    NetworkScope.updates,
+                    NetworkScope.modelDownloads,
+                    NetworkScope.other,
+                  ])
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Column(
@@ -462,8 +459,6 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                         ],
                       ),
                     ),
-                  const Text('YTDLP 中的 B 站链接使用“B 站”的设置。其他已识别的国内网站使用国内网站设置。'),
-                  const SizedBox(height: 16),
                 ],
                 const SizedBox(height: 16),
                 const Text(

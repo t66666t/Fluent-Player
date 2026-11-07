@@ -68,7 +68,7 @@ void main() {
     },
   );
   test(
-    'public Xiaoyuzhou episode data remains a single import without RSS',
+    'Xiaoyuzhou webpage JSON is not treated as permission to acquire audio',
     () async {
       final client = PodcastClient(
         http: _FixtureHttp(
@@ -90,15 +90,9 @@ void main() {
               })}</script></html>''',
         ),
       );
-      final result = await client.resolve(
-        'https://www.xiaoyuzhoufm.com/episode/one',
-      );
-      expect(result.singleEpisode, isTrue);
-      expect(result.feed.channel.active, isFalse);
-      expect(result.feed.episodes.single.durationMs, 121000);
-      expect(
-        result.feed.episodes.single.media.single.url,
-        'https://cdn.test/audio.m4a',
+      await expectLater(
+        client.resolve('https://www.xiaoyuzhoufm.com/episode/one'),
+        throwsFormatException,
       );
     },
   );
@@ -123,6 +117,63 @@ void main() {
         client.resolve('https://publisher.test/empty'),
         throwsFormatException,
       );
+    },
+  );
+  test('Ximalaya paths are never guessed into feeds', () async {
+    final requests = <String>[];
+    final client = PodcastClient(
+      http: _FixtureHttp((uri) {
+        requests.add(uri.toString());
+        return '<html><title>Album</title></html>';
+      }),
+    );
+    await expectLater(
+      client.resolve('https://www.ximalaya.com/album/123'),
+      throwsFormatException,
+    );
+    expect(requests, ['https://www.ximalaya.com/album/123']);
+  });
+
+  test(
+    'webpage media tags and private JSON cannot synthesize episodes',
+    () async {
+      for (final source in [
+        '<meta property="og:audio" content="https://cdn.test/file.mp3">',
+        '<audio src="https://cdn.test/file.mp3"></audio>',
+        '<video src="https://cdn.test/file.mp4"></video>',
+        '<script type="application/json">{"feedUrl":"https://hidden.test/rss"}</script>',
+      ]) {
+        var requests = 0;
+        final client = PodcastClient(
+          http: _FixtureHttp((uri) {
+            requests++;
+            return source;
+          }),
+        );
+        await expectLater(
+          client.resolve('https://publisher.test/show'),
+          throwsFormatException,
+        );
+        expect(requests, 1);
+      }
+    },
+  );
+
+  test(
+    'explicit publisher RSS anchors resolve into evidenced enclosures',
+    () async {
+      final client = PodcastClient(
+        http: _FixtureHttp(
+          (uri) =>
+              uri.path == '/rss' ? podcastFixture() : '<a href="/rss">RSS</a>',
+        ),
+      );
+      final resolution = await client.resolve('https://publisher.test/show');
+      expect(
+        resolution.feed.episodes.single.sourceFeedUrl,
+        'https://publisher.test/rss',
+      );
+      expect(resolution.singleEpisode, isFalse);
     },
   );
 }

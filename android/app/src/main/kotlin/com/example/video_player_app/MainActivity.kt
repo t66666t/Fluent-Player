@@ -62,6 +62,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingPickerMode: PickerMode? = null
     private var pendingIncludeSourceHints = false
+    private var pendingFilterMediaExtensions = true
     private var ytDlpEventSink: EventChannel.EventSink? = null
     private var hardwareInputChannel: MethodChannel? = null
     private var modelDirectoryImportBridge: ModelDirectoryImportBridge? = null
@@ -117,6 +118,9 @@ class MainActivity : AudioServiceFragmentActivity() {
         if (!flutterEngine.plugins.has(ClipboardRevisionPlugin::class.java)) {
             flutterEngine.plugins.add(ClipboardRevisionPlugin())
         }
+        if (!flutterEngine.plugins.has(ComposeVideoSavePlugin::class.java)) {
+            flutterEngine.plugins.add(ComposeVideoSavePlugin())
+        }
         if (!flutterEngine.plugins.has(PlaybackRefreshRatePlugin::class.java)) {
             val refreshRatePlugin = PlaybackRefreshRatePlugin()
             flutterEngine.plugins.add(refreshRatePlugin)
@@ -167,6 +171,7 @@ class MainActivity : AudioServiceFragmentActivity() {
                     pendingResult = result
                     pendingPickerMode = PickerMode.MEDIA
                     pendingIncludeSourceHints = call.argument<Boolean>("includeSourceHints") ?: false
+                    pendingFilterMediaExtensions = call.argument<Boolean>("filterMediaExtensions") ?: true
                     val mimeTypes = call.argument<List<String>>("mimeTypes") ?: listOf("video/*", "audio/*")
                     val allowMultiple = call.argument<Boolean>("allowMultiple") ?: true
                     openSystemFilePicker(mimeTypes, allowMultiple)
@@ -539,6 +544,8 @@ class MainActivity : AudioServiceFragmentActivity() {
         pendingPickerMode = null
         val includeSourceHints = pendingIncludeSourceHints
         pendingIncludeSourceHints = false
+        val filterMediaExtensions = pendingFilterMediaExtensions
+        pendingFilterMediaExtensions = true
         if (result == null) return
         if (resultCode != Activity.RESULT_OK || data == null) {
             when (pickerMode) {
@@ -625,7 +632,7 @@ class MainActivity : AudioServiceFragmentActivity() {
                             } catch (_: Exception) {
                                 // A temporary read grant is sufficient to copy.
                             }
-                            resolveMediaUriForImport(uri, null)
+                            resolveMediaUriForImport(uri, null, filterMediaExtensions)
                         }
                         runOnUiThread { result.success(payload) }
                     } catch (error: Exception) {
@@ -734,7 +741,7 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     private fun sendYtDlpWorkerCommand(action: String, taskId: String): Boolean = false
 
-    private fun handleYtDlpWorkerEvent(intent: Intent) { return false }
+    private fun handleYtDlpWorkerEvent(intent: Intent) {}
 
     private fun finishYtDlpWorkerDownload(
         task: RunningYtDlpTask,
@@ -966,16 +973,23 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
-    private fun resolveMediaUriForImport(uri: Uri, typeHint: String?): ImportableMediaFile? {
-        if (!isLikelyMedia(uri, typeHint)) return null
+    private fun resolveMediaUriForImport(
+        uri: Uri,
+        typeHint: String?,
+        filterMediaExtensions: Boolean = true,
+    ): ImportableMediaFile? {
+        // Only the explicit document picker may opt out of extension filtering.
+        // Do not turn that opt-out into a network URI import entry point.
+        if (!filterMediaExtensions && uri.scheme != "content" && uri.scheme != "file") return null
+        if (filterMediaExtensions && !isLikelyMedia(uri, typeHint)) return null
         return MediaImportFiles.resolveUri(
             sourceScheme = uri.scheme,
             directPath = {
                 if (uri.authority == "${packageName}.fileprovider") null
-                else runCatching { resolveToPath(uri) }.getOrNull()?.takeIf { isMediaPath(it) }
+                else runCatching { resolveToPath(uri) }.getOrNull()?.takeIf { !filterMediaExtensions || isMediaPath(it) }
             },
             sourcePathHint = { trustedMediaSidecarSourceHint(uri) },
-        ) { copyUriToCache(uri, typeHint) }
+        ) { copyUriToCache(uri, typeHint, filterMediaExtensions) }
     }
 
     private fun trustedMediaSidecarSourceHint(uri: Uri): String? {
@@ -1253,7 +1267,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         return outFile.absolutePath
     }
 
-    private fun copyUriToCache(uri: Uri, typeHint: String?): File {
+    private fun copyUriToCache(uri: Uri, typeHint: String?, filterMediaExtensions: Boolean = true): File {
         val resolver = contentResolver
         val displayName = queryDisplayName(uri)
         val mime = (resolver.getType(uri) ?: typeHint)?.lowercase(Locale.ROOT)
@@ -1269,7 +1283,7 @@ class MainActivity : AudioServiceFragmentActivity() {
             ?.takeIf { it.isNotEmpty() }
             ?: "shared_media_${System.currentTimeMillis()}"
         val fileName = if (!ext.isNullOrEmpty()) "$baseName.$ext" else baseName
-        if (!isMediaPath(fileName)) {
+        if (filterMediaExtensions && !isMediaPath(fileName)) {
             throw IllegalArgumentException("所选文件不是受支持的媒体")
         }
         return MediaImportFiles.copyToCache(cacheDir, fileName, queryFileSize(uri)) {

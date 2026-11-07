@@ -825,6 +825,7 @@ class _OcrLibrary extends ChangeNotifier implements LibraryService {
     String? wordTimingPath,
     String? sourceAssetId,
     bool shareWithBilibiliPart = true,
+    bool generatedName = false,
   }) async {
     registered.add(path);
     return null;

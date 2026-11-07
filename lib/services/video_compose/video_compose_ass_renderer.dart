@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/subtitle_model.dart';
 import '../../models/subtitle_style.dart';
+import '../subtitle_font_service.dart';
 import 'video_compose_font_service.dart';
 import 'video_compose_types.dart';
 
@@ -331,10 +332,12 @@ class VideoComposeAssRenderer {
     ))
       TextSpan(
         text: run.text,
-        style: style.getTextStyle(
-          overrideFontFamily: run.font.family,
-          overrideFontWeight: run.font.fontWeight,
-        ),
+        style: style
+            .getTextStyle(
+              overrideFontFamily: run.font.family,
+              overrideFontWeight: run.font.fontWeight,
+            )
+            .copyWith(fontVariations: run.font.fontVariations),
       ),
   ];
 
@@ -446,7 +449,11 @@ class VideoComposeAssRenderer {
     final SubtitleTextStyle textStyle = style.textStyle;
     final String fontName = _fontService.resolveSystemFont(font.family);
     final FontWeight weight = font.fontWeight;
-    final int boldFlag = _toAssBoldFlag(weight);
+    final int boldFlag =
+        SubtitleFontService.instance.find(font.family)?.hasVariableWeight ==
+            true
+        ? font.weight.clamp(2, 1000)
+        : _toAssBoldFlag(weight);
 
     final int italic = textStyle.isItalic ? 1 : 0;
     final int underline = textStyle.isUnderline ? 1 : 0;

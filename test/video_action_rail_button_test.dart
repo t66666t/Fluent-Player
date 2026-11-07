@@ -45,6 +45,7 @@ void main() {
                       availableHeight: 600,
                       textScaler: TextScaler.noScaling,
                       showLabels: showLabel,
+                      actionCount: 1,
                     ),
                     onPressed: onPressed,
                   ),

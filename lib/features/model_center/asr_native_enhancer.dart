@@ -15,7 +15,9 @@ import 'asr_onnx_session.dart';
 import 'ctc_forced_alignment.dart';
 import 'subtitle_segmentation.dart';
 import 'asr_text_processing.dart';
+import 'inference_tuning.dart';
 import 'qwen_asr_runtime.dart';
+import 'model_catalog.dart';
 
 typedef AsrPhaseProgress =
     void Function(String phase, double fraction, String message);
@@ -81,6 +83,36 @@ Future<String> probeAsrEnhancement(
       }
     }
     sherpa.initBindings(libraryDirectory);
+    if (engine == 'silero-vad') {
+      final detector = sherpa.VoiceActivityDetector(
+        config: sherpa.VadModelConfig(
+          sileroVad: sherpa.SileroVadModelConfig(
+            model: p.join(directories[asrVadModelId]!, asrVadFileName),
+          ),
+          sampleRate: 16000,
+          numThreads: 1,
+          debug: false,
+        ),
+        bufferSizeInSeconds: 30,
+      );
+      try {
+        for (var start = 0; start < samples.length; start += 512) {
+          final window = Float32List(512);
+          window.setRange(
+            0,
+            math.min(512, samples.length - start),
+            samples,
+            start,
+          );
+          detector.acceptWaveform(window);
+        }
+        detector.flush();
+        if (detector.isEmpty()) throw StateError('语音检测未返回测试语音区间');
+        return '16 kHz 语音检测真实推理通过';
+      } finally {
+        detector.free();
+      }
+    }
     final helper = AsrNativeEnhancer(
       options: const AsrEnhancementOptions(),
       directories: directories,
@@ -187,6 +219,9 @@ class AsrNativeEnhancer {
     this.textProcessingVersion,
     this.qwenWorkerExecutable,
     this.qwenAcceleration = 'cpu',
+    this.conservativeGpu = false,
+    this.onAcceleration,
+    this.accelerationEnvironment,
   });
   final AsrEnhancementOptions options;
   final Map<String, String> directories;
@@ -199,6 +234,9 @@ class AsrNativeEnhancer {
   final int? textProcessingVersion;
   final String? qwenWorkerExecutable;
   final String qwenAcceleration;
+  final bool conservativeGpu;
+  final void Function(Map<String, dynamic>)? onAcceleration;
+  final Object? accelerationEnvironment;
   late final AsrTextProcessor _text = AsrTextProcessor(
     directories: directories,
     threads: threads,
@@ -206,14 +244,45 @@ class AsrNativeEnhancer {
     runtime: QwenAsrRuntime(executable: qwenWorkerExecutable),
     acceleration: qwenAcceleration,
     review: options.review,
+    conservativeGpu: conservativeGpu,
+    accelerationEnvironment: accelerationEnvironment,
+    onState: onAcceleration,
   );
+  int _alignmentLowGrants = 0;
+  DateTime? _alignmentLowSince;
   sherpa.OfflineSpeechDenoiser? _denoiser;
   sherpa.OfflinePunctuation? _punctuationModel;
   _AlignmentResources? _alignmentCache;
   final void Function() checkCancelled;
   final AsrPhaseProgress progress;
   bool usedOrt = false;
-  set qwenThreads(int value) => _text.threads = value.clamp(1, 12);
+  /// Heavy aligner weights stay resident across small thread changes.
+  void applyAlignmentThreads(int granted, {required bool protective}) {
+    final requested = granted.clamp(1, 12);
+    final loaded = _text.threads;
+    final halved = requested < loaded && requested <= loaded / 2;
+    if (halved && !protective) {
+      _alignmentLowGrants++;
+      _alignmentLowSince ??= DateTime.now();
+    } else if (!halved) {
+      _alignmentLowGrants = 0;
+      _alignmentLowSince = null;
+    }
+    final next = asrReloadThreads(
+      loaded: _text.residentModelId == null ? null : loaded,
+      granted: requested,
+      protective: protective,
+      heavy: true,
+      lowGrants: _alignmentLowGrants,
+      lowFor: _alignmentLowSince == null
+          ? Duration.zero
+          : DateTime.now().difference(_alignmentLowSince!),
+    );
+    if (next == null) return;
+    _alignmentLowGrants = 0;
+    _alignmentLowSince = null;
+    _text.threads = next;
+  }
   void useCpuAlignmentForMemory() => _text.memoryCpuAlignment = true;
   bool needsQwenAlignment(
     List<SubtitleItem> cues, {
@@ -430,6 +499,12 @@ class AsrNativeEnhancer {
       cues = [for (final cue in cues) trimAsrSilence(cue, audio)];
       progress('refining', 1, '字幕边界修整完成');
     }
+    if ((textProcessingVersion ?? 0) >= 3) {
+      cues = [
+        for (final cue in cues)
+          hasUsableAsrTiming(cue) ? cue : attachAsrPauseAnchors(cue, audio),
+      ];
+    }
     if (usesAsrTextProcessing(textProcessingVersion)) {
       cues = await _text.attachBoundaries(cues);
     }
@@ -645,7 +720,7 @@ class AsrNativeEnhancer {
             // prepared English CTC export can align a whole bounded sentence,
             // allowing real acoustic cuts without guessing times by length.
             final maxSeconds =
-                textProcessingVersion == 2 &&
+                (textProcessingVersion ?? 0) >= 2 &&
                     recognitionEngine == 'qwen3-asr' &&
                     lang == 'en'
                 ? 16

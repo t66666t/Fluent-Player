@@ -30,6 +30,7 @@ void main() {
           addTearDown(tester.view.resetPhysicalSize);
           final tasks = List.generate(8, task);
           var clicks = 0;
+          var selected = <String>{};
           final moves = <String>[];
           await tester.pumpWidget(
             MaterialApp(
@@ -39,6 +40,9 @@ void main() {
                   builder: (context, setState) {
                     return TaskQueueTable(
                       tasks: tasks,
+                      selectedKeys: selected,
+                      onSelectionChanged: (keys) =>
+                          setState(() => selected = keys),
                       autoDeletedKeys: const {},
                       onStart: (_) => clicks++,
                       onRetry: (_) => clicks++,
@@ -68,6 +72,13 @@ void main() {
           await tester.pumpAndSettle();
           expect(clicks, 3);
           expect(moves, isEmpty);
+
+          // The first hold selects; it must not start a drag or activate an action.
+          await tester.longPress(find.text('Video 0'));
+          await tester.pumpAndSettle();
+          expect(selected, {'task-0'});
+          expect(moves, isEmpty);
+          expect(clicks, 3);
 
           // Title, status, action buttons and the row's padded edge all work.
           for (final area in [
@@ -102,7 +113,7 @@ void main() {
               _ => source,
             };
             final start = area == 'edge'
-                ? Offset(row.left + 2, row.center.dy)
+                ? Offset(row.right - 2, row.center.dy)
                 : tester.getCenter(finder);
             final destination = tester.getRect(target);
             final gesture = await tester.createGesture(kind: kind);
@@ -155,17 +166,22 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
       final moves = <int>[];
+      var selected = <String>{};
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: TaskQueueTable(
-              tasks: List.generate(40, task),
-              autoDeletedKeys: const {},
-              onStart: (_) {},
-              onRetry: (_) {},
-              onRestart: (_) {},
-              onDelete: (_) {},
-              onReorder: (_, index) => moves.add(index),
+            body: StatefulBuilder(
+              builder: (context, setState) => TaskQueueTable(
+                tasks: List.generate(40, task),
+                selectedKeys: selected,
+                onSelectionChanged: (keys) => setState(() => selected = keys),
+                autoDeletedKeys: const {},
+                onStart: (_) {},
+                onRetry: (_) {},
+                onRestart: (_) {},
+                onDelete: (_) {},
+                onReorder: (_, index) => moves.add(index),
+              ),
             ),
           ),
         ),
@@ -187,6 +203,9 @@ void main() {
       await cancelled.cancel();
       await tester.pumpAndSettle();
       expect(moves, isEmpty);
+      await tester.longPress(find.text('Video 0'));
+      await tester.pumpAndSettle();
+      expect(selected, {'task-0'});
       final interrupted = await tester.startGesture(
         tester.getCenter(find.text('Video 0')),
       );

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:video_player_app/widgets/categorized_settings_page.dart';
-import 'package:video_player_app/widgets/experimental_layout_widgets.dart';
+import 'package:video_player_app/widgets/media_library_settings_page.dart';
 
 void main() {
-  testWidgets('expanded settings do not leave gaps in adjacent columns', (
+  testWidgets('expanded settings keep the next row aligned in reading order', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1440, 900);
@@ -17,17 +16,13 @@ void main() {
         home: StatefulBuilder(
           builder: (context, setState) {
             update = setState;
-            return CategorizedSettingsPage(
+            return MediaLibrarySettingsPage(
               items: [
                 for (var i = 0; i < 6; i++) ...[
-                  SettingsCategoryBoundary(
-                    ExperimentalSettingsCategory.general,
-                    label: '设置$i',
-                  ),
                   ConstrainedBox(
                     key: ValueKey('tile-$i'),
                     constraints: BoxConstraints.tightFor(
-                      height: i == 2 ? (expanded ? 480 : 260) : 60,
+                      height: i == 1 ? (expanded ? 480 : 260) : 60,
                     ),
                     child: Text('设置$i'),
                   ),
@@ -42,20 +37,30 @@ void main() {
       update(() => expanded = expand);
       await tester.pump();
       final first = tester.getRect(find.byKey(const ValueKey('tile-0')));
-      final next = tester.getRect(find.byKey(const ValueKey('tile-3')));
+      final next = tester.getRect(find.byKey(const ValueKey('tile-2')));
       expect(next.left, first.left);
-      expect(next.top - first.bottom, 12);
       expect(
         next.top,
-        lessThan(
-          tester.getBottomRight(find.byKey(const ValueKey('tile-2'))).dy,
-        ),
+        tester.getBottomRight(find.byKey(const ValueKey('tile-1'))).dy,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('tile-3'))).dy,
+        next.top,
       );
       expect(tester.takeException(), isNull);
     }
   });
 
-  for (final width in [390.0, 1024.0, 1440.0]) {
+  for (final (width, columns) in const [
+    (390.0, 1),
+    (600.0, 1),
+    (768.0, 1),
+    (800.0, 1),
+    (1024.0, 2),
+    (1280.0, 2),
+    (1440.0, 2),
+    (1920.0, 2),
+  ]) {
     testWidgets('all settings retain source order at width $width', (
       tester,
     ) async {
@@ -64,22 +69,10 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         const MaterialApp(
-          home: CategorizedSettingsPage(
+          home: MediaLibrarySettingsPage(
             items: [
-              SettingsCategoryBoundary(
-                ExperimentalSettingsCategory.storage,
-                label: '优先设置',
-              ),
               ListTile(title: Text('优先设置')),
-              SettingsCategoryBoundary(
-                ExperimentalSettingsCategory.playback,
-                label: '第二设置',
-              ),
               ListTile(title: Text('第二设置')),
-              SettingsCategoryBoundary(
-                ExperimentalSettingsCategory.general,
-                label: '第三设置',
-              ),
               ListTile(title: Text('第三设置')),
             ],
           ),
@@ -95,30 +88,21 @@ void main() {
       final first = tester.getTopLeft(find.text('优先设置'));
       final second = tester.getTopLeft(find.text('第二设置'));
       final third = tester.getTopLeft(find.text('第三设置'));
-      if (width < 900) {
+      if (columns == 1) {
         expect(first.dy, lessThan(second.dy));
         expect(second.dy, lessThan(third.dy));
       } else {
         expect(first.dy, second.dy);
         expect(first.dx, lessThan(second.dx));
-        if (width > 1400) {
+        if (columns == 3) {
           expect(second.dy, third.dy);
           expect(second.dx, lessThan(third.dx));
         } else {
           expect(third.dy, greaterThan(second.dy));
         }
       }
-      await tester.enterText(
-        find.byKey(const ValueKey('settings-search')),
-        '第二',
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('第二设置'), findsOneWidget);
-      expect(find.text('优先设置'), findsNothing);
-      await tester.tap(find.byTooltip('清除搜索'));
-      await tester.pumpAndSettle();
-      expect(find.text('优先设置'), findsOneWidget);
-      expect(find.text('第三设置'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(tester.widget<AppBar>(find.byType(AppBar)).bottom, isNull);
       expect(tester.takeException(), isNull);
     });
   }

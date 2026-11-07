@@ -54,9 +54,7 @@ class MediaLibraryRootSurfaceHost extends StatefulWidget {
     required this.continueBuilder,
     required this.recentBuilder,
     required this.foldersBuilder,
-    this.bilibiliBuilder,
     this.podcastsBuilder,
-    this.cloudDriveBuilder,
     this.onUserSwipe,
     this.swipeEnabled = true,
     this.swipeHighlightIndex,
@@ -68,11 +66,7 @@ class MediaLibraryRootSurfaceHost extends StatefulWidget {
   final MediaLibraryRootSurfaceBuilder continueBuilder;
   final MediaLibraryRootSurfaceBuilder recentBuilder;
   final MediaLibraryRootSurfaceBuilder foldersBuilder;
-
-  /// Online Bilibili page. Empty when the host is used without it.
-  final MediaLibraryRootSurfaceBuilder? bilibiliBuilder;
   final MediaLibraryRootSurfaceBuilder? podcastsBuilder;
-  final MediaLibraryRootSurfaceBuilder? cloudDriveBuilder;
 
   /// Fired after an interactive swipe commits, so the chip and prefs match.
   final ValueChanged<MediaLibraryRootEntry>? onUserSwipe;
@@ -96,10 +90,17 @@ class MediaLibraryRootSurfaceHost extends StatefulWidget {
 class _MediaLibraryRootSurfaceHostState
     extends State<MediaLibraryRootSurfaceHost>
     with TickerProviderStateMixin {
+  late List<MediaLibraryRootEntry> _entryOrder =
+      MediaLibraryRootEntryOrder.normalize(widget.entryOrder);
+
+  MediaLibraryRootEntry get _selectedEntry => widget.displayedEntry.isAvailable
+      ? widget.displayedEntry
+      : MediaLibraryRootEntry.folders;
+
   final Set<MediaLibraryRootEntry> _visited = <MediaLibraryRootEntry>{};
   final Set<MediaLibraryRootEntry> _rasterReady = <MediaLibraryRootEntry>{};
   final Map<MediaLibraryRootEntry, ValueNotifier<double>> _opacity = {
-    for (final entry in MediaLibraryRootEntry.values)
+    for (final entry in MediaLibraryRootEntryOrder.defaults)
       entry: ValueNotifier<double>(0),
   };
   late MediaLibraryRootEntry _paintedEntry;
@@ -141,7 +142,7 @@ class _MediaLibraryRootSurfaceHostState
   @override
   void initState() {
     super.initState();
-    _paintedEntry = widget.displayedEntry;
+    _paintedEntry = _selectedEntry;
     _visited.add(_paintedEntry);
     _rasterReady.add(_paintedEntry);
     _opacity[_paintedEntry]!.value = 1;
@@ -183,21 +184,27 @@ class _MediaLibraryRootSurfaceHostState
   @override
   void didUpdateWidget(covariant MediaLibraryRootSurfaceHost oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final nextOrder = MediaLibraryRootEntryOrder.normalize(widget.entryOrder);
+    final orderChanged = !listEquals(_entryOrder, nextOrder);
+    _entryOrder = nextOrder;
     if (oldWidget.swipeHighlightIndex != widget.swipeHighlightIndex ||
-        !listEquals(oldWidget.entryOrder, widget.entryOrder)) {
+        orderChanged) {
       _publishHighlight();
     }
     if (oldWidget.swipeSettled != widget.swipeSettled) {
       _publishSettled();
     }
-    if (oldWidget.displayedEntry == widget.displayedEntry) return;
-    if (widget.displayedEntry == _paintedEntry && _fadingInEntry == null) {
+    final oldEntry = oldWidget.displayedEntry.isAvailable
+        ? oldWidget.displayedEntry
+        : MediaLibraryRootEntry.folders;
+    if (oldEntry == _selectedEntry) return;
+    if (_selectedEntry == _paintedEntry && _fadingInEntry == null) {
       _publishHighlight();
       return;
     }
     _cancelDrag(snap: false);
     _prewarmGeneration++;
-    final next = widget.displayedEntry;
+    final next = _selectedEntry;
     // This build can lay out the incoming page before the fade paints it.
     // Waiting for the idle prewarm's three post-frame callbacks instead kept
     // the old page visible after mouse release, even for an empty destination.
@@ -297,7 +304,7 @@ class _MediaLibraryRootSurfaceHostState
 
   void _schedulePrewarm() {
     _prewarmTimer?.cancel();
-    if (widget.entryOrder.every(_rasterReady.contains)) {
+    if (_entryOrder.every(_rasterReady.contains)) {
       _prewarmIdle?.dispose();
       _prewarmIdle = null;
       return;
@@ -321,7 +328,7 @@ class _MediaLibraryRootSurfaceHostState
       return;
     }
     MediaLibraryRootEntry? pending;
-    for (final entry in widget.entryOrder) {
+    for (final entry in _entryOrder) {
       if (!_rasterReady.contains(entry)) {
         pending = entry;
         break;
@@ -368,7 +375,7 @@ class _MediaLibraryRootSurfaceHostState
     if (_opacity[previous]!.value != 1) {
       _opacity[previous]!.value = 1;
     }
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       if (entry == next || entry == previous) continue;
       if (_opacity[entry]!.value != 0) _opacity[entry]!.value = 0;
     }
@@ -400,7 +407,7 @@ class _MediaLibraryRootSurfaceHostState
       current: _paintedEntry,
       dragDx: _dragDx.value,
       width: _hostWidth(),
-      order: widget.entryOrder,
+      order: _entryOrder,
     );
   }
 
@@ -437,8 +444,7 @@ class _MediaLibraryRootSurfaceHostState
     final pending = handoff ? _snapTarget : null;
     _handoffDirection = pending == null
         ? 0
-        : (widget.entryOrder.indexOf(_paintedEntry) -
-                  widget.entryOrder.indexOf(pending))
+        : (_entryOrder.indexOf(_paintedEntry) - _entryOrder.indexOf(pending))
               .sign
               .toDouble();
     _abortSnap();
@@ -487,7 +493,7 @@ class _MediaLibraryRootSurfaceHostState
     final neighbor = MediaLibraryRootSwipePolicy.neighbor(
       current: _paintedEntry,
       dx: carried,
-      order: widget.entryOrder,
+      order: _entryOrder,
     );
     final clamped = MediaLibraryRootSwipePolicy.clampDrag(
       dx: carried,
@@ -501,15 +507,14 @@ class _MediaLibraryRootSurfaceHostState
   void _rebaseDragOrigin(MediaLibraryRootEntry next) {
     if (next == _paintedEntry) return;
     final delta =
-        widget.entryOrder.indexOf(next) -
-        widget.entryOrder.indexOf(_paintedEntry);
+        _entryOrder.indexOf(next) - _entryOrder.indexOf(_paintedEntry);
     final dx = _dragDx.value + delta * _hostWidth();
     _promoteDragOrigin(next);
     _showDragNeighbor(
       MediaLibraryRootSwipePolicy.neighbor(
         current: _paintedEntry,
         dx: dx,
-        order: widget.entryOrder,
+        order: _entryOrder,
       ),
     );
     _setDx(dx);
@@ -519,18 +524,18 @@ class _MediaLibraryRootSurfaceHostState
   /// can open the page after it. Stops at the first or last chip.
   double _carryPastFullPages(double dx, double width) {
     var remaining = dx;
-    for (var n = 0; n < widget.entryOrder.length; n++) {
+    for (var n = 0; n < _entryOrder.length; n++) {
       final shift = MediaLibraryRootSwipePolicy.shiftOrigin(
         dragDx: remaining,
         width: width,
       );
       if (shift == null) return remaining;
-      final index = widget.entryOrder.indexOf(_paintedEntry);
+      final index = _entryOrder.indexOf(_paintedEntry);
       final nextIndex = index + shift.indexDelta;
-      if (index < 0 || nextIndex < 0 || nextIndex >= widget.entryOrder.length) {
+      if (index < 0 || nextIndex < 0 || nextIndex >= _entryOrder.length) {
         return remaining;
       }
-      _promoteDragOrigin(widget.entryOrder[nextIndex]);
+      _promoteDragOrigin(_entryOrder[nextIndex]);
       remaining = shift.residualDx;
     }
     return remaining;
@@ -613,7 +618,7 @@ class _MediaLibraryRootSurfaceHostState
       dragDx: _dragDx.value,
       width: width,
       velocityDx: velocity,
-      order: widget.entryOrder,
+      order: _entryOrder,
     );
     if (pending != null &&
         _swipeTravelDx * _handoffDirection > 0 &&
@@ -627,15 +632,14 @@ class _MediaLibraryRootSurfaceHostState
       // New travel is independent of the unfinished snap distance. Once the
       // finger passes that destination, the usual residual-distance rule wins.
       final remaining =
-          (widget.entryOrder.indexOf(pending) -
-              widget.entryOrder.indexOf(_paintedEntry)) *
+          (_entryOrder.indexOf(pending) - _entryOrder.indexOf(_paintedEntry)) *
           -_handoffDirection;
       if (remaining >= 0) {
         if (remaining > 0) _rebaseDragOrigin(pending);
         target = MediaLibraryRootSwipePolicy.neighbor(
           current: _paintedEntry,
           dx: _swipeTravelDx,
-          order: widget.entryOrder,
+          order: _entryOrder,
         );
       }
     }
@@ -644,8 +648,8 @@ class _MediaLibraryRootSurfaceHostState
 
   void _settleSwipe(MediaLibraryRootEntry? target) {
     if (target != null && target != _paintedEntry) {
-      final from = widget.entryOrder.indexOf(_paintedEntry);
-      final to = widget.entryOrder.indexOf(target);
+      final from = _entryOrder.indexOf(_paintedEntry);
+      final to = _entryOrder.indexOf(target);
       final width = _hostWidth();
       final end = to > from ? -width : width;
       _snapTarget = target;
@@ -675,12 +679,12 @@ class _MediaLibraryRootSurfaceHostState
   /// to tell the chip row. The snap-to-neighbor path notifies from
   /// [_finishSwipe].
   void _notifyIfOriginChanged() {
-    if (!mounted || _paintedEntry == widget.displayedEntry) return;
+    if (!mounted || _paintedEntry == _selectedEntry) return;
     widget.onUserSwipe?.call(_paintedEntry);
   }
 
   void _hideParkedPages() {
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       if (entry == _paintedEntry || entry == _fadingOutEntry) continue;
       if (_opacity[entry]!.value != 0) _opacity[entry]!.value = 0;
     }
@@ -762,7 +766,7 @@ class _MediaLibraryRootSurfaceHostState
         MediaLibraryRootSwipePolicy.neighbor(
           current: _paintedEntry,
           dx: dx,
-          order: widget.entryOrder,
+          order: _entryOrder,
         ),
       );
       _setDx(dx);
@@ -792,7 +796,7 @@ class _MediaLibraryRootSurfaceHostState
     _visited.add(next);
     _rasterReady.add(next);
     _fade.value = 1;
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       _opacity[entry]!.value = entry == next ? 1 : 0;
     }
     _prewarmGeneration++;
@@ -821,7 +825,7 @@ class _MediaLibraryRootSurfaceHostState
 
   List<MediaLibraryRootEntry> get _paintOrder {
     final below = <MediaLibraryRootEntry>[];
-    for (final entry in MediaLibraryRootEntry.values) {
+    for (final entry in MediaLibraryRootEntryOrder.defaults) {
       if (!_visited.contains(entry) || entry == _paintedEntry) continue;
       below.add(entry);
     }
@@ -834,12 +838,10 @@ class _MediaLibraryRootSurfaceHostState
       MediaLibraryRootEntry.continueLearning => widget.continueBuilder,
       MediaLibraryRootEntry.recent => widget.recentBuilder,
       MediaLibraryRootEntry.folders => widget.foldersBuilder,
-      MediaLibraryRootEntry.bilibili =>
-        widget.bilibiliBuilder ?? _emptyRootSurface,
       MediaLibraryRootEntry.podcasts =>
-        widget.podcastsBuilder ?? _emptyRootSurface,
-      MediaLibraryRootEntry.cloudDrive =>
-        widget.cloudDriveBuilder ?? _emptyRootSurface,
+        widget.podcastsBuilder ?? ((_, _) => const SizedBox.shrink()),
+      MediaLibraryRootEntry.bilibili ||
+      MediaLibraryRootEntry.cloudDrive => widget.foldersBuilder,
     };
   }
 
@@ -1013,9 +1015,6 @@ class MediaLibraryRootSwipeRecognizer extends HorizontalDragGestureRecognizer {
         );
   }
 }
-
-Widget _emptyRootSurface(BuildContext context, bool isActive) =>
-    const SizedBox.shrink();
 
 /// Calls [builder] for the first frame, while visible, and once when hiding.
 /// Hidden frames reuse the last widget so a parent rebuild cannot walk the grid.

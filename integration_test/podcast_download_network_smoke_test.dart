@@ -60,6 +60,7 @@ void main() {
         length: payload.length,
       );
       final episode = PodcastEpisode(
+        sourceFeedUrl: 'https://publisher.test/rss',
         id: 'network-probe',
         channelId: 'channel',
         title: 'Network probe',

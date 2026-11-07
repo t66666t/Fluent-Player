@@ -40,6 +40,7 @@ import '../services/task_subtitle_storage_service.dart';
 import '../services/app_haptics.dart';
 import '../services/settings_service.dart';
 import '../services/media_playback_service.dart';
+import '../services/native_playback_control_session.dart';
 import '../services/playback_navigation_service.dart';
 import '../services/playback_behavior_policy.dart';
 import '../services/playback_exit_guard.dart';
@@ -190,8 +191,7 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
     musicCoverOwnsSurface: _musicCoverHidesVideoSurface,
   );
 
-  bool get _isCurrentBilibiliOnlineStream =>
-      _currentItem.sourceRef?.kind == MediaSourceKind.bilibiliStream;
+  bool get _isCurrentBilibiliOnlineStream => false;
 
   /// Poster over an empty texture until the first decoded frame arrives.
   Widget _buildVisibleVideoFrameCover() {
@@ -700,7 +700,7 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
       _clearVideoComposePreview();
       final base = _panelOf(
         portraitDefaultPanel(
-          isBilibiliVideo: bilibiliPlayerVideoOf(nextItem) != null,
+          isBilibiliVideo: false,
           rememberedTab: _portraitTab,
         ),
       );
@@ -1950,7 +1950,14 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
         listen: false,
       );
       if (playbackService.controller == _controller) {
-        playbackService.seekTo(clamped, source: source);
+        unawaited(
+          NativePlaybackControlSession.seekOwned(
+            service: playbackService,
+            expectedController: _controller,
+            position: clamped,
+            source: source,
+          ),
+        );
       } else {
         _controller.seekTo(clamped);
       }
@@ -2548,7 +2555,7 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
     }
   }
 
-  bool get _isBilibiliVideo => bilibiliPlayerVideoOf(_currentItem) != null;
+  bool get _isBilibiliVideo => false;
 
   BilibiliPortraitTabMemory get _portraitTabMemory =>
       BilibiliPortraitTabMemory.of(
@@ -4362,7 +4369,10 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
               color: timer.isActive ? Colors.blueAccent : Colors.white70,
               size: 17,
             ),
-            onPressed: () => unawaited(showSleepTimerDialog(context)),
+            onPressed: () {
+              AppHaptics.pulse(light: true);
+              unawaited(showSleepTimerDialog(context));
+            },
             tooltip: timer.isActive ? timer.statusText : '定时关闭',
             padding: EdgeInsets.zero,
             visualDensity: VisualDensity.compact,
@@ -4704,15 +4714,18 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
                   onTap: canSeek
-                      ? () => unawaited(
-                          showPlaybackSpeedDialog(
-                            context: context,
-                            anchorContext: speedButtonContext,
-                            initialSpeed: speed,
-                            settings: settings,
-                            onSpeedSelected: _handlePlaybackSpeedSelected,
-                          ),
-                        )
+                      ? () {
+                          AppHaptics.pulse(light: true);
+                          unawaited(
+                            showPlaybackSpeedDialog(
+                              context: context,
+                              anchorContext: speedButtonContext,
+                              initialSpeed: speed,
+                              settings: settings,
+                              onSpeedSelected: _handlePlaybackSpeedSelected,
+                            ),
+                          );
+                        }
                       : null,
                   // Preset entry stays on long-press so this tap is not deferred.
                   onLongPress: toggleSubtitlePresets,
@@ -4764,8 +4777,10 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
                             : Colors.white70,
                         size: 17,
                       ),
-                      onPressed: () =>
-                          _setFloatingSubtitles(!settings.showSubtitles),
+                      onPressed: () {
+                        AppHaptics.pulse(light: true);
+                        _setFloatingSubtitles(!settings.showSubtitles);
+                      },
                       tooltip: '字幕开关',
                       padding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
@@ -4790,6 +4805,7 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
                         size: 17,
                       ),
                       onPressed: () {
+                        AppHaptics.pulse(light: true);
                         unawaited(playbackService.toggleMute());
                       },
                       tooltip: playbackService.isMuted ? '取消静音' : '静音',
@@ -5872,6 +5888,9 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
           onEnableSeekPreviewChanged: (val) =>
               settings.saveEnableSeekPreview(val),
           enableHapticFeedback: settings.enableHapticFeedback,
+          enableVideoTransformGestures: settings.enableVideoTransformGestures,
+          onEnableVideoTransformGesturesChanged: (value) =>
+              settings.saveEnableVideoTransformGestures(value),
           onEnableHapticFeedbackChanged: (val) =>
               settings.saveEnableHapticFeedback(val),
           isLeftHandedMode: settings.isLeftHandedMode,
@@ -5946,7 +5965,6 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
   }
 
   Widget _buildReadingPanel() {
-    final bilibiliVideo = bilibiliPlayerVideoOf(_currentItem);
     final subtitleList = SubtitleSidebar(
       key: _subtitleSidebarKey,
       onViewportReadyChanged: (ready) {
@@ -5997,22 +6015,7 @@ class _PortraitVideoScreenState extends State<PortraitVideoScreen>
       showChat: _activePanel == PortraitPanel.aiChat,
       isVisible: _isDefaultPanel || _activePanel == PortraitPanel.aiChat,
       chat: _buildAiChatPanel(),
-      subtitles: BilibiliPortraitTabs(
-        tab: _portraitTab,
-        onSelect: _pickPortraitTab,
-        canStartSwipe: () =>
-            _isDefaultPanel &&
-            (_portraitTab != PortraitBilibiliTab.subtitles ||
-                !(_subtitleSidebarKey.currentState?.hasTextSelection ?? false)),
-        details: bilibiliVideo == null
-            ? null
-            : BilibiliPlayerPanel(
-                bvid: bilibiliVideo.bvid,
-                page: bilibiliVideo.page,
-                fallbackTitle: _currentItem.title,
-              ),
-        subtitles: subtitleList,
-      ),
+      subtitles: subtitleList,
     );
   }
 

@@ -12,8 +12,10 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleName</key>
-	<string>Fluent_Player</string>
+	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -51,7 +53,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.fluentplayer.portable-package</string>
+				<string>cn.teezy.fluentplayer.portable-package</string>
 			</array>
 		</dict>
 	</array>
@@ -59,7 +61,7 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.fluentplayer.portable-package</string>
+			<string>cn.teezy.fluentplayer.portable-package</string>
 			<key>UTTypeDescription</key>
 			<string>Fluent Player Portable Package</string>
 			<key>UTTypeConformsTo</key>

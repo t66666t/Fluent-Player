@@ -28,7 +28,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'queue excludes missing locals and retains valid Bilibili streams',
+    'queue excludes missing locals and all virtual Bilibili streams',
     () async {
       final sandbox = await Directory.systemTemp.createTemp(
         'playback_queue_policy_',
@@ -74,22 +74,19 @@ void main() {
         invalidBilibili,
       ]);
 
-      expect(manager.playlist.map((item) => item.id), <String>[
-        'local',
-        'bilibili',
-      ]);
+      expect(manager.playlist.map((item) => item.id), <String>['local']);
       expect(manager.currentIndex, 0);
-      expect(manager.getNext()?.id, 'bilibili');
+      expect(manager.getNext(), isNull);
       expect(
         SystemMediaSessionService.instance.buildQueueItemIdsForTesting(
           playlistManager: manager,
         ),
-        <String>['local', 'bilibili'],
+        <String>['local'],
       );
 
       manager.setCurrentIndex(1);
-      expect(manager.currentIndex, 1);
-      expect(manager.getPrevious()?.id, 'local');
+      expect(manager.currentIndex, 0);
+      expect(manager.getPrevious(), isNull);
       expect(manager.hasNext, isFalse);
     },
   );

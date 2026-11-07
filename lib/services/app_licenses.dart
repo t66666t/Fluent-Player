@@ -32,6 +32,11 @@ void registerAppLicenses() {
       'ONNX Runtime': 'assets/licenses/ONNX-Runtime-MIT.txt',
       'llamadart': 'assets/licenses/llamadart-MIT.txt',
       'Noto Sans CJK': 'assets/fonts/licenses/NotoSans-OFL.txt',
+      'Noto Sans SC variable':
+          'assets/fonts/licenses/NotoSansSC-Variable-OFL.txt',
+      'Noto Color Emoji preview artwork':
+          'assets/fonts/licenses/NotoEmoji-Artwork-Apache-2.0.txt',
+      'Swei Gothic': 'assets/fonts/licenses/SweiGothic-OFL.txt',
       'Inter': 'assets/fonts/licenses/Inter-OFL.txt',
       'Roboto Condensed': 'assets/fonts/licenses/RobotoCondensed-OFL.txt',
       'Brawler': 'assets/fonts/licenses/Brawler-OFL.txt',

@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+/// Exercises native keyboard delivery in host widget tests. Release builds
+/// always use the actual operating system below.
+@visibleForTesting
+TargetPlatform? debugNativeTargetPlatformOverride;
+
 /// Platforms that can receive shortcuts from an attached physical keyboard.
 bool supportsHardwareKeyboardShortcutsOn(TargetPlatform platform) {
   return switch (platform) {
@@ -16,6 +21,9 @@ bool supportsHardwareKeyboardShortcutsOn(TargetPlatform platform) {
 
 TargetPlatform? get currentNativeTargetPlatform {
   if (kIsWeb) return null;
+  if (kDebugMode && debugNativeTargetPlatformOverride != null) {
+    return debugNativeTargetPlatformOverride;
+  }
   if (Platform.isAndroid) return TargetPlatform.android;
   if (Platform.isIOS) return TargetPlatform.iOS;
   if (Platform.isWindows) return TargetPlatform.windows;

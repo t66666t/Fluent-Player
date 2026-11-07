@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../utils/keyboard_focus_visibility.dart';
 import 'package:flutter/services.dart';
 
 import 'capsule_option.dart';
@@ -339,92 +340,101 @@ class _CapsuleMenuState<T> extends State<_CapsuleMenu<T>> {
                                   }
                                 },
                                 child: Builder(
-                                  builder: (context) => CapsuleOption(
-                                    borderRadius: BorderRadius.circular(
-                                      widget.plain ? 3 : 8,
-                                    ),
-                                    color:
-                                        !widget.plain &&
-                                            widget.options[index].selected
-                                        ? Colors.white.withValues(alpha: 0.07)
-                                        : Focus.of(context).hasFocus
-                                        ? Colors.white.withValues(alpha: 0.04)
-                                        : Colors.transparent,
-                                    onTap: widget.options[index].enabled
-                                        ? () => _choose(index)
-                                        : null,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
-                                    ),
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        minHeight: 24,
+                                  builder: (context) => KeyboardFocusHighlight(
+                                    focused: Focus.of(context).hasFocus,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.04,
                                       ),
-                                      child: Opacity(
-                                        opacity: widget.options[index].enabled
-                                            ? 1
-                                            : 0.4,
-                                        child: Align(
-                                          alignment: Alignment.centerLeft,
-                                          child:
-                                              widget.options[index].checked !=
-                                                  null
-                                              ? Row(
-                                                  children: [
-                                                    Icon(
-                                                      widget
-                                                              .options[index]
-                                                              .checked!
-                                                          ? Icons.check_box
-                                                          : Icons
-                                                                .check_box_outline_blank,
-                                                      size: 20,
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    Expanded(
-                                                      child: _label(
+                                      borderRadius: BorderRadius.circular(
+                                        widget.plain ? 3 : 8,
+                                      ),
+                                    ),
+                                    child: CapsuleOption(
+                                      borderRadius: BorderRadius.circular(
+                                        widget.plain ? 3 : 8,
+                                      ),
+                                      color:
+                                          !widget.plain &&
+                                              widget.options[index].selected
+                                          ? Colors.white.withValues(alpha: 0.07)
+                                          : Colors.transparent,
+                                      onTap: widget.options[index].enabled
+                                          ? () => _choose(index)
+                                          : null,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          minHeight: 24,
+                                        ),
+                                        child: Opacity(
+                                          opacity: widget.options[index].enabled
+                                              ? 1
+                                              : 0.4,
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child:
+                                                widget.options[index].checked !=
+                                                    null
+                                                ? Row(
+                                                    children: [
+                                                      Icon(
                                                         widget
-                                                            .options[index]
-                                                            .child,
+                                                                .options[index]
+                                                                .checked!
+                                                            ? Icons.check_box
+                                                            : Icons
+                                                                  .check_box_outline_blank,
+                                                        size: 20,
                                                       ),
-                                                    ),
-                                                  ],
-                                                )
-                                              : widget.plain
-                                              ? Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: DefaultTextStyle(
-                                                        style: menuTextStyle,
+                                                      const SizedBox(width: 12),
+                                                      Expanded(
                                                         child: _label(
                                                           widget
                                                               .options[index]
                                                               .child,
                                                         ),
                                                       ),
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    SizedBox(
-                                                      width: 16,
-                                                      child:
-                                                          widget
-                                                              .options[index]
-                                                              .selected
-                                                          ? const Icon(
-                                                              Icons
-                                                                  .check_rounded,
-                                                              size: 16,
-                                                              color: AppTokens
-                                                                  .text1,
-                                                            )
-                                                          : null,
-                                                    ),
-                                                  ],
-                                                )
-                                              : _label(
-                                                  widget.options[index].child,
-                                                ),
+                                                    ],
+                                                  )
+                                                : widget.plain
+                                                ? Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: DefaultTextStyle(
+                                                          style: menuTextStyle,
+                                                          child: _label(
+                                                            widget
+                                                                .options[index]
+                                                                .child,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 12),
+                                                      SizedBox(
+                                                        width: 16,
+                                                        child:
+                                                            widget
+                                                                .options[index]
+                                                                .selected
+                                                            ? const Icon(
+                                                                Icons
+                                                                    .check_rounded,
+                                                                size: 16,
+                                                                color: AppTokens
+                                                                    .text1,
+                                                              )
+                                                            : null,
+                                                      ),
+                                                    ],
+                                                  )
+                                                : _label(
+                                                    widget.options[index].child,
+                                                  ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -615,6 +625,7 @@ class CapsuleDropdownButtonFormField<T> extends FormField<T> {
     required List<DropdownMenuItem<T>>? items,
     required this.onChanged,
     InputDecoration decoration = const InputDecoration(),
+    bool useInputTheme = false,
     DropdownButtonBuilder? selectedItemBuilder,
     bool isExpanded = true,
     bool isDense = true,
@@ -635,25 +646,35 @@ class CapsuleDropdownButtonFormField<T> extends FormField<T> {
              borderRadius: BorderRadius.circular(24),
              borderSide: const BorderSide(color: _menuBorder, width: 0.75),
            );
-           final input = decoration.copyWith(
-             filled: true,
-             fillColor: capsuleMenuFill,
-             labelStyle: const TextStyle(color: Colors.white70),
-             prefixIconColor: decoration.prefixIconColor ?? Colors.white60,
-             suffixIconColor: decoration.suffixIconColor ?? Colors.white60,
-             isDense: true,
-             contentPadding: const EdgeInsets.symmetric(
-               horizontal: 14,
-               vertical: 10,
-             ),
-             border: border,
-             enabledBorder: border,
-             disabledBorder: border,
-             focusedBorder: border.copyWith(
-               borderSide: const BorderSide(color: Colors.white54),
-             ),
-             errorText: field.errorText ?? decoration.errorText,
-           );
+           final input = useInputTheme
+               ? decoration
+                     .applyDefaults(
+                       Theme.of(field.context).inputDecorationTheme,
+                     )
+                     .copyWith(
+                       errorText: field.errorText ?? decoration.errorText,
+                     )
+               : decoration.copyWith(
+                   filled: true,
+                   fillColor: capsuleMenuFill,
+                   labelStyle: const TextStyle(color: Colors.white70),
+                   prefixIconColor:
+                       decoration.prefixIconColor ?? Colors.white60,
+                   suffixIconColor:
+                       decoration.suffixIconColor ?? Colors.white60,
+                   isDense: true,
+                   contentPadding: const EdgeInsets.symmetric(
+                     horizontal: 14,
+                     vertical: 10,
+                   ),
+                   border: border,
+                   enabledBorder: border,
+                   disabledBorder: border,
+                   focusedBorder: border.copyWith(
+                     borderSide: const BorderSide(color: Colors.white54),
+                   ),
+                   errorText: field.errorText ?? decoration.errorText,
+                 );
            return InputDecorator(
              decoration: input,
              isEmpty: field.value == null && hint == null,
@@ -781,6 +802,9 @@ class CapsulePopupMenuButton<T> extends PopupMenuButton<T> {
     super.constraints,
     super.surfaceTintColor,
     super.useRootNavigator,
+    // PopupMenuButton paints its IconButton from this. Toolbar slots under
+    // Material's 40px minimum pass IconButton.styleFrom here.
+    super.style,
   });
   @override
   PopupMenuButtonState<T> createState() => _CapsulePopupState<T>();

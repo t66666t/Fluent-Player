@@ -1,3 +1,4 @@
+import 'subtitle_settings_layout.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -133,14 +134,7 @@ class _OcrComputeSettingsState extends State<OcrComputeSettings> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            description,
-            style: const TextStyle(
-              color: Colors.white60,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
+          Text(description, style: SubtitleSettingsTheme.description),
           if (running) ...[
             const SizedBox(height: 8),
             Text(
@@ -196,7 +190,7 @@ class _OcrComputeSettingsState extends State<OcrComputeSettings> {
                     Expanded(
                       child: Text(
                         '正在检测可用设备…',
-                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                        style: SubtitleSettingsTheme.description,
                       ),
                     ),
                   ],
@@ -263,11 +257,7 @@ class _OcrComputeSettingsState extends State<OcrComputeSettings> {
                   _capabilities!.note.isEmpty
                       ? '当前没有可用的硬件加速，任务将使用 CPU 优化识别。'
                       : _capabilities!.note,
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
+                  style: SubtitleSettingsTheme.description,
                 ),
               if (devices.any((d) => d.provider == 'CoreML') &&
                   (prefs.provider == 'auto' || prefs.provider == 'CoreML')) ...[

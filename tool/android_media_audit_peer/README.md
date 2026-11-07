@@ -193,15 +193,15 @@ verification; it does not prove expansion or interruption.
 Host-only SDK build (no device operation):
 
 ```text
-python tool/build_android_media_audit_peer.py --sdk C:/Users/11/AppData/Local/Android/sdk
+python tool/build_android_media_audit_peer.py --sdk <ANDROID_SDK_PATH>
 ```
 
 The root device operator can upgrade the existing debug-signed helper and run:
 
 ```text
-adb -s 983d4e11 install -r -t build/android-release-audit-20261031/evidence/media-control-peer/fluent-media-audit-peer.apk
-adb -s 983d4e11 shell am instrument -w -r -e inspect_only true com.fluentplayer.audit.controls/.ExpandModelNotificationInstrumentation
-adb -s 983d4e11 shell am instrument -w -r com.fluentplayer.audit.controls/.ExpandModelNotificationInstrumentation
+adb -s <ANDROID_SERIAL> install -r -t build/android-release-audit-20261031/evidence/media-control-peer/fluent-media-audit-peer.apk
+adb -s <ANDROID_SERIAL> shell am instrument -w -r -e inspect_only true com.fluentplayer.audit.controls/.ExpandModelNotificationInstrumentation
+adb -s <ANDROID_SERIAL> shell am instrument -w -r com.fluentplayer.audit.controls/.ExpandModelNotificationInstrumentation
 ```
 
 `inspect_only=true` returns row bounds, selection method, advertised action IDs

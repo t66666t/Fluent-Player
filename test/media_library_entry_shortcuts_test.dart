@@ -86,22 +86,23 @@ void main() {
       }
 
       for (final digit in [
-        LogicalKeyboardKey.digit5,
-        LogicalKeyboardKey.digit6,
         LogicalKeyboardKey.digit1,
         LogicalKeyboardKey.numpad2,
         LogicalKeyboardKey.digit3,
-        LogicalKeyboardKey.digit4,
+        LogicalKeyboardKey.numpad4,
       ]) {
         final index = mediaLibraryEntryShortcutIndex(
           digit,
           currentIndex: 0,
-          count: 6,
+          count: switcher().entries.length,
         )!;
         await key(digit);
         expect(switcher().selected, switcher().entries[index]);
       }
+      final selected = switcher().selected;
       await key(LogicalKeyboardKey.digit6);
+      expect(switcher().selected, selected);
+      expect(switcher().entries.every((entry) => entry.isAvailable), isTrue);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await key(LogicalKeyboardKey.tab);
       expect(switcher().selected, switcher().entries.first);

@@ -13,6 +13,7 @@ import '../services/library_activity_projection.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import 'cached_thumbnail_widget.dart';
+import 'media_display_title.dart';
 import 'media_library_browse_grid_cards.dart';
 import 'media_library_anchor_menu.dart';
 import 'media_library_continue_policy_sheet.dart';
@@ -184,7 +185,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
     if (_tryReuseFrozen &&
         _frozenSubtree != null &&
         !_libraryChangedWhileAway &&
-        _frozenViewMode == settings.mediaLibraryViewMode &&
+        _frozenViewMode == settings.mediaLibraryContentLayout.index &&
         _frozenBottomPadding == widget.cardBottomPadding &&
         _frozenSeriousOnly == settings.mediaLibraryContinueSeriousOnly &&
         _frozenSelectionToken == selectionToken) {
@@ -213,7 +214,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
         ? recent.isEmpty && unknown.isEmpty
         : historyDays.isEmpty;
 
-    final useList = settings.mediaLibraryViewMode == 1;
+    final useList = settings.mediaLibraryUsesRowPipeline;
     final flow = _flowSpacing(settings, useList);
     final ordered = <String>[
       ...pins,
@@ -224,7 +225,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
         ..._visibleHistoryIds(historyDays),
     ];
     widget.selection?.host.updateOrderedIds(ordered);
-    _frozenViewMode = settings.mediaLibraryViewMode;
+    _frozenViewMode = settings.mediaLibraryContentLayout.index;
     _frozenBottomPadding = widget.cardBottomPadding;
     _frozenSeriousOnly = seriousOnly;
     _frozenSelectionToken = selectionToken;
@@ -552,14 +553,11 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
     if (ids.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
     if (useList) {
       final listStyle = settings.listStyleFor(MediaQuery.sizeOf(context));
-      final metrics = MediaListLayoutMetrics.forGrid(
+      final columns = listStyle.isTable ? 1 : listStyle.crossAxisCount;
+      final metrics = MediaListLayoutMetrics.forStyle(
+        style: listStyle,
         screenShortestSide: MediaQuery.sizeOf(context).shortestSide,
         availableWidth: MediaLibraryScrollViewport.contentWidthOf(context),
-        crossAxisCount: listStyle.crossAxisCount,
-        heightSetting: listStyle.heightScale,
-        titleSetting: listStyle.titleScale,
-        mainSpacingSetting: listStyle.mainSpacingScale,
-        crossSpacingSetting: listStyle.crossSpacingScale,
       );
       return SliverPadding(
         padding: EdgeInsets.symmetric(horizontal: metrics.outerPadding),
@@ -568,7 +566,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
           itemCount: ids.length,
           itemKey: (index) => ids[index],
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: listStyle.crossAxisCount,
+            crossAxisCount: columns,
             mainAxisExtent: metrics.rowHeight,
             crossAxisSpacing: metrics.crossSpacing,
             mainAxisSpacing: metrics.mainSpacing,
@@ -576,7 +574,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
           delegate: SliverChildBuilderDelegate((context, index) {
             return MediaCoverRevealStamp(
               index: index,
-              crossAxisCount: listStyle.crossAxisCount,
+              crossAxisCount: columns,
               child: _pinTile(
                 library,
                 settings,
@@ -886,8 +884,9 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
 
   String? _resumeSubtitle(VideoItem? item) {
     if (item == null) return null;
-    if (item.lastPositionMs <= 0) return item.title;
-    return '${item.title} · ${MediaLibraryMediaGridCard.durationLabel(item.lastPositionMs)}';
+    final title = mediaLibraryItemTitle(context, item);
+    if (item.lastPositionMs <= 0) return title;
+    return '$title · ${MediaLibraryMediaGridCard.durationLabel(item.lastPositionMs)}';
   }
 
   double? _progressOf(VideoItem? item) {
@@ -967,6 +966,7 @@ class _MediaLibraryContinueViewState extends State<MediaLibraryContinueView> {
         isSelected: selected,
         isSelectionMode: selecting,
         titleScale: listStyle.titleScale,
+        style: listStyle,
         onTap: open,
         onLongPress: selection == null || selecting
             ? null

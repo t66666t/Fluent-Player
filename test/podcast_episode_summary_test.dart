@@ -5,6 +5,63 @@ import 'package:video_player_app/theme/app_interaction_theme.dart';
 
 void main() {
   testWidgets(
+    'sidebar summary uses full width and folds only on height overflow',
+    (tester) async {
+      var availableHeight = 240.0;
+      final description = List.generate(
+        10,
+        (index) => '频道介绍第 $index 行',
+      ).join('\n');
+      Widget app() => MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 280,
+              child: PodcastEpisodeSummary(
+                text: description,
+                availableHeight: availableHeight,
+                controlBelow: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(app());
+      expect(find.text('展开'), findsNothing);
+      expect(tester.widget<Text>(find.text(description)).maxLines, isNull);
+
+      availableHeight = 90;
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('展开'), findsOneWidget);
+      final text = find.text(description);
+      expect(tester.widget<Text>(text).maxLines, greaterThan(1));
+      expect(tester.getRect(text).width, closeTo(280, .1));
+      expect(
+        tester.getTopLeft(find.text('展开')).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(text).dy),
+      );
+      expect(
+        tester.getSize(find.byType(PodcastEpisodeSummary)).height,
+        lessThanOrEqualTo(availableHeight),
+      );
+      await tester.tap(find.text('展开'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(text).maxLines, isNull);
+      await tester.tap(find.text('收起'));
+      await tester.pumpAndSettle();
+      availableHeight = 240;
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('展开'), findsNothing);
+      expect(tester.widget<Text>(text).maxLines, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'fold measurement updates after width, scale and content changes',
     (tester) async {
       var width = 220.0;

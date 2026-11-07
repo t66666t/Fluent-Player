@@ -88,6 +88,7 @@ void main() {
       mimeType: 'audio/mpeg',
     );
     episode = PodcastEpisode(
+      sourceFeedUrl: 'https://publisher.test/rss',
       id: 'episode',
       channelId: 'channel',
       title: '测试节目',
@@ -356,6 +357,10 @@ void main() {
         url: 'http://127.0.0.1:${server.port}/playlist.m3u8',
         mimeType: 'application/vnd.apple.mpegurl',
       );
+      episode = PodcastEpisode.fromJson({
+        ...episode.toJson(),
+        'media': [hls.toJson()],
+      });
       final uri = await mediaStore.playbackUri(episode, hls);
       final client = HttpClient();
       try {

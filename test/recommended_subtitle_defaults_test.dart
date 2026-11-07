@@ -208,6 +208,8 @@ Future<void> _capture(WidgetTester tester, String name) async {
 
 void main() {
   test('all languages use Swei and the requested effects survive JSON', () {
+    expect(RecommendedSubtitleDefaults.layout.fontSize, 30);
+    expect(RecommendedSubtitleDefaults.layout.secondaryFontSize, 25);
     final text = SubtitleTextStyle.fromJson(
       RecommendedSubtitleDefaults.textStyle.toJson(),
     );
@@ -289,17 +291,17 @@ void main() {
           final secondary = _renderedStyles(tester, _secondary);
           final viewport = tester.getRect(find.byType(SubtitleOverlayGroup));
           final expectedSize = ghost
-              ? device.$4
-              : device.$4 * viewport.size.shortestSide / device.$2.shortestSide;
+              ? device.$4 * 30 / kSubtitleTextMetricReferenceFontSize
+              : device.$4 * 30 / kSubtitleTextMetricReferenceFontSize * viewport.size.shortestSide / device.$2.shortestSide;
           for (final style in primary) {
             expect(style.fontSize, closeTo(expectedSize, .01));
             expect(style.fontFamily, 'Swei Gothic CJK SC');
           }
           for (final style in secondary) {
-            expect(style.fontSize, closeTo(expectedSize * .85, .01));
+            expect(style.fontSize, closeTo(expectedSize * 25 / 30, .01));
             expect(
               style.fontSize! / primary.first.fontSize!,
-              closeTo(.85, 1e-8),
+              closeTo(25 / 30, 1e-8),
             );
           }
           final richTexts = find.descendant(
@@ -433,7 +435,7 @@ void main() {
                   reason: 'aspect=$aspect, page=${scenario.$1}, metric=$index',
                 );
               }
-              expect(secondarySize / mainSize, closeTo(.85, 1e-8));
+              expect(secondarySize / mainSize, closeTo(25 / 30, 1e-8));
             }
           }
         }

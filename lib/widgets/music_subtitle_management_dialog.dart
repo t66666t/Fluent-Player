@@ -23,7 +23,7 @@ final ThemeData _musicSubtitleDialogTheme = ThemeData.dark(useMaterial3: true)
     .copyWith(
       textTheme: ThemeData.dark().textTheme.apply(
         fontFamily: 'Inter',
-        fontFamilyFallback: const ['Noto Sans SC'],
+        fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
       ),
       platform: TargetPlatform.iOS,
       colorScheme: ColorScheme.fromSeed(
@@ -47,13 +47,13 @@ final CupertinoThemeData _musicSubtitleCupertinoTheme = CupertinoThemeData(
   textTheme: CupertinoTextThemeData(
     textStyle: TextStyle(
       fontFamily: 'Inter',
-      fontFamilyFallback: const ['Noto Sans SC'],
+      fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
       color: Colors.white,
       fontSize: 17,
     ),
     actionTextStyle: TextStyle(
       fontFamily: 'Inter',
-      fontFamilyFallback: const ['Noto Sans SC'],
+      fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
       color: _musicSubtitleAccent,
       fontSize: 17,
     ),
@@ -163,80 +163,85 @@ class _MusicSubtitleManagementDialogState
                     type: MaterialType.transparency,
                     child: Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
-                          child: Row(
-                            children: [
-                              if (_showAi)
-                                CupertinoButton(
-                                  key: const ValueKey(
-                                    'music-subtitle-dialog-ai-back',
-                                  ),
-                                  padding: const EdgeInsets.only(right: 12),
-                                  minimumSize: const Size(32, 32),
-                                  onPressed: () =>
-                                      setState(() => _showAi = false),
-                                  child: const Icon(
-                                    CupertinoIcons.chevron_back,
-                                    color: accent,
-                                    size: 20,
-                                  ),
-                                ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _showAi ? '语音转录' : '字幕管理',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -0.6,
-                                      ),
+                        if (_showAi || item == null) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
+                            child: Row(
+                              children: [
+                                if (_showAi)
+                                  CupertinoButton(
+                                    key: const ValueKey(
+                                      'music-subtitle-dialog-ai-back',
                                     ),
-                                    if (item != null)
+                                    padding: const EdgeInsets.only(right: 12),
+                                    minimumSize: const Size(32, 32),
+                                    onPressed: () =>
+                                        setState(() => _showAi = false),
+                                    child: const Icon(
+                                      CupertinoIcons.chevron_back,
+                                      color: accent,
+                                      size: 20,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
                                       Text(
-                                        item.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                        _showAi ? '语音转录' : '字幕管理',
                                         style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 12,
-                                          height: 1.6,
+                                          color: Colors.white,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -0.6,
                                         ),
                                       ),
-                                  ],
-                                ),
-                              ),
-                              CupertinoButton(
-                                key: const ValueKey(
-                                  'music-subtitle-dialog-close',
-                                ),
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(36, 36),
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.white.withValues(alpha: 0.10),
-                                  ),
-                                  child: const Icon(
-                                    CupertinoIcons.xmark,
-                                    color: Colors.white70,
-                                    size: 14,
+                                      if (item != null)
+                                        Text(
+                                          item.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 12,
+                                            height: 1.6,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
-                              ),
-                            ],
+                                CupertinoButton(
+                                  key: const ValueKey(
+                                    'music-subtitle-dialog-close',
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(36, 36),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.10,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      CupertinoIcons.xmark,
+                                      color: Colors.white70,
+                                      size: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Divider(
-                          height: 1,
-                          color: Colors.white.withValues(alpha: 0.07),
-                        ),
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.07),
+                          ),
+                        ],
                         Expanded(
                           child: item == null
                               ? const Center(child: Text('请先打开一个媒体文件'))
@@ -252,7 +257,7 @@ class _MusicSubtitleManagementDialogState
                                         videoId: item.id,
                                         appearance: SubtitleManagementAppearance
                                             .musicIOS,
-                                        showHeader: false,
+                                        headerSubtitle: item.title,
                                         associatedSubtitles:
                                             item.downloadAssociatedSubtitles,
                                         localSubtitles:

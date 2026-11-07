@@ -139,6 +139,71 @@ void main() {
     );
   });
 
+  test(
+    'folder suffix filter controls both preview and nested import',
+    () async {
+      final folder = Directory(p.join(root.path, 'suffixes'))..createSync();
+      final nested = Directory(p.join(folder.path, 'nested'))..createSync();
+      await _media(folder, 'known.MP4', 1);
+      await _media(nested, 'custom.video', 2);
+      await _media(nested, 'extensionless', 3);
+      expect(
+        (await library.analyzeFolderSelection(folder.path)).mediaFileCount,
+        1,
+      );
+      const sort = StructuredImportSortOptions(
+        field: StructuredImportSortField.fileName,
+        direction: StructuredImportSortDirection.ascending,
+      );
+      final filtered = await library.importFolderSelection(
+        folder.path,
+        null,
+        sortOptions: sort,
+      );
+      expect(filtered.importedVideoIds, hasLength(1));
+      SettingsService().localImportFilterMediaExtensions = false;
+      expect(
+        (await library.analyzeFolderSelection(folder.path)).mediaFileCount,
+        3,
+      );
+      final unfiltered = await library.importFolderSelection(
+        folder.path,
+        null,
+        sortOptions: sort,
+      );
+      expect(unfiltered.importedMediaCount + unfiltered.restoredMediaCount, 3);
+    },
+  );
+
+  test(
+    'archive import accepts unusual suffixes only when filtering is off',
+    () async {
+      final archiveFile = File(p.join(root.path, 'suffixes.zip'));
+      final archive = Archive()
+        ..addFile(ArchiveFile('known.mp4', 3, <int>[1, 2, 3]))
+        ..addFile(ArchiveFile('nested/custom.video', 3, <int>[4, 5, 6]))
+        ..addFile(ArchiveFile('nested/extensionless', 3, <int>[7, 8, 9]));
+      archiveFile.writeAsBytesSync(ZipEncoder().encode(archive), flush: true);
+      const sort = StructuredImportSortOptions(
+        field: StructuredImportSortField.fileName,
+        direction: StructuredImportSortDirection.ascending,
+      );
+      final filtered = await library.importArchiveSelection(
+        archiveFile.path,
+        null,
+        sortOptions: sort,
+      );
+      expect(filtered.importedMediaCount, 1);
+      SettingsService().localImportFilterMediaExtensions = false;
+      final unfiltered = await library.importArchiveSelection(
+        archiveFile.path,
+        null,
+        sortOptions: sort,
+      );
+      expect(unfiltered.importedMediaCount + unfiltered.restoredMediaCount, 3);
+    },
+  );
+
   test('reuse keeps addedAt and does not open an empty batch', () async {
     final file = await _media(root, 'same.mp4', 9);
     final first = await library.importVideosBackground(

@@ -333,7 +333,7 @@ void main() {
       final pending = playback.play(
         VideoItem(
           id: 'next-episode',
-          path: 'podcast:next',
+          path: 'next.mp4',
           title: 'Next episode',
           durationMs: 90000,
           lastUpdated: 0,

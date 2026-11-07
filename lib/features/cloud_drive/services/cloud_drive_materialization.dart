@@ -12,6 +12,7 @@ import '../../../services/download_content_digest.dart';
 
 import '../../../models/video_item.dart';
 import '../../../services/media_materialization_service.dart';
+import '../../../services/community_media_input.dart';
 import '../../../services/network/network_http.dart';
 import '../../../services/network/network_recovery.dart';
 import '../models/cloud_drive_models.dart';
@@ -290,6 +291,7 @@ class CloudDriveMaterialization {
     VideoItem item,
     MediaMaterializationRequirement requirement,
   ) async {
+    requireCommunityLocalMedia(item.path);
     final cached = await _cached(item);
     if (cached != null && _satisfies(cached, requirement)) {
       _byItem[item.id] = cached.path;

@@ -1,16 +1,12 @@
 import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/bilibili_browse_models.dart' show isValidBvid;
 import '../../utils/bilibili_url_parser.dart';
 
 enum BilibiliVideoOpenResult { app, browser, failed, cancelled }
 
-/// Use the device platform, not its screen size (tablets can have wide panels).
-bool get bilibiliVideoOpensInApp =>
-    !kIsWeb &&
-    (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS);
+/// Website playback is retired from this edition.
+bool get bilibiliVideoOpensInApp => false;
 
 /// Public links derived from the playing video's identity, without a request
 /// for its details. They also work while those details are loading or offline.
@@ -49,29 +45,10 @@ class BilibiliVideoLinks {
     );
   }
 
-  /// Try the mobile app directly, then the public website. Avoid canLaunchUrl:
-  /// package visibility restrictions can make it report a false negative.
-  /// A closed panel or a changed video must not trigger a delayed fallback.
+  /// Retain old identities as data without dispatching a media/browser route.
   Future<BilibiliVideoOpenResult> open({bool Function()? isCurrent}) async {
     bool current() => isCurrent?.call() ?? true;
     if (!current()) return BilibiliVideoOpenResult.cancelled;
-    final nativeUri = bilibiliVideoOpensInApp ? app : null;
-    if (nativeUri != null) {
-      if (await _launch(nativeUri)) return BilibiliVideoOpenResult.app;
-      if (!current()) return BilibiliVideoOpenResult.cancelled;
-    }
-    return await _launch(web)
-        ? BilibiliVideoOpenResult.browser
-        : BilibiliVideoOpenResult.failed;
-  }
-
-  static Future<bool> _launch(Uri uri) async {
-    try {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // Android throws when no matching activity is installed; other platforms
-      // can return false. Both must allow the same fallback and retry.
-      return false;
-    }
+    return BilibiliVideoOpenResult.failed;
   }
 }

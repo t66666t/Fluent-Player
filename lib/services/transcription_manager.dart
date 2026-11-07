@@ -6,6 +6,7 @@ import '../features/model_center/asr_enhancement_options.dart';
 import '../features/model_center/model_center_service.dart';
 import '../features/model_center/model_adapters.dart';
 import 'transcription_hotword_store.dart';
+import 'transcription_probe_output.dart';
 import '../features/model_center/model_transcription.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -15,6 +16,7 @@ import 'dart:math' as math;
 import 'package:universal_platform/universal_platform.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -34,6 +36,7 @@ import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/gongyi_asr_service.dart';
 import 'package:video_player_app/services/transcription_reliability.dart';
 import 'package:video_player_app/services/library_service.dart';
+import 'generated_subtitle_names.dart';
 import 'package:video_player_app/services/media_materialization_service.dart';
 import '../features/podcasts/podcast_playback_hooks.dart';
 import '../features/model_center/local_subtitle_translator.dart';
@@ -48,7 +51,7 @@ import 'package:video_player_app/services/task_subtitle_storage_service.dart';
 import 'subtitle_word_timing_store.dart';
 import 'subtitle_output_preparer.dart';
 import 'gongyi_audio_preparation.dart';
-import 'transcription_audio_prefetcher.dart';
+import 'public_asr_quota.dart';
 import '../models/subtitle_stream.dart';
 import '../models/subtitle_punctuation.dart';
 import '../models/transcription_task_configuration.dart';
@@ -57,6 +60,8 @@ import '../utils/serial_task_queue.dart';
 import 'streaming_subtitle_store.dart';
 import 'subtitle_stream_source.dart';
 import 'local_transcription_stream.dart';
+import 'subtitle_optimization.dart';
+import 'subtitle_optimization_background.dart';
 import 'cloud_translation_batches.dart';
 import '../utils/subtitle_parser.dart';
 import 'package:video_player_app/utils/ffmpeg_utils.dart';
@@ -219,6 +224,7 @@ class TranscriptionManager extends ChangeNotifier
   static const String _managedTempAudioPrefix = 'temp_audio_';
   static const String _persistenceFileName = 'transcription_queue_cache.json';
   final GongyiAsrService _asrService;
+  late final PublicAsrQuota _publicAsrQuota;
   final SubtitleTranslationService _translationService;
   final SettingsService _settings;
   final ModelCenterService _modelCenter;
@@ -243,6 +249,9 @@ class TranscriptionManager extends ChangeNotifier
   String _statusMessage = "";
   double _progress = 0.0;
   double? _translationProgress;
+  SubtitleOptimizationProgress? _optimizationProgress;
+  SubtitleOptimizationProgress? get optimizationProgress =>
+      _optimizationProgress;
   LocalAsrProgress? _localAsrProgress;
   LocalAsrProgress? get localAsrProgress => _localAsrProgress;
   Duration _audioDuration = Duration.zero, _committedAudio = Duration.zero;
@@ -255,6 +264,7 @@ class TranscriptionManager extends ChangeNotifier
       : null;
   TranscriptionProgressPlan get _progressPlan => TranscriptionProgressPlan(
     translate: _currentJob?.translateEnabled ?? false,
+    optimize: _currentJob?.optimization?.enabled ?? false,
   );
   String? _currentVideoPath;
   String? _lastGeneratedSrtPath;
@@ -263,7 +273,7 @@ class TranscriptionManager extends ChangeNotifier
   String? _currentVideoId;
   LibraryService? _libraryService;
   bool _autoCache = false;
-  bool _initialized = false;
+  Future<void>? _initialization;
   bool _disposed = false;
   bool _preparingMedia = false;
   _TranscriptionJob? _currentJob;
@@ -272,13 +282,10 @@ class TranscriptionManager extends ChangeNotifier
   bool _currentPauseRequested = false;
   int _consecutiveRiskControlFailures = 0;
   DateTime? _nextRemoteRequestAt;
-  bool _hitRiskControlThisJob = false;
   TranscriptionCheckpointBook? _checkpointBook;
 
-  /// 单次任务内部已经按风控退避重试过。只要整段仍然被拦住，就先停下后面的
-  /// 任务，避免继续把访问频率打高。
+  /// 遇到访问限制就暂停后续公益任务，避免继续增加请求。
   static const int _riskControlStopThreshold = 1;
-  static const Duration _normalInterTaskDelay = Duration(seconds: 8);
   static const Duration _riskControlCooldown =
       TranscriptionRetryPolicy.batchCooldown;
   static const String _checkpointFileName =
@@ -288,12 +295,26 @@ class TranscriptionManager extends ChangeNotifier
   Timer? _saveDebounceTimer;
   String? _persistenceDirPath;
   static const Duration _saveDebounce = Duration(milliseconds: 500);
+  final SubtitleOptimizer? _subtitleOptimizer;
+  final Future<AiSubtitleApiSettings> Function(AiSubtitleApiSettings)?
+  _resolveOptimizationEndpoint;
+  Future<AiSubtitleApiSettings> _optimizationEndpointFor(
+    AiSubtitleApiSettings snapshot,
+  ) =>
+      _resolveOptimizationEndpoint?.call(snapshot) ??
+      AiSubtitleApiSettingsStore().loadForSnapshot(snapshot);
   bool _savePending = false;
   final _stateWrites = SerialTaskQueue();
+  final _checkpointWrites = SerialTaskQueue();
 
   TranscriptionManager({
+    @visibleForTesting SubtitleOptimizer? subtitleOptimizer,
+    @visibleForTesting
+    Future<AiSubtitleApiSettings> Function(AiSubtitleApiSettings)?
+    resolveOptimizationEndpoint,
     SettingsService? settings,
     GongyiAsrService? asrService,
+    PublicAsrQuota? publicAsrQuota,
     SubtitleTranslationService? translationService,
     ModelCenterService? modelCenter,
     TranscriptionHotwordStore? hotwordStore,
@@ -302,6 +323,8 @@ class TranscriptionManager extends ChangeNotifier
     @visibleForTesting
     Future<Map<String, dynamic>?> Function(String)? mediaProbe,
   }) : _settings = settings ?? SettingsService(),
+       _subtitleOptimizer = subtitleOptimizer,
+       _resolveOptimizationEndpoint = resolveOptimizationEndpoint,
        _mediaProbe = mediaProbe,
        _modelCenter = modelCenter ?? ModelCenterService.instance,
        _hotwordStore = hotwordStore ?? TranscriptionHotwordStore(),
@@ -312,6 +335,28 @@ class TranscriptionManager extends ChangeNotifier
        _translationService =
            translationService ?? SubtitleTranslationService.instance,
        _asrService = asrService ?? GongyiAsrService() {
+    _publicAsrQuota =
+        publicAsrQuota ??
+        PublicAsrQuota(
+          directory: () async {
+            Directory? support;
+            try {
+              support = await getApplicationSupportDirectory();
+            } on MissingPluginException {
+              // Some injected platform adapters provide only the metadata directory.
+            } on UnimplementedError {
+              // Keep the fallback scoped to unavailable platform adapters.
+            }
+            if (support != null) {
+              return Directory(p.join(support.path, 'public_asr_usage'));
+            }
+            final path = _persistenceDirPath;
+            if (path == null) {
+              throw const PublicAsrQuotaException('公益接口用量存储尚未就绪，请稍后重试');
+            }
+            return Directory(p.join(path, 'public_asr_usage'));
+          },
+        );
     addListener(_syncCompletedRemovals);
     _settings.addListener(_syncCompletedRemovals);
     addListener(_syncProcessingKeepAwake);
@@ -377,6 +422,11 @@ class TranscriptionManager extends ChangeNotifier
   String mediaKeyForVideo(String path, {String? videoId}) =>
       _mediaKey(path, videoId: videoId);
 
+  /// Private application identity for one task generation. Never expose paths
+  /// or this checkpoint key through external APIs; adapters may hash it.
+  String? generationForVideo(String path, {String? videoId}) =>
+      _jobForKey(_mediaKey(path, videoId: videoId))?.checkpointKey;
+
   ModelJobSpec currentTranscriptionConfigurationForVideo(
     String path, {
     String? videoId,
@@ -409,6 +459,20 @@ class TranscriptionManager extends ChangeNotifier
   String get statusMessage => _statusMessage;
   double get progress => _progress;
   double? get translationProgress => _translationProgress;
+
+  void _reportOptimizationProgress(SubtitleOptimizationProgress value) {
+    if (_disposed) return;
+    _optimizationProgress = value;
+    _translationProgress = null;
+    _updateStatus(
+      TranscriptionStatus.optimizing,
+      value.label,
+      value.totalIsFinal
+          ? _progressPlan.optimization(value.fraction)
+          : _progress,
+    );
+  }
+
   String? get currentVideoPath => _currentVideoPath;
   String? get currentVideoId => _currentVideoId;
   String? get lastGeneratedSrtPath => _lastGeneratedSrtPath;
@@ -503,6 +567,7 @@ class TranscriptionManager extends ChangeNotifier
   late final Listenable _configurationChanges = Listenable.merge([
     _modelCenter,
     _hotwordStore,
+    SubtitleOptimizationSettings.changes,
   ]);
   Listenable get configurationChanges => _configurationChanges;
 
@@ -513,6 +578,7 @@ class TranscriptionManager extends ChangeNotifier
     final job = _jobForKey(_mediaKey(videoPath, videoId: videoId));
     if (job == null) return null;
     return TranscriptionTaskConfiguration(
+      optimization: job.optimization ?? const SubtitleOptimizationChoice.off(),
       transcription: job.modelSpec,
       punctuation: job.subtitlePunctuation,
       translation: TranscriptTranslateChoice(
@@ -683,10 +749,13 @@ class TranscriptionManager extends ChangeNotifier
       return false;
     }
     final job = _jobForKey(mediaKey);
-    if (job == null) return false;
+    if (job == null || !_communityJobCanProcess(job)) return false;
     final oldCheckpointKey = job.checkpointKey;
     _prepareTaskForNewRun(mediaKey);
     job.checkpointScope = const Uuid().v4();
+    job.externalTaskId = null;
+    job.externalRemoteAuthorized = false;
+    job.externalDownloadAuthorized = false;
     job.modelSpec = null;
     job.translatedSrtPath = null;
     job.transcriptPath = null;
@@ -698,6 +767,9 @@ class TranscriptionManager extends ChangeNotifier
     job.subtitleSelectionOverridden = false;
     job.subtitlePunctuation = null;
     job.translationInputPath = null;
+    job.optimization = null;
+    job.optimizationCapture = null;
+    job.optimizedPath = null;
     job.translateEndpoint = null;
     _streamStates.remove(mediaKey);
     _streamStores.remove(mediaKey);
@@ -756,9 +828,9 @@ class TranscriptionManager extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     await _cleanupManagedTempAudioDirectory();
     await _initPersistenceDir();
     await _loadState();
@@ -806,8 +878,11 @@ class TranscriptionManager extends ChangeNotifier
     await _stateWrites.enqueue(_saveState);
   }
 
-  Future<void> _saveState() async {
-    if (_persistenceDirPath == null) return;
+  Future<void> _saveState({bool propagateErrors = false}) async {
+    if (_persistenceDirPath == null) {
+      if (propagateErrors) throw StateError('Task storage is unavailable');
+      return;
+    }
     try {
       final file = File(p.join(_persistenceDirPath!, _persistenceFileName));
 
@@ -849,6 +924,7 @@ class TranscriptionManager extends ChangeNotifier
       );
     } catch (e) {
       debugPrint('保存转录队列状态失败: $e');
+      if (propagateErrors) rethrow;
     }
   }
 
@@ -970,6 +1046,42 @@ class TranscriptionManager extends ChangeNotifier
         ..._completedJobs.values,
       ]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       for (final job in restoredJobs) {
+        try {
+          // Keep completed outputs/checkpoints. Prohibited pending jobs stay
+          // visible as failed records and cannot resume media acquisition.
+          if (!_completedJobs.containsKey(job.mediaKey)) {
+            if (!_hasTranscriptionSource(job.sourceItem)) {
+              final saved = _transcriptionSourceSnapshot(
+                job.videoId == null
+                    ? null
+                    : LibraryService().getVideo(job.videoId!),
+                job.videoPath,
+                job.videoId,
+              );
+              final restored = _hasTranscriptionSource(saved)
+                  ? saved
+                  : _transcriptionSourceSnapshot(
+                      PodcastPlaybackHooks.restoreSource?.call(
+                        job.videoPath,
+                        job.videoId,
+                      ),
+                      job.videoPath,
+                      job.videoId,
+                    );
+              if (_hasTranscriptionSource(restored)) job.sourceItem = restored;
+            }
+            requireCommunityProcessingSource(
+              job.videoPath,
+              source: job.sourceItem?.sourceRef,
+            );
+          }
+        } on UnsupportedError catch (error) {
+          _queue.removeWhere((queued) => queued.mediaKey == job.mediaKey);
+          _queuedMediaKeys.remove(job.mediaKey);
+          _failedJobs[job.mediaKey] = job;
+          _statusMessagesByMediaKey[job.mediaKey] =
+              error.message?.toString() ?? '在线媒体处理已停用';
+        }
         if (!_taskOrder.contains(job.mediaKey)) _taskOrder.add(job.mediaKey);
         if (job.streamJournal != null &&
             !_completedJobs.containsKey(job.mediaKey)) {
@@ -1058,7 +1170,31 @@ class TranscriptionManager extends ChangeNotifier
     bool autoCache = false,
     bool autoStart = false,
     TranscriptTranslateChoice? translateChoice,
+    ModelJobSpec? preparedSpecification,
+    String? externalTaskId,
+    bool externalRemoteAuthorized = false,
+    bool externalDownloadAuthorized = false,
   }) async {
+    if (externalTaskId != null &&
+        (preparedSpecification == null ||
+            translateChoice == null ||
+            (!preparedSpecification.profile.local &&
+                !externalRemoteAuthorized) ||
+            (preparedSpecification.allowModelDownload &&
+                !externalDownloadAuthorized) ||
+            (translateChoice.enabled &&
+                ((translateChoice.provider != SubtitleTranslateProvider.local &&
+                        !externalRemoteAuthorized) ||
+                    (translateChoice.provider ==
+                            SubtitleTranslateProvider.local &&
+                        (translateChoice.localSpecification?.profile.local !=
+                                true ||
+                            (translateChoice
+                                    .localSpecification!
+                                    .allowModelDownload &&
+                                !externalDownloadAuthorized))))))) {
+      throw ArgumentError('外部任务需要已确认的服务和冻结配置');
+    }
     if (videoPath.trim().isEmpty) {
       throw Exception("视频路径不能为空");
     }
@@ -1069,12 +1205,21 @@ class TranscriptionManager extends ChangeNotifier
       return TranscriptionEnqueueResult.alreadyQueued;
     }
 
-    final libraryItem = _transcriptionSourceSnapshot(
+    var libraryItem = _transcriptionSourceSnapshot(
       sourceItem ??
           (videoId == null ? null : libraryService?.getVideo(videoId)),
       videoPath,
       videoId,
     );
+    if (!_hasTranscriptionSource(libraryItem)) {
+      final restored = _transcriptionSourceSnapshot(
+        PodcastPlaybackHooks.restoreSource?.call(videoPath, videoId),
+        videoPath,
+        videoId,
+      );
+      if (_hasTranscriptionSource(restored)) libraryItem = restored;
+    }
+    requireCommunityProcessingSource(videoPath, source: libraryItem?.sourceRef);
     final displayName =
         _nonEmpty(videoTitle) ??
         _nonEmpty(libraryItem?.title) ??
@@ -1096,12 +1241,17 @@ class TranscriptionManager extends ChangeNotifier
           _nonEmpty(videoDuration) ??
           formatMediaDurationLabel(libraryItem?.durationMs ?? 0),
       checkpointScope: const Uuid().v4(),
+      externalTaskId: externalTaskId,
     );
+    job.externalRemoteAuthorized = externalRemoteAuthorized;
+    job.externalDownloadAuthorized = externalDownloadAuthorized;
+    job.modelSpec = preparedSpecification;
     if (translateChoice != null) {
       job.freezeTranslate(translateChoice);
     }
     _insertQueuedByTaskOrder(job);
     if (autoStart) {
+      _captureOptimizationForStart(job);
       _startedMediaKeys.add(mediaKey);
     }
     _scheduleSave();
@@ -1112,6 +1262,63 @@ class TranscriptionManager extends ChangeNotifier
     return TranscriptionEnqueueResult.added;
   }
 
+  /// Opaque ownership is separate from the path-based internal queue key.
+  String? externalTaskIdFor(String mediaKey) =>
+      _jobForKey(mediaKey)?.externalTaskId;
+
+  /// Acknowledging an external enqueue requires its native ownership tag to be
+  /// durable, rather than waiting for the UI queue's usual debounce.
+  Future<void> flushExternalTasks() async {
+    await initialize();
+    _saveDebounceTimer?.cancel();
+    _savePending = false;
+    await _stateWrites.enqueue(() => _saveState(propagateErrors: true));
+  }
+
+  bool externalTaskIsLocal(String mediaKey) {
+    final job = _jobForKey(mediaKey);
+    return job?.externalTaskId != null &&
+        job?.modelSpec?.profile.local == true &&
+        job?.modelSpec?.allowModelDownload == false &&
+        (job?.translateEnabled != true ||
+            (job?.translateProviderName ==
+                    SubtitleTranslateProvider.local.name &&
+                job?.translateLocalSpec?.profile.local == true &&
+                job?.translateLocalSpec?.allowModelDownload == false));
+  }
+
+  /// A durable capability set is attached only by the authorized app adapter.
+  /// Old local MCP tasks remain valid; ordinary/manual tasks never acquire it.
+  bool externalTaskIsControlled(String mediaKey) {
+    final job = _jobForKey(mediaKey), spec = _jobForKey(mediaKey)?.modelSpec;
+    if (job?.externalTaskId == null ||
+        spec == null ||
+        job?.translateFrozen != true) {
+      return false;
+    }
+    return (spec.profile.local || job!.externalRemoteAuthorized) &&
+        (!spec.allowModelDownload || job!.externalDownloadAuthorized) &&
+        (job?.translateEnabled != true ||
+            (job?.translateProviderName == SubtitleTranslateProvider.local.name
+                ? job?.translateLocalSpec?.profile.local == true &&
+                      (job?.translateLocalSpec?.allowModelDownload == false ||
+                          job!.externalDownloadAuthorized)
+                : job!.externalRemoteAuthorized));
+  }
+
+  VideoItem? _communityProcessingItem(_TranscriptionJob job) =>
+      job.sourceItem ??
+      (job.videoId == null
+          ? null
+          : (job.libraryService ?? _libraryService)?.getVideo(job.videoId!)) ??
+      PodcastPlaybackHooks.restoreSource?.call(job.videoPath, job.videoId);
+
+  bool _communityJobCanProcess(_TranscriptionJob job) =>
+      communityMediaIsPlayable(
+        job.videoPath,
+        source: _communityProcessingItem(job)?.sourceRef,
+      );
+
   /// Supply the actual selected source to an older paused/failed task before
   /// retrying. Matching both path and id prevents a late UI callback using the
   /// next episode's source for the previous task.
@@ -1120,6 +1327,9 @@ class TranscriptionManager extends ChangeNotifier
     String? videoId,
     required VideoItem sourceItem,
   }) {
+    if (!communityMediaIsPlayable(videoPath, source: sourceItem.sourceRef)) {
+      return;
+    }
     final snapshot = _transcriptionSourceSnapshot(
       sourceItem,
       videoPath,
@@ -1142,6 +1352,10 @@ class TranscriptionManager extends ChangeNotifier
     TranscriptTranslateChoice? translateIfUnfrozen,
   }) {
     if (_cancellingJobs.containsKey(mediaKey)) return;
+    final candidate = _jobForKey(mediaKey);
+    if (candidate == null || !_communityJobCanProcess(candidate)) {
+      return;
+    }
     _requeueFailedTask(mediaKey);
     if (!_queuedMediaKeys.contains(mediaKey) ||
         _startedMediaKeys.contains(mediaKey)) {
@@ -1161,6 +1375,7 @@ class TranscriptionManager extends ChangeNotifier
       _requeueFailedTask(key);
     }
     for (final job in _queue) {
+      if (!_communityJobCanProcess(job)) continue;
       if (_startedMediaKeys.contains(job.mediaKey)) continue;
       _refreshJobForStart(job, translateIfUnfrozen);
       _startedMediaKeys.add(job.mediaKey);
@@ -1174,6 +1389,7 @@ class TranscriptionManager extends ChangeNotifier
     _TranscriptionJob job,
     TranscriptTranslateChoice? choice,
   ) {
+    _captureOptimizationForStart(job);
     // Published streaming prefixes and their pending translations belong to
     // one frozen generation. New settings are applied by restartTask only.
     if (job.streamConfigurationFrozen ||
@@ -1190,6 +1406,40 @@ class TranscriptionManager extends ChangeNotifier
         SubtitleTranslateProvider.local.name) {
       job.translateLocalSpec = null;
     }
+  }
+
+  void _captureOptimizationForStart(_TranscriptionJob job) {
+    if (job.optimization != null || job.optimizationCapture != null) return;
+    final generation = job.checkpointKey;
+    job.optimizationCapture = (() async {
+      try {
+        final settings = job.externalTaskId == null
+            ? await SubtitleOptimizationSettings.load()
+            : const SubtitleOptimizationSettings();
+        final item =
+            job.sourceItem ??
+            (job.videoId == null
+                ? null
+                : (job.libraryService ?? LibraryService()).getVideo(
+                    job.videoId!,
+                  ));
+        final choice = await settings.capture(
+          background: settings.enabled
+              ? await SubtitleOptimizationBackground.capture(
+                  item,
+                  job.displayName,
+                )
+              : '',
+        );
+        if (job.checkpointKey == generation) {
+          job.optimization = choice;
+          _scheduleSave();
+        }
+        return (choice: choice, error: null, stack: null);
+      } catch (error, stack) {
+        return (choice: null, error: error, stack: stack);
+      }
+    })();
   }
 
   /// Pause only this task; other explicitly started tasks keep running.
@@ -1255,7 +1505,6 @@ class TranscriptionManager extends ChangeNotifier
         _currentFinished = Completer<void>();
         _currentCancellation = cancellation;
         _currentTaskRemoved = false;
-        _hitRiskControlThisJob = false;
         _scheduleSave();
         Timer? timeoutTimer;
         final jobStarted = DateTime.now();
@@ -1290,10 +1539,24 @@ class TranscriptionManager extends ChangeNotifier
         armRecognitionWatchdog();
         try {
           await _runJob(job, cancellation);
+        } on PublicAsrQuotaException catch (e) {
+          for (final queued in _queue) {
+            final kind =
+                queued.modelSpec?.profile.kind ?? _modelCenter.asrProfile.kind;
+            if (kind == TranscriptionServiceKind.gongyi &&
+                _startedMediaKeys.remove(queued.mediaKey)) {
+              _statusMessagesByMediaKey[queued.mediaKey] = '$e；已暂停，稍后可继续';
+            }
+          }
         } on GongyiAsrException catch (e) {
           if (e.isAccessDenied) {
             _consecutiveRiskControlFailures++;
-            _nextRemoteRequestAt = DateTime.now().add(_riskControlCooldown);
+            final retryAfter = e.retryAfter;
+            _nextRemoteRequestAt = DateTime.now().add(
+              retryAfter != null && retryAfter > _riskControlCooldown
+                  ? retryAfter
+                  : _riskControlCooldown,
+            );
             if (_consecutiveRiskControlFailures >= _riskControlStopThreshold) {
               final started = List<String>.from(_startedMediaKeys);
               _startedMediaKeys.clear();
@@ -1340,6 +1603,7 @@ class TranscriptionManager extends ChangeNotifier
             _statusMessage = '';
             _progress = 0.0;
             _translationProgress = null;
+            _optimizationProgress = null;
             _localAsrProgress = null;
             _currentFinished?.complete();
             _currentFinished = null;
@@ -1378,6 +1642,7 @@ class TranscriptionManager extends ChangeNotifier
     _statusMessagesByMediaKey.remove(job.mediaKey);
     _progress = 0.0;
     _translationProgress = null;
+    _optimizationProgress = null;
     _localAsrProgress = null;
     _streamStarts.add((
       mediaKey: job.mediaKey,
@@ -1394,18 +1659,13 @@ class TranscriptionManager extends ChangeNotifier
     VideoItem? materializedPodcast;
     try {
       cancellation.throwIfCancelled();
+      requireCommunityProcessingSource(
+        job.videoPath,
+        source: _communityProcessingItem(job)?.sourceRef,
+      );
       if (job.retryRemoteTasks) {
-        final book = await _openCheckpointBook();
-        final checkpoint = book.tasks[job.checkpointKey];
-        // Explicit retry of a failed public-service job starts fresh remote
-        // work, while completed slices and audio compatibility choices survive.
-        if (checkpoint != null) {
-          for (final remote in checkpoint.remoteTasks.values) {
-            remote.taskId = null;
-            remote.lastQueryFailure = null;
-          }
-          await _writeCheckpointBook(book);
-        }
+        // Consume the old queue flag without invalidating submitted tasks.
+        // Terminal failures and expired tasks are handled by the ASR service.
         job.retryRemoteTasks = false;
         _scheduleSave();
         cancellation.throwIfCancelled();
@@ -1413,15 +1673,27 @@ class TranscriptionManager extends ChangeNotifier
       if (!job.translateFrozen) {
         job.freezeTranslate(const TranscriptTranslateChoice.off());
       }
+      if (job.externalTaskId != null &&
+          !externalTaskIsControlled(job.mediaKey)) {
+        throw StateError('外部任务配置或授权快照不可用，请重新创建任务');
+      }
       if (job.modelSpec == null) {
-        final captured = _modelCenter.started
-            ? await _modelCenter.captureTranscription()
-            : const ModelJobSpec(profile: ModelCenterService.legacyProfile);
+        final captured = await _modelCenter.captureTranscription();
         if (_hasHotwordModel(captured)) {
           await _hotwordStore.load();
         }
         cancellation.throwIfCancelled();
         job.modelSpec = _scopeHotwords(captured, job.mediaKey);
+      }
+      if (job.optimization == null) {
+        _captureOptimizationForStart(job);
+        final captured = await job.optimizationCapture!;
+        if (captured.error != null) {
+          Error.throwWithStackTrace(captured.error!, captured.stack!);
+        }
+        job.optimization = captured.choice!;
+        _scheduleSave();
+        await _flushSave();
       }
       job.subtitlePunctuation ??= _modelCenter.subtitlePunctuation;
       cancellation.throwIfCancelled();
@@ -1454,11 +1726,32 @@ class TranscriptionManager extends ChangeNotifier
             ) ??
             libraryItem;
       }
+      requireCommunityProcessingSource(
+        job.videoPath,
+        source: libraryItem?.sourceRef,
+      );
+      if (job.translateLocalSpec case final translationSpec?) {
+        await _modelCenter.prepareModel(
+          translationSpec,
+          cancelSignal: cancellation.whenCancelled,
+          onProgress: (message) {
+            if (!cancellation.isCancelled) {
+              _updateStatus(
+                TranscriptionStatus.downloading,
+                message,
+                _progress,
+              );
+            }
+          },
+        );
+        cancellation.throwIfCancelled();
+      }
       if (libraryItem != null && !identical(job.sourceItem, libraryItem)) {
         job.sourceItem = libraryItem;
         _scheduleSave();
       }
-      if (libraryItem != null &&
+      if (!communityMediaIsLocal(job.videoPath) &&
+          libraryItem != null &&
           itemNeedsOnlineMaterialization(
             source: libraryItem.sourceRef,
             path: libraryItem.path,
@@ -1466,11 +1759,13 @@ class TranscriptionManager extends ChangeNotifier
         _libraryService ??= LibraryService();
       }
       final isBilibiliStream =
+          !communityMediaIsLocal(job.videoPath) &&
           !job.isExternal &&
           libraryItem != null &&
           (libraryItem.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
               libraryItem.path.startsWith('bilibili://stream/'));
-      if (libraryItem != null &&
+      if (!communityMediaIsLocal(job.videoPath) &&
+          libraryItem != null &&
           isCloudDriveMedia(
             source: libraryItem.sourceRef,
             path: libraryItem.path,
@@ -1500,7 +1795,8 @@ class TranscriptionManager extends ChangeNotifier
         transcriptionMediaPath = materializedLease.requiredAudioPath;
         cancellation.throwIfCancelled();
       }
-      if (libraryItem?.sourceRef?.podcast != null) {
+      if (!communityMediaIsLocal(job.videoPath) &&
+          libraryItem?.sourceRef?.podcast != null) {
         final preparePodcast = PodcastPlaybackHooks.materialize;
         if (preparePodcast == null) throw StateError('播客服务尚未就绪，请稍后重试');
         _updateStatus(TranscriptionStatus.downloading, '正在准备播客音频...', 0.0);
@@ -1646,7 +1942,7 @@ class TranscriptionManager extends ChangeNotifier
           !reuseTranscript) {
         throw StateError('源媒体或原字幕已改变，请使用“重新生成”创建新字幕');
       }
-      late final String srtPath;
+      late String srtPath;
       String? wordTimingPath;
       ({String? path, String? language, String message})? streamedTranslation;
       if (reuseTranscript) {
@@ -1679,7 +1975,7 @@ class TranscriptionManager extends ChangeNotifier
         streamedTranslation = (
           path: store.secondaryPath,
           language: store.targetLanguage,
-          message: '转录完成',
+          message: _postprocessCompletion(job, store),
         );
       } else {
         if (usesLegacyAsr) await _waitForRemoteRequestSlot(cancellation);
@@ -1707,11 +2003,7 @@ class TranscriptionManager extends ChangeNotifier
         cancellation.throwIfCancelled();
         if (usesLegacyAsr) {
           _consecutiveRiskControlFailures = 0;
-          _nextRemoteRequestAt = DateTime.now().add(
-            _hitRiskControlThisJob
-                ? const Duration(seconds: 25)
-                : _normalInterTaskDelay,
-          );
+          _nextRemoteRequestAt = null;
         }
         _updateStatus(
           TranscriptionStatus.transcribing,
@@ -1724,7 +2016,7 @@ class TranscriptionManager extends ChangeNotifier
           subtitles,
           job.subtitlePunctuation!,
           keepTranslationInput:
-              job.translateEnabled &&
+              (job.translateEnabled || job.optimization?.enabled == true) &&
               job.subtitlePunctuation != SubtitlePunctuation.preserve,
         );
         cancellation.throwIfCancelled();
@@ -1770,6 +2062,8 @@ class TranscriptionManager extends ChangeNotifier
               cancellation,
             )
           : null;
+      final hasPostprocessStream =
+          cloudStream != null || job.optimization?.enabled == true;
 
       ManagedSubtitleAsset? aiAsset;
       if (!job.isExternal && job.videoId != null && _libraryService != null) {
@@ -1778,12 +2072,13 @@ class TranscriptionManager extends ChangeNotifier
             job.videoId!,
             path: srtPath,
             kind: ManagedSubtitleAssetKind.ai,
-            displayName: 'AI 字幕',
+            displayName: _subtitleManuscriptName(job, srtPath, '听写稿'),
+            generatedName: true,
             wordTimingPath: wordTimingPath,
           );
           final currentVideo = _libraryService!.getVideo(job.videoId!);
           if (!job.streamsRecognition &&
-              (cloudStream == null || _shouldSelectStream(job))) {
+              (!hasPostprocessStream || _shouldSelectStream(job))) {
             await _libraryService!.updateVideoSubtitles(
               job.videoId!,
               srtPath,
@@ -1791,7 +2086,7 @@ class TranscriptionManager extends ChangeNotifier
               secondarySubtitlePath: currentVideo?.secondarySubtitlePath,
               isSecondaryCached:
                   currentVideo?.isSecondarySubtitleCached ?? false,
-              shouldApply: cloudStream == null
+              shouldApply: !hasPostprocessStream
                   ? null
                   : () => _shouldSelectStream(job),
             );
@@ -1803,15 +2098,21 @@ class TranscriptionManager extends ChangeNotifier
       // Commit the transcript before entering the cancellable translation step.
       // The player can use it immediately, and the library retains it on exit.
       if (!job.isExternal && !job.streamsRecognition && cloudStream == null) {
-        _resultSrtByMediaKey[job.mediaKey] = srtPath;
-        if (reuseTranscript) {
-          _consumedResultMediaKeys.add(job.mediaKey);
-        } else {
-          _consumedResultMediaKeys.remove(job.mediaKey);
+        if (job.optimization?.enabled != true) {
+          _resultSrtByMediaKey[job.mediaKey] = srtPath;
+          if (reuseTranscript) {
+            _consumedResultMediaKeys.add(job.mediaKey);
+          } else {
+            _consumedResultMediaKeys.remove(job.mediaKey);
+          }
         }
         _updateStatus(
           TranscriptionStatus.transcribing,
-          job.translateEnabled ? '原字幕已保存，正在准备翻译' : '转录完成',
+          job.optimization?.enabled == true
+              ? '原字幕已保存，正在准备优化'
+              : job.translateEnabled
+              ? '原字幕已保存，正在准备翻译'
+              : '转录完成',
           _progressPlan.recognition(1),
         );
         _scheduleSave();
@@ -1819,6 +2120,27 @@ class TranscriptionManager extends ChangeNotifier
       }
       cancellation.throwIfCancelled();
 
+      if (job.optimization?.enabled == true && !job.streamsRecognition) {
+        final processed = await _runOptimizedTranscript(
+          job,
+          srtPath,
+          sourceIdentity,
+          cancellation,
+        );
+        srtPath = processed.primaryPath;
+        if (job.videoId != null && _libraryService != null) {
+          aiAsset = _libraryService!.managedSubtitleAssetForPath(
+            job.videoId!,
+            srtPath,
+          );
+        }
+        _lastGeneratedSrtPath = srtPath;
+        streamedTranslation = (
+          path: processed.secondaryPath,
+          language: processed.targetLanguage,
+          message: _postprocessCompletion(job, processed),
+        );
+      }
       final translation = cloudStream != null
           ? await _translateCloudStream(job, cloudStream, cancellation)
           : streamedTranslation ??
@@ -1854,7 +2176,8 @@ class TranscriptionManager extends ChangeNotifier
                 _currentVideoId!,
                 path: translatedPath,
                 kind: ManagedSubtitleAssetKind.translated,
-                displayName: '翻译字幕',
+                displayName: _subtitleManuscriptName(job, translatedPath, subtitleTranslationManuscript(translation.language)),
+                generatedName: true,
                 language: translation.language,
                 sourceAssetId: aiAsset?.assetId,
               );
@@ -1865,7 +2188,9 @@ class TranscriptionManager extends ChangeNotifier
             isSecondaryCached = _autoCache;
           }
 
-          if ((!job.streamsRecognition && cloudStream == null) ||
+          if ((!job.streamsRecognition &&
+                  cloudStream == null &&
+                  job.optimization?.enabled != true) ||
               _shouldSelectStream(job)) {
             await _libraryService!.updateVideoSubtitles(
               _currentVideoId!,
@@ -1873,7 +2198,10 @@ class TranscriptionManager extends ChangeNotifier
               _autoCache,
               secondarySubtitlePath: existingSecondaryPath,
               isSecondaryCached: isSecondaryCached,
-              shouldApply: (job.streamsRecognition || cloudStream != null)
+              shouldApply:
+                  (job.streamsRecognition ||
+                      cloudStream != null ||
+                      job.optimization?.enabled == true)
                   ? () => _shouldSelectStream(job)
                   : null,
             );
@@ -1893,7 +2221,10 @@ class TranscriptionManager extends ChangeNotifier
         _consumedResultMediaKeys.remove(job.mediaKey);
       }
       final streamed = _streamStores[job.mediaKey];
-      if (streamed != null && (job.streamsRecognition || cloudStream != null)) {
+      if (streamed != null &&
+          (job.streamsRecognition ||
+              cloudStream != null ||
+              job.optimization?.enabled == true)) {
         await streamed.setPhase(SubtitleStreamPhase.complete);
         _emitStream(streamed);
       }
@@ -1908,6 +2239,12 @@ class TranscriptionManager extends ChangeNotifier
         SubtitleStreamPhase.paused,
         '已停止并保留进度',
       );
+      rethrow;
+    } on PublicAsrQuotaException catch (e) {
+      cancellation.throwIfCancelled();
+      _failedJobs[job.mediaKey] = job;
+      _updateStatus(TranscriptionStatus.error, e.message, 0.0);
+      _scheduleSave();
       rethrow;
     } on GongyiAsrException catch (e) {
       cancellation.throwIfCancelled();
@@ -2073,6 +2410,17 @@ class TranscriptionManager extends ChangeNotifier
     }
   }
 
+  String _subtitleManuscriptName(_TranscriptionJob job, String path, String version) {
+    final item = job.videoId == null ? null : _libraryService?.getVideo(job.videoId!);
+    return generatedSubtitleName(
+      mediaTitle: item?.title ?? job.displayName,
+      version: version,
+      existingNames: item == null ? const [] : item.managedSubtitleAssets
+          .where((asset) => !p.equals(asset.path, path))
+          .map((asset) => subtitleManuscriptDisplayName(item, asset)),
+    );
+  }
+
   Future<void> _registerStream(
     _TranscriptionJob job,
     StreamingSubtitleStore store,
@@ -2084,14 +2432,24 @@ class TranscriptionManager extends ChangeNotifier
       job.videoId!,
       path: store.primaryPath,
       kind: ManagedSubtitleAssetKind.ai,
-      displayName: 'AI 字幕',
+      displayName: _subtitleManuscriptName(job, store.primaryPath, job.optimization?.enabled == true && job.optimizedPath == store.primaryPath ? '精校稿' : '听写稿'),
+      generatedName: true,
+      sourceAssetId:
+          job.optimization?.enabled == true &&
+              job.transcriptPath != null &&
+              job.transcriptPath != store.primaryPath
+          ? _libraryService!
+                .managedSubtitleAssetForPath(job.videoId!, job.transcriptPath!)
+                ?.assetId
+          : null,
     );
     if (store.secondaryPath != null) {
       await _libraryService!.registerManagedLocalSubtitle(
         job.videoId!,
         path: store.secondaryPath!,
         kind: ManagedSubtitleAssetKind.translated,
-        displayName: '翻译字幕',
+        displayName: _subtitleManuscriptName(job, store.secondaryPath!, subtitleTranslationManuscript(store.targetLanguage)),
+        generatedName: true,
         language: store.targetLanguage,
         sourceAssetId: original?.assetId,
       );
@@ -2133,7 +2491,7 @@ class TranscriptionManager extends ChangeNotifier
       );
       final secondary = await const TaskSubtitleStorageService().allocateInside(
         File(srtPath).parent,
-        '${p.basenameWithoutExtension(srtPath)}.translated.srt',
+        '${p.basenameWithoutExtension(srtPath)}.翻译.srt',
       );
       store = await StreamingSubtitleStore.create(
         File(job.streamJournal!),
@@ -2258,6 +2616,163 @@ class TranscriptionManager extends ChangeNotifier
     }
   }
 
+  String _postprocessCompletion(
+    _TranscriptionJob job,
+    StreamingSubtitleStore store,
+  ) {
+    final stages = [
+      '转录',
+      if (job.optimization?.enabled == true) '优化',
+      if (job.translateEnabled) '翻译',
+    ];
+    return '${stages.join('、')}完成${store.optimizationWarning.isEmpty ? '' : ' · ${store.optimizationWarning}'}';
+  }
+
+  Future<StreamingSubtitleStore> _runOptimizedTranscript(
+    _TranscriptionJob job,
+    String rawPath,
+    String sourceIdentity,
+    _JobCancellation cancellation,
+  ) async {
+    final raw = await _readCompletedTranscript(
+      job.translationInputPath ?? rawPath,
+    );
+    final cues = [
+      for (var i = 0; i < raw.length; i++) raw[i].copyWith(index: i + 1),
+    ];
+    var store = _streamStores[job.mediaKey];
+    if (store == null && job.streamJournal != null) {
+      store = await StreamingSubtitleStore.open(File(job.streamJournal!));
+    }
+    if (store != null && store.header['sourceIdentity'] != sourceIdentity) {
+      throw StateError('源媒体已改变，请重新生成');
+    }
+    final optimizationEndpoint = await _optimizationEndpointFor(
+      job.optimization!.endpoint!,
+    );
+    final translationEndpoint =
+        job.translateEnabled &&
+            job.translateProviderName == SubtitleTranslateProvider.ai.name
+        ? await _translationEndpointFor(job)
+        : null;
+    cancellation.throwIfCancelled();
+    if (store == null) {
+      final generation = const Uuid().v4();
+      final primary = await const TaskSubtitleStorageService().allocateInside(
+        File(rawPath).parent,
+        '${p.basenameWithoutExtension(rawPath)}.优化.srt',
+      );
+      final secondary = job.translateEnabled
+          ? await const TaskSubtitleStorageService().allocateInside(
+              File(rawPath).parent,
+              '${p.basenameWithoutExtension(primary)}.翻译.srt',
+            )
+          : null;
+      job.optimizedPath = primary;
+      job.streamJournal = p.join(
+        _persistenceDirPath!,
+        'model_streams',
+        '$generation.jsonl',
+      );
+      job.streamConfigurationFrozen = true;
+      store = await StreamingSubtitleStore.create(File(job.streamJournal!), {
+        'version': 1,
+        'generationId': generation,
+        'mediaKey': job.mediaKey,
+        'videoPath': job.videoPath,
+        'videoId': job.videoId,
+        'primaryPath': primary,
+        'secondaryPath': secondary,
+        'sourceIdentity': sourceIdentity,
+        'autoCache': job.autoCache,
+        'job': job.toJson(),
+      });
+    }
+    final output = store;
+    _streamStores[job.mediaKey] = output;
+    await output.recoverOutputs();
+    await output.setPhase(SubtitleStreamPhase.generating);
+    _scheduleSave();
+    await _flushSave();
+    final stream = LocalTranscriptionStream(
+      openStore: () async => output,
+      choice: TranscriptTranslateChoice(
+        enabled: job.translateEnabled,
+        direction: job.translateDirection,
+        provider: subtitleTranslateProviderFromName(job.translateProviderName),
+        aiOptions: job.translateAiOptions,
+        apiEndpoint: job.translateEndpoint,
+        apiProviderId: job.translateApiProviderId,
+        sourceLanguage: job.translateSourceLanguage,
+        targetLanguage: job.translateTargetLanguage,
+        smartPolicy: job.translateSmartPolicy,
+        localSpecification: job.translateLocalSpec,
+      ),
+      endpoint: translationEndpoint,
+      optimization: job.optimization!,
+      sourceTotal: cues.length,
+      onOptimizationProgress: _reportOptimizationProgress,
+      optimizer: _subtitleOptimizer,
+      optimizationEndpoint: optimizationEndpoint,
+      center: _modelCenter,
+      translator: _translationService,
+      punctuation: job.subtitlePunctuation!,
+      cancelSignal: cancellation.whenCancelled,
+      checkCancelled: cancellation.throwIfCancelled,
+      onFailure: () {},
+      onOptimizing: () =>
+          _updateStatus(TranscriptionStatus.optimizing, '正在分批优化字幕', _progress),
+      onActivity: (value, note) {
+        _translationProgress = value;
+        _updateStatus(
+          TranscriptionStatus.translating,
+          note ?? '正在翻译优化后的字幕',
+          _progress,
+        );
+      },
+      onCommitted: (value, primary, secondary) async {
+        await _registerStream(job, value);
+        if (cancellation.isCancelled) return;
+        _committedAudio = value.through;
+        _emitStream(value, primary: primary, secondary: secondary);
+        final fraction = value.primary.snapshot.length / cues.length;
+        _updateStatus(
+          job.translateEnabled
+              ? TranscriptionStatus.translating
+              : TranscriptionStatus.optimizing,
+          '已处理 ${value.primary.snapshot.length}/${cues.length} 条字幕',
+          job.translateEnabled
+              ? _progressPlan.translation(fraction)
+              : _progressPlan.optimization(fraction),
+        );
+      },
+    );
+    try {
+      for (final batch in cloudTranslationBatches(
+        cues,
+        maxCues: SubtitleOptimizer.batchSize,
+        maxRunes: SubtitleOptimizer.characterBudget,
+        maxSpan: const Duration(hours: 24),
+      )) {
+        await stream.accept(batch);
+      }
+      await stream.drain();
+      cancellation.throwIfCancelled();
+      return output;
+    } catch (_) {
+      await output.setPhase(
+        cancellation.isCancelled
+            ? SubtitleStreamPhase.paused
+            : SubtitleStreamPhase.failed,
+        '已保留原字幕及处理进度，可继续',
+      );
+      _emitStream(output);
+      rethrow;
+    } finally {
+      await stream.close();
+    }
+  }
+
   static bool _isLocalCancellationError(Object error) {
     if (error is! StateError) return false;
     var message = TranscriptionUserMessage.describe(error);
@@ -2293,6 +2808,9 @@ class TranscriptionManager extends ChangeNotifier
         job.translateProviderName == SubtitleTranslateProvider.ai.name) {
       endpoint = await _translationEndpointFor(job);
     }
+    final optimizationEndpoint = job.optimization?.enabled == true
+        ? await _optimizationEndpointFor(job.optimization!.endpoint!)
+        : null;
     Future<StreamingSubtitleStore> openStore() async {
       if (store != null) return store!;
       final primary = await _allocateStreamPath(job);
@@ -2305,7 +2823,7 @@ class TranscriptionManager extends ChangeNotifier
       final secondary = job.translateEnabled
           ? await const TaskSubtitleStorageService().allocateInside(
               File(primary).parent,
-              '${p.basenameWithoutExtension(primary)}.translated.srt',
+              '${p.basenameWithoutExtension(primary)}.翻译.srt',
             )
           : null;
       store = await StreamingSubtitleStore.create(File(job.streamJournal!), {
@@ -2355,6 +2873,19 @@ class TranscriptionManager extends ChangeNotifier
         localSpecification: job.translateLocalSpec,
       ),
       endpoint: endpoint,
+      optimization: job.optimization ?? const SubtitleOptimizationChoice.off(),
+      optimizer: _subtitleOptimizer,
+      optimizationEndpoint: optimizationEndpoint,
+      onOptimizationProgress: _reportOptimizationProgress,
+      onOptimizing: () {
+        if (!cancellation.isCancelled && !_disposed) {
+          _updateStatus(
+            TranscriptionStatus.optimizing,
+            '正在优化当前字幕批次',
+            _progress,
+          );
+        }
+      },
       center: _modelCenter,
       translator: _translationService,
       recognitionLanguage: job.modelSpec!.profile.language,
@@ -2628,15 +3159,6 @@ class TranscriptionManager extends ChangeNotifier
           mediaPath,
         ]);
 
-        final stdoutBuffer = StringBuffer();
-        final stderrBuffer = StringBuffer();
-        final stdoutSub = probeProcess.stdout
-            .transform(utf8.decoder)
-            .listen(stdoutBuffer.write);
-        final stderrSub = probeProcess.stderr
-            .transform(utf8.decoder)
-            .listen(stderrBuffer.write);
-
         String? abortReason;
         final probeStartedAt = DateTime.now();
         final probeTimer = Timer.periodic(const Duration(milliseconds: 250), (
@@ -2653,18 +3175,20 @@ class TranscriptionManager extends ChangeNotifier
           }
         });
 
-        final exitCode = await probeProcess.exitCode;
-        probeTimer.cancel();
-        await stdoutSub.cancel();
-        await stderrSub.cancel();
+        final ProcessResult output;
+        try {
+          output = await collectTranscriptionProbeOutput(probeProcess);
+        } finally {
+          probeTimer.cancel();
+        }
 
         cancellation?.throwIfCancelled();
         if (abortReason != null) {
           lastError = StateError(abortReason!);
-        } else if (exitCode == 0) {
+        } else if (output.exitCode == 0) {
           try {
             return _parseMediaProbeInfo(
-              jsonDecode(stdoutBuffer.toString()) as Map<String, dynamic>,
+              jsonDecode(output.stdout as String) as Map<String, dynamic>,
               isAudioInput: isAudioInput,
             );
           } catch (e) {
@@ -2672,7 +3196,7 @@ class TranscriptionManager extends ChangeNotifier
           }
         } else {
           lastError = StateError(
-            'ffprobe 退出码 $exitCode: ${_summarizeText(stderrBuffer.toString(), fallback: "未知错误")}',
+            'ffprobe 退出码 ${output.exitCode}: ${_summarizeText(output.stderr as String, fallback: "未知错误")}',
           );
         }
         final fallbackInfo = await _probeMediaWithFfmpegCli(
@@ -2808,14 +3332,6 @@ class TranscriptionManager extends ChangeNotifier
         '-i',
         mediaPath,
       ]);
-      final stdoutBuffer = StringBuffer();
-      final stderrBuffer = StringBuffer();
-      final stdoutSub = process.stdout
-          .transform(utf8.decoder)
-          .listen(stdoutBuffer.write);
-      final stderrSub = process.stderr
-          .transform(utf8.decoder)
-          .listen(stderrBuffer.write);
       String? abortReason;
       final startedAt = DateTime.now();
       final monitor = Timer.periodic(const Duration(milliseconds: 250), (_) {
@@ -2829,17 +3345,18 @@ class TranscriptionManager extends ChangeNotifier
           process.kill();
         }
       });
-      await process.exitCode;
-      monitor.cancel();
-      await stdoutSub.cancel();
-      await stderrSub.cancel();
+      final ProcessResult output;
+      try {
+        output = await collectTranscriptionProbeOutput(process);
+      } finally {
+        monitor.cancel();
+      }
       cancellation?.throwIfCancelled();
       if (abortReason != null) return null;
-      final combinedOutput =
-          '${stderrBuffer.toString()}\n${stdoutBuffer.toString()}'.replaceAll(
-            '\r',
-            '\n',
-          );
+      final combinedOutput = '${output.stderr}\n${output.stdout}'.replaceAll(
+        '\r',
+        '\n',
+      );
       final audioLines = RegExp(
         r'^\s*Stream #.*Audio:[^\r\n]*',
         multiLine: true,
@@ -2903,6 +3420,7 @@ class TranscriptionManager extends ChangeNotifier
     bool normalizeUnknownDuration = false,
     bool audioExpected = false,
   }) async {
+    requireCommunityLocalMedia(mediaPath);
     cancellation.throwIfCancelled();
     if (itemNeedsOnlineMaterialization(path: mediaPath)) {
       throw StateError('在线媒体的音频来源尚未准备完成，请重试音频下载');
@@ -3526,6 +4044,9 @@ class TranscriptionManager extends ChangeNotifier
             videoPath: _currentVideoPath!,
             videoId: _currentVideoId,
             videoName: videoName,
+            processingStages: _currentJob?.mediaKey == currentKey
+                ? _currentJob!.processingStages
+                : '',
             videoDuration: _currentJob == null
                 ? ''
                 : _durationLabelForJob(_currentJob!),
@@ -3533,6 +4054,7 @@ class TranscriptionManager extends ChangeNotifier
             status: _status,
             progress: _progress,
             translationProgress: _translationProgress,
+            optimizationProgress: _optimizationProgress,
             localAsrProgress: _localAsrProgress,
             audioProgress: localAudioProgress,
             statusMessage: perJobMessage,
@@ -3564,6 +4086,7 @@ class TranscriptionManager extends ChangeNotifier
           videoPath: job.videoPath,
           videoId: job.videoId,
           videoName: videoName,
+          processingStages: job.processingStages,
           videoDuration: _durationLabelForJob(job),
           isExternal: job.isExternal,
           status: TranscriptionStatus.idle,
@@ -3593,6 +4116,7 @@ class TranscriptionManager extends ChangeNotifier
           videoPath: job.videoPath,
           videoId: job.videoId,
           videoName: videoName,
+          processingStages: job.processingStages,
           videoDuration: _durationLabelForJob(job),
           isExternal: job.isExternal,
           status: TranscriptionStatus.error,
@@ -3615,6 +4139,7 @@ class TranscriptionManager extends ChangeNotifier
           videoPath: job.videoPath,
           videoId: job.videoId,
           videoName: videoName,
+          processingStages: job.processingStages,
           videoDuration: _durationLabelForJob(job),
           isExternal: job.isExternal,
           status: TranscriptionStatus.completed,
@@ -3657,6 +4182,7 @@ class TranscriptionManager extends ChangeNotifier
       videoPath: job.videoPath,
       videoId: job.videoId,
       videoName: job.displayName,
+      processingStages: job.processingStages,
       videoDuration: _durationLabelForJob(job),
       isExternal: job.isExternal,
       status: running
@@ -3672,6 +4198,7 @@ class TranscriptionManager extends ChangeNotifier
           ? 1
           : 0,
       translationProgress: running ? _translationProgress : null,
+      optimizationProgress: running ? _optimizationProgress : null,
       localAsrProgress: running ? _localAsrProgress : null,
       audioProgress: running ? localAudioProgress : null,
       statusMessage: scheduled
@@ -3752,9 +4279,9 @@ class TranscriptionManager extends ChangeNotifier
   }
 
   bool _requeueFailedTask(String mediaKey) {
-    final job = _failedJobs.remove(mediaKey);
-    if (job == null) return false;
-    job.retryRemoteTasks = true;
+    final job = _failedJobs[mediaKey];
+    if (job == null || !_communityJobCanProcess(job)) return false;
+    _failedJobs.remove(mediaKey);
     _prepareTaskForNewRun(mediaKey);
     _insertQueuedByTaskOrder(job);
     return true;
@@ -3812,6 +4339,7 @@ class TranscriptionManager extends ChangeNotifier
     required SubtitleOutputPathStrategy outputPathStrategy,
     String? customOutputDir,
   }) async {
+    requireCommunityLocalMedia(videoPath);
     if (videoPath.trim().isEmpty) {
       throw Exception("视频路径不能为空");
     }
@@ -4601,7 +5129,9 @@ class TranscriptionManager extends ChangeNotifier
                     .artifact(job.translateLocalSpec!.profile.model)
                     ?.bytes ??
                 0),
-      consumerBatchSize: job.translateLocalSpec?.translation.batchSize ?? 8,
+      consumerBatchSize: job.optimization?.enabled == true
+          ? SubtitleOptimizer.batchSize
+          : job.translateLocalSpec?.translation.batchSize ?? 8,
       consumerWorkingSetBytes: job.translateLocalSpec == null
           ? null
           : translationAllocationBytes(
@@ -4632,6 +5162,7 @@ class TranscriptionManager extends ChangeNotifier
         _localAsrProgress = event.local;
         _updateStatus(
           switch (event.stage) {
+            ModelProcessingStage.downloading => TranscriptionStatus.downloading,
             ModelProcessingStage.preparing ||
             ModelProcessingStage.loading => TranscriptionStatus.extracting,
             ModelProcessingStage.uploading => TranscriptionStatus.uploading,
@@ -4678,95 +5209,87 @@ class TranscriptionManager extends ChangeNotifier
       'resumedPieces=${checkpoint.pieces.length}',
     );
 
-    final audioPrefetcher = TranscriptionAudioPrefetcher<_SliceAudio>(
-      prepare: (slice, progress, cancelSignal) async {
-        cancellation.throwIfCancelled();
-        final preparationCancellation = _JobCancellation();
-        unawaited(
-          Future.any<void>([
-            cancellation.whenCancelled,
-            cancelSignal,
-            preparationCancellation.whenCancelled,
-          ]).then((_) {
-            if (!preparationCancellation.isCancelled) {
-              preparationCancellation.cancel(
-                cancellation.isCancelled ? cancellation.reason : '后续音频准备已停止',
-              );
-            }
-          }),
-        );
-        try {
-          return await _materializeSlice(
-            preparedAudio: preparedAudio,
-            slice: slice,
-            duration: duration,
-            cancellation: preparationCancellation,
-            forceTranscode:
-                checkpoint.remoteTasks[slice.taskKey]?.normalizeAudio == true,
-            onProgress: progress,
+    final slicesCancellation = _JobCancellation();
+    unawaited(
+      Future.any<void>([
+        cancellation.whenCancelled,
+        slicesCancellation.whenCancelled,
+      ]).then((_) {
+        if (cancellation.isCancelled) {
+          slicesCancellation.cancel(
+            cancellation.reason,
+            timedOut: cancellation._timedOut,
           );
-        } finally {
-          preparationCancellation.cancel('音频准备已结束');
         }
-      },
-      release: (audio) async {
-        if (audio.temporary) await _deleteFileIfExists(audio.path);
-      },
+      }),
     );
+    final preparations = SerialTaskQueue();
+    void checkCancelled() {
+      cancellation.throwIfCancelled();
+      slicesCancellation.throwIfCancelled();
+    }
 
     try {
       return await SliceRecognitionSession.run(
         duration: duration,
         checkpoint: checkpoint,
+        concurrency: 3,
+        cancelPeersOnError: (error) => error is! PublicAsrQuotaException,
+        stopInFlight: () => slicesCancellation.cancel('本次识别已暂停'),
         log: debugPrint,
-        checkCancelled: cancellation.throwIfCancelled,
+        checkCancelled: checkCancelled,
         waitBetween: (delay, message) =>
-            _waitWithCountdown(cancellation, delay, message),
+            _waitWithCountdown(slicesCancellation, delay, message),
         onPiece: (_) => _writeCheckpointBook(book),
         onProgress: (message, progress) {
+          if (slicesCancellation.isCancelled) return;
           _updateStatus(
             _statusForRecognitionMessage(message),
             message,
             _progressPlan.recognition(progress),
           );
         },
-        transcribe: (slice, label, onInner) {
-          return _transcribeSlice(
-            preparedAudio: preparedAudio,
-            slice: slice,
-            label: label,
-            onInner: onInner,
-            cancellation: cancellation,
-            checkpoint: checkpoint,
-            saveCheckpoint: () => _writeCheckpointBook(book),
-            prepareAudio: (progress) => audioPrefetcher.take(slice, progress),
-            onAudioReady: () {
-              if (cancellation.isCancelled || _hitRiskControlThisJob) return;
-              final next = TranscriptionSlicePlanner.nextUnfinished(
-                start: Duration(
-                  milliseconds: TranscriptionSlicePlanner.cursorAfter(
-                    slice.start.inMilliseconds,
-                    slice.end.inMilliseconds,
-                    duration.inMilliseconds,
-                  ),
-                ),
-                duration: duration,
-                checkpoint: checkpoint,
-              );
-              if (next == null ||
-                  checkpoint.remoteTasks[next.taskKey]?.taskId?.isNotEmpty ==
-                      true) {
-                return;
-              }
-              audioPrefetcher.prefetch(next);
-            },
-          );
-        },
+        transcribe: (slice, label, onInner) => _transcribeSlice(
+          preparedAudio: preparedAudio,
+          slice: slice,
+          label: label,
+          onInner: onInner,
+          cancellation: slicesCancellation,
+          checkpoint: checkpoint,
+          saveCheckpoint: () => _writeCheckpointBook(book),
+          prepareAudio: (progress) => preparations.enqueue(() {
+            checkCancelled();
+            return _materializeSlice(
+              preparedAudio: preparedAudio,
+              slice: slice,
+              duration: duration,
+              cancellation: slicesCancellation,
+              forceTranscode:
+                  checkpoint.remoteTasks[slice.taskKey]?.normalizeAudio == true,
+              onProgress: progress,
+            );
+          }),
+        ),
       );
     } on TranscriptionSlicePastEnd {
       throw const GongyiAsrException(GongyiAsrFailureKind.rejected, '待识别音频是空的');
+    } on GongyiAsrException catch (error) {
+      if (error.isAccessDenied) {
+        final until = DateTime.now().add(
+          error.retryAfter ?? const Duration(seconds: 60),
+        );
+        for (final remote in checkpoint.remoteTasks.values) {
+          if (remote.hasPendingWork &&
+              (remote.queryNotBefore == null ||
+                  remote.queryNotBefore!.isBefore(until))) {
+            remote.queryNotBefore = until;
+          }
+        }
+        await _writeCheckpointBook(book);
+      }
+      rethrow;
     } finally {
-      await audioPrefetcher.close();
+      slicesCancellation.cancel('识别任务已结束');
     }
   }
 
@@ -4794,7 +5317,6 @@ class TranscriptionManager extends ChangeNotifier
     required TranscriptionTaskCheckpoint checkpoint,
     required Future<void> Function() saveCheckpoint,
     required Future<_SliceAudio> Function(void Function(double)) prepareAudio,
-    required void Function() onAudioReady,
   }) async {
     cancellation.throwIfCancelled();
     final remote = checkpoint.remoteTasks.putIfAbsent(
@@ -4802,17 +5324,24 @@ class TranscriptionManager extends ChangeNotifier
       GongyiAsrTaskCheckpoint.new,
     )..onChanged = saveCheckpoint;
     _SliceAudio? audio;
-    var audioReady = false;
     Future<String> prepare() async {
-      // An expired task from the old hour-long policy may be polled, but any
-      // replacement upload must use the new shorter slices.
+      // Poll saved ranges intact; replacement uploads use the current bound.
       if (slice.overlap > Duration.zero ||
-          slice.length > TranscriptionTiming.safeSliceLength) {
+          slice.audioLength > TranscriptionTiming.safeSliceLength) {
         throw const GongyiAsrException(
           GongyiAsrFailureKind.tooLong,
-          '旧识别任务已失效，按无重叠且时长不超过 30 分钟的范围重新切分',
+          '旧识别任务已失效，按每次上传时长不超过 10 分钟的范围重新切分',
         );
       }
+      if (remote.leadingContext != slice.leadingContext) {
+        remote.leadingContext = slice.leadingContext;
+        await saveCheckpoint();
+      }
+      await _publicAsrQuota.check(
+        duration: slice.length,
+        reservationId: remote.usageReservationId,
+      );
+      cancellation.throwIfCancelled();
       audio ??= await prepareAudio(
         (ratio) => onInner(ratio * 0.2, '准备音频 ${(ratio * 100).floor()}%'),
       );
@@ -4821,23 +5350,23 @@ class TranscriptionManager extends ChangeNotifier
         remote.normalizeAudio = true;
         await saveCheckpoint();
       }
+      cancellation.throwIfCancelled();
+      if (remote.usageReservationId == null) {
+        remote.usageReservationId = const Uuid().v4();
+        await saveCheckpoint();
+      }
+      await _publicAsrQuota.reserve(
+        duration: slice.length,
+        reservationId: remote.usageReservationId!,
+      );
       return audio!.path;
     }
 
-    var waitingMessage = '稍后自动重试';
     Future<List<SubtitleItem>> recognize() => TranscriptionAttemptRunner.run(
       sliceLabel: label,
       log: debugPrint,
-      delay: (wait) => _waitWithCountdown(cancellation, wait, waitingMessage),
-      onWaiting: (message) {
-        waitingMessage = message;
-        if (message.contains('访问限制') ||
-            message.contains('频率限制') ||
-            message.contains('安全策略拦截')) {
-          _hitRiskControlThisJob = true;
-        }
-        _updateStatus(TranscriptionStatus.transcribing, message, _progress);
-      },
+      delay: cancellation.delay,
+      onWaiting: (_) => onInner(0.7, '等待识别结果'),
       attempt: () => _asrService.transcribeAudio(
         preparedAudio.audioPath,
         prepareAudio: prepare,
@@ -4846,17 +5375,6 @@ class TranscriptionManager extends ChangeNotifier
         checkpoint: remote,
         onProgress: (inner, message) {
           if (cancellation.isCancelled) return;
-          // This callback follows local preparation, or a saved task's first
-          // query. Only local work runs ahead; submissions remain sequential.
-          if (message.contains('访问限制') ||
-              message.contains('频率限制') ||
-              message.contains('安全策略拦截')) {
-            _hitRiskControlThisJob = true;
-          }
-          if (!audioReady) {
-            audioReady = true;
-            onAudioReady();
-          }
           onInner(0.2 + inner * 0.8, message);
         },
       ),
@@ -4880,14 +5398,9 @@ class TranscriptionManager extends ChangeNotifier
         // 16 kHz mono format. A pending/uncertain task is never resubmitted.
         if (audio?.temporary == true) await _deleteFileIfExists(audio!.path);
         audio = null;
-        audioReady = false;
         remote.normalizeAudio = true;
         await saveCheckpoint();
-        await _waitWithCountdown(
-          cancellation,
-          TranscriptionTiming.betweenSlices,
-          '原音频未被接受，改用兼容格式重试',
-        );
+        onInner(0, '原音频未被接受，改用兼容格式重试');
         return await recognize();
       }
     } finally {
@@ -4904,7 +5417,9 @@ class TranscriptionManager extends ChangeNotifier
     void Function(double ratio)? onProgress,
   }) async {
     final probe = preparedAudio.probe;
-    if (preparedAudio.compatibilityAudio && slice.coversEntire(duration)) {
+    if (preparedAudio.compatibilityAudio &&
+        probe.codec == 'mp3' &&
+        slice.coversEntire(duration)) {
       onProgress?.call(1);
       return _SliceAudio(path: preparedAudio.audioPath, temporary: false);
     }
@@ -4914,13 +5429,14 @@ class TranscriptionManager extends ChangeNotifier
             path: preparedAudio.audioPath,
             codec: probe.codec,
             durationSeconds: probe.durationSeconds,
-            sliceSeconds: slice.length.inMilliseconds / 1000.0,
+            sliceSeconds: slice.audioLength.inMilliseconds / 1000.0,
             wholeFile: slice.coversEntire(duration),
             isAudioInput: probe.isAudioInput,
             fileBytes: await _safeFileSize(File(preparedAudio.audioPath)),
             audioBitRate: probe.audioBitRate,
             audioStreams: probe.audioStreams,
             hasVideo: probe.hasVideo,
+            preferMp3: true,
           );
     cancellation.throwIfCancelled();
     if (plan == GongyiAudioPreparation.direct) {
@@ -4937,24 +5453,23 @@ class TranscriptionManager extends ChangeNotifier
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       cancellation.throwIfCancelled();
       final copy = plan == GongyiAudioPreparation.copy && attempt == 1;
-      final out = await _createManagedTempAudioPath(
-        extension: copy && probe.codec == 'mp3' ? 'mp3' : 'm4a',
-      );
+      final out = await _createManagedTempAudioPath(extension: 'mp3');
       try {
         onProgress?.call(0);
         await _extractAudioToPath(
           preparedAudio.audioPath,
           out,
           useCopy: copy,
+          cloudMp3: !copy,
           probe: _MediaProbeInfo(
             codec: probe.codec,
-            durationSeconds: slice.length.inMilliseconds / 1000.0,
+            durationSeconds: slice.audioLength.inMilliseconds / 1000.0,
             hasAudioStream: true,
             isAudioInput: probe.isAudioInput,
           ),
           cancellation: cancellation,
-          seekStart: slice.start,
-          takeDuration: slice.length,
+          seekStart: slice.audioStart,
+          takeDuration: slice.audioLength,
           inactivityTimeout: const Duration(seconds: 45),
           onProgress: onProgress,
         );
@@ -5059,6 +5574,11 @@ class TranscriptionManager extends ChangeNotifier
   Future<AiSubtitleApiSettings> _translationEndpointFor(
     _TranscriptionJob job,
   ) async {
+    if (job.translateEndpoint != null) {
+      return AiSubtitleApiSettingsStore().loadForSnapshot(
+        job.translateEndpoint!,
+      );
+    }
     final saved = await AiSubtitleApiSettingsStore().load();
     final active = job.translateApiProviderId.isEmpty
         ? saved
@@ -5080,16 +5600,19 @@ class TranscriptionManager extends ChangeNotifier
     return '$identity:${fingerprint.bytes}:${fingerprint.modifiedMs}';
   }
 
-  Future<void> _writeCheckpointBook(TranscriptionCheckpointBook book) async {
-    final dir = _persistenceDirPath;
-    if (dir == null) return;
-    try {
-      final file = File(p.join(dir, _checkpointFileName));
-      await file.writeAsString(book.encode());
-    } catch (error) {
-      debugPrint('[transcription] 保存分段进度失败: $error');
-    }
-  }
+  Future<void> _writeCheckpointBook(TranscriptionCheckpointBook book) =>
+      _checkpointWrites.enqueue(() async {
+        final dir = _persistenceDirPath;
+        if (dir == null) return;
+        try {
+          final file = File(p.join(dir, _checkpointFileName));
+          final pending = File('${file.path}.tmp');
+          await pending.writeAsString(book.encode(), flush: true);
+          await pending.rename(file.path);
+        } catch (error) {
+          debugPrint('[transcription] 保存分段进度失败: $error');
+        }
+      });
 
   Future<void> _discardCheckpoint(String mediaKey) async {
     try {
@@ -5127,6 +5650,20 @@ class TranscriptionManager extends ChangeNotifier
 }
 
 class _TranscriptionJob {
+  Future<
+    ({SubtitleOptimizationChoice? choice, Object? error, StackTrace? stack})
+  >?
+  optimizationCapture;
+  String get processingStages => [
+    '转录',
+    if (optimization?.enabled == true) '优化',
+    if (translateEnabled) '翻译',
+  ].join(' → ');
+  SubtitleOptimizationChoice? optimization;
+  String? optimizedPath;
+  String? externalTaskId;
+  bool externalRemoteAuthorized = false;
+  bool externalDownloadAuthorized = false;
   VideoItem? sourceItem;
   SubtitlePunctuation? subtitlePunctuation;
   String? translationInputPath;
@@ -5137,6 +5674,7 @@ class _TranscriptionJob {
       modelSpec?.profile.local == true ||
       modelSpec?.profile.cloudProvider != null;
   bool get streamsCloudTranslation =>
+      optimization?.enabled != true &&
       modelSpec?.profile.local == false &&
       modelSpec?.profile.cloudProvider == null &&
       translateEnabled &&
@@ -5192,6 +5730,7 @@ class _TranscriptionJob {
     String? displayName,
     this.durationLabel = '',
     this.checkpointScope = '',
+    this.externalTaskId,
   }) : createdAt = createdAt ?? 0,
        displayName = (displayName == null || displayName.trim().isEmpty)
            ? p.basename(videoPath)
@@ -5216,6 +5755,14 @@ class _TranscriptionJob {
 
   /// 序列化为 JSON（不含非持久化字段：libraryService、autoCache）
   Map<String, dynamic> toJson() => {
+    if (optimization != null) 'optimization': optimization!.toJson(),
+    if (optimization == null) 'optimizationPending': true,
+    if (optimizedPath != null) 'optimizedPath': optimizedPath,
+    if (externalTaskId != null) 'externalTaskId': externalTaskId,
+    if (externalTaskId != null && externalRemoteAuthorized)
+      'externalRemoteAuthorized': true,
+    if (externalTaskId != null && externalDownloadAuthorized)
+      'externalDownloadAuthorized': true,
     if (subtitlePunctuation != null)
       'subtitlePunctuation': subtitlePunctuation!.name,
     if (translationInputPath != null)
@@ -5294,8 +5841,11 @@ class _TranscriptionJob {
       displayName: json['displayName'] as String?,
       durationLabel: json['durationLabel'] as String? ?? '',
       checkpointScope: json['checkpointScope'] as String? ?? '',
+      externalTaskId: json['externalTaskId'] as String?,
     );
     final modelJson = json['modelSpec'];
+    job.externalRemoteAuthorized = json['externalRemoteAuthorized'] == true;
+    job.externalDownloadAuthorized = json['externalDownloadAuthorized'] == true;
     job.retryRemoteTasks = json['retryRemoteTasks'] == true;
     job.modelSpec = modelJson is Map
         ? ModelJobSpec.fromJson(Map<String, dynamic>.from(modelJson))
@@ -5362,6 +5912,12 @@ class _TranscriptionJob {
     job.transcriptSourceIdentity = json['transcriptSourceIdentity'] as String?;
     job.transcriptOutputFingerprint =
         json['transcriptOutputFingerprint'] as String?;
+    job.optimizedPath = json['optimizedPath'] as String?;
+    job.optimization = json['optimization'] is Map
+        ? SubtitleOptimizationChoice.fromJson(json['optimization'] as Map)
+        : (json['optimizationPending'] == true
+              ? null
+              : const SubtitleOptimizationChoice.off());
     return job;
   }
 }

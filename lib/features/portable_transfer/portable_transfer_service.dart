@@ -19,6 +19,7 @@ import '../../models/podcast_source_ref.dart';
 import '../podcasts/podcast_runtime.dart';
 import '../podcasts/podcast_models.dart';
 import '../../services/library_service.dart';
+import '../../services/community_media_input.dart';
 import '../../services/app_storage_service.dart';
 import '../../services/media_materialization_service.dart';
 import '../media_cache/bilibili_download_cache.dart';
@@ -27,6 +28,7 @@ import '../media_cache/media_cache_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/subtitle_word_timing_store.dart';
 import '../../services/bilibili/bilibili_video_shot_service.dart';
+import 'legacy_download_export_policy.dart';
 import 'portable_media_selection.dart';
 import 'portable_transfer_models.dart';
 import 'sync_media_origin.dart';
@@ -1740,7 +1742,9 @@ class PortableTransferService extends ChangeNotifier {
       if (retainedLeases == null) return;
       final cache = MediaCacheService.instance;
       final source = CacheSource.fromItem(item);
-      if (cache != null && source != null) {
+      if (cache != null &&
+          source != null &&
+          !communityMediaIsLocal(item.path)) {
         await cache.initialize();
         variant ??= cache.variants
             .where(
@@ -1801,8 +1805,12 @@ class PortableTransferService extends ChangeNotifier {
           !folderMediaIds.contains(item.id)) {
         return;
       }
+      if (omitLegacyWebDownload(item, library)) return;
+      requireCommunityProcessingSource(item.path, source: item.sourceRef);
       final exportId = item.id;
-      if (item.sourceRef?.podcast case final ref?) {
+      final localMedia = communityMediaIsLocal(item.path);
+      if (!localMedia && item.sourceRef?.podcast != null) {
+        final ref = item.sourceRef!.podcast!;
         (podcastEpisodeIds[ref.channelId] ??= {}).add(ref.episodeId);
         final runtime = PodcastRuntime.instance;
         await runtime.initialize(library: library);
@@ -1813,14 +1821,18 @@ class PortableTransferService extends ChangeNotifier {
         }
       }
       final referenceOnlyPodcast =
-          standalone && item.sourceRef?.podcast != null;
-      final standaloneCloud = standalone && item.sourceRef?.cloudDrive != null;
+          !localMedia &&
+          (standalone || folderTransfer) &&
+          item.sourceRef?.podcast != null;
+      final standaloneCloud =
+          !localMedia && standalone && item.sourceRef?.cloudDrive != null;
       final cacheSource = CacheSource.fromItem(item);
-      final standaloneBilibili = standalone && cacheSource?.isBilibili == true;
+      final standaloneBilibili =
+          !localMedia && standalone && cacheSource?.isBilibili == true;
       final transferredBilibili =
-          folderTransfer && cacheSource?.isBilibili == true;
+          !localMedia && folderTransfer && cacheSource?.isBilibili == true;
       final transferredCloud =
-          folderTransfer && item.sourceRef?.cloudDrive != null;
+          !localMedia && folderTransfer && item.sourceRef?.cloudDrive != null;
       final ownedBilibiliPath =
           (standaloneBilibili || transferredBilibili) &&
               item.bilibiliDownloadPath?.trim().isNotEmpty == true
@@ -2202,7 +2214,7 @@ class PortableTransferService extends ChangeNotifier {
                   .toJson(),
         if (transferredBilibiliQuality != null)
           'bilibiliDownloadQuality': transferredBilibiliQuality.toJson()
-        else if (!isOnline && item.bilibiliDownloadPath != null)
+        else if (!localMedia && !isOnline && item.bilibiliDownloadPath != null)
           'bilibiliDownloadQuality': MediaCacheService.instance
               ?.completeBilibiliVariant(item, ownedDownload: true)
               ?.quality
@@ -2317,6 +2329,56 @@ class PortableTransferService extends ChangeNotifier {
           bundle.remove('manualOrder');
         }
         bundle.remove('downloads');
+        continue;
+      }
+      if (folderTransfer) {
+        // A device transfer contains only the feed and selected episode
+        // references. Playback is merged separately; offline media and local
+        // channel preferences must never travel with the folder.
+        final rawChannel = Map<String, dynamic>.from(bundle['channel'] as Map);
+        final channelId = rawChannel['id'] as String;
+        final selected = podcastEpisodeIds[channelId] ?? <String>{};
+        final episodes = <Map<String, dynamic>>[];
+        final states = <String, dynamic>{};
+        for (final record in videoRecords) {
+          final video = record['video'] as Map;
+          final ref = MediaSourceRef.fromJsonOrNull(
+            video['sourceRef'],
+          )?.podcast;
+          if (ref == null ||
+              ref.channelId != channelId ||
+              !selected.contains(ref.episodeId) ||
+              record['isOnline'] != true) {
+            continue;
+          }
+          final existing = runtime.store.episode(ref.episodeId);
+          episodes.add(
+            PodcastEpisode(
+              id: ref.episodeId,
+              channelId: channelId,
+              title: video['title'] as String,
+              durationMs: video['durationMs'] as int? ?? 0,
+              media: [PodcastMedia(url: ref.mediaUrl)],
+              sourceFeedUrl: existing?.sourceFeedUrl ?? '',
+            ).toJson(),
+          );
+          states[ref.episodeId] = PodcastEpisodeState(
+            positionMs: video['lastPositionMs'] as int? ?? 0,
+            updatedMs: video['lastUpdated'] as int? ?? 0,
+          ).toJson();
+        }
+        bundle
+          ..clear()
+          ..addAll({
+            'version': 2,
+            'channel': PodcastChannel(
+              id: channelId,
+              feedUrl: rawChannel['feedUrl'] as String,
+              title: rawChannel['title'] as String? ?? '播客',
+            ).toJson(),
+            'episodes': episodes,
+            'states': states,
+          });
         continue;
       }
       if (!runtime.store.preferences.flag('includeDownloadsInExport')) continue;
@@ -2828,8 +2890,36 @@ class PortableTransferService extends ChangeNotifier {
         .toList();
     final podcastBundles = (snapshot['podcasts'] as List? ?? [])
         .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
+        .map((bundle) => Map<String, dynamic>.from(bundle))
         .toList();
+    rawVideos.removeWhere((record) {
+      if (record['isOnline'] != true) return false;
+      final video = record['video'];
+      if (video is! Map) return true;
+      final source = MediaSourceRef.fromJsonOrNull(video['sourceRef']);
+      if (video['path'] is String &&
+          communityMediaIsPodcast(video['path'] as String, source: source)) {
+        return false;
+      }
+      final cachedCloud = record['cachedCloudMedia'];
+      final cachedBilibili = record['cachedBilibiliMedia'];
+      final path = video['path'];
+      final asset = path is String && path.startsWith('@asset:')
+          ? path
+          : cachedCloud is Map
+          ? cachedCloud['path']
+          : cachedBilibili is Map
+          ? cachedBilibili['path']
+          : null;
+      if (asset is! String || !asset.startsWith('@asset:')) return true;
+      record['isOnline'] = false;
+      record['video'] = {...video, 'path': asset};
+      record.remove('cachedCloudMedia');
+      record.remove('cachedBilibiliMedia');
+      record.remove('cloudDownloadQuality');
+      record.remove('bilibiliDownloadQuality');
+      return false;
+    });
     if (podcastBundles.isNotEmpty) {
       await PodcastRuntime.instance.initialize(library: library);
       final store = PodcastRuntime.instance.store;
@@ -2879,6 +2969,45 @@ class PortableTransferService extends ChangeNotifier {
             }
           }
         });
+      } else if (network != null) {
+        for (final bundle in podcastBundles) {
+          final rawStates = bundle['states'] as Map? ?? const {};
+          final episodeIds = <String>{
+            for (final raw in bundle['episodes'] as List? ?? const [])
+              if (raw is Map && raw['id'] is String) raw['id'] as String,
+          };
+          final initialStates = <String, dynamic>{};
+          for (final entry in rawStates.entries) {
+            final id = entry.key;
+            if (id is! String ||
+                !episodeIds.contains(id) ||
+                entry.value is! Map ||
+                store.read('state', id) != null ||
+                library.storageVideos.any(
+                  (item) =>
+                      !item.isRecycled &&
+                      item.sourceRef?.podcast?.episodeId == id,
+                )) {
+              continue;
+            }
+            final state = entry.value as Map;
+            final position = (state['positionMs'] as num?)?.toInt() ?? 0;
+            if (position > 0) {
+              initialStates[id] = {
+                'positionMs': position.clamp(0, 315576000000),
+                'updatedMs': (state['updatedMs'] as num?)?.toInt() ?? 0,
+              };
+            }
+          }
+          // A device transfer must not replace local podcast settings,
+          // favorites, or an existing playback state from an older snapshot.
+          store.importChannel({
+            'version': 1,
+            'channel': bundle['channel'],
+            'episodes': bundle['episodes'] ?? const [],
+            'states': initialStates,
+          });
+        }
       } else {
         for (final bundle in podcastBundles) {
           store.importChannel(bundle);
@@ -3327,7 +3456,9 @@ class PortableTransferService extends ChangeNotifier {
               ? null
               : reuseCandidate;
           if (reusableCard != null) {
-            if (!isOnline && record['cloudDownloadQuality'] is Map) {
+            if (!communityMediaIsLocal(reusableCard.path) &&
+                !isOnline &&
+                record['cloudDownloadQuality'] is Map) {
               await _registerReceivedCloudFile(
                 reusableCard,
                 record['cloudDownloadQuality'] as Map,
@@ -3647,7 +3778,8 @@ class PortableTransferService extends ChangeNotifier {
           // publish/save the new card. A process exit cannot orphan its ID.
           await network.persistMapping();
         }
-        final insertedId = item.sourceRef?.podcast != null
+        final insertedId =
+            !communityMediaIsLocal(item.path) && item.sourceRef?.podcast != null
             ? (await library.upsertPodcastEpisode(item)).id
             : await library.addSingleVideo(
                 item,
@@ -3662,11 +3794,14 @@ class PortableTransferService extends ChangeNotifier {
           throw StateError('无法创建媒体卡片：${item.title}');
         }
         final cloudQuality = record['cloudDownloadQuality'];
-        if (!isOnline && cloudQuality is Map) {
+        if (!communityMediaIsLocal(item.path) &&
+            !isOnline &&
+            cloudQuality is Map) {
           await _registerReceivedCloudFile(item, cloudQuality, extraction);
         }
         final downloadedQuality = record['bilibiliDownloadQuality'];
-        if (!isOnline &&
+        if (!communityMediaIsLocal(item.path) &&
+            !isOnline &&
             downloadedQuality is Map &&
             item.isBilibiliExported &&
             CacheSource.fromItem(item)?.isBilibili == true) {

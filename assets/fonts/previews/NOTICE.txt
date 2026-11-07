@@ -1,0 +1,12 @@
+Noto Color Emoji preview artwork
+Copyright 2013 Google, Inc. All Rights Reserved.
+Licensed under the Apache License, Version 2.0.
+Full license: ../licenses/NotoEmoji-Artwork-Apache-2.0.txt
+
+This small preview combines and resizes three official PNG glyphs; it does not
+bundle the Noto Color Emoji font software.
+Source version: v2.051
+Source commit: 8998f5dd683424a73e2314a8c1f1e359c19e8742
+https://github.com/googlefonts/noto-emoji/tree/8998f5dd683424a73e2314a8c1f1e359c19e8742/png/128
+Source files: emoji_u1f600.png, emoji_u1f603.png, emoji_u1f604.png
+Modification: resized to 80px each and combined on a 288x88 transparent canvas.

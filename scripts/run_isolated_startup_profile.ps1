@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $perfWorkspace = Split-Path -Parent $PSScriptRoot
-if (-not $Executable) { $Executable = Join-Path $perfWorkspace 'build/windows/x64/runner/Profile/video_player_app.exe' }
+if (-not $Executable) { $Executable = Join-Path $perfWorkspace 'build/windows/x64/runner/Profile/fluent-player.exe' }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $perfWorkspace 'build/performance-audit' }
 $perfFixtures = Join-Path $OutputDirectory 'fixtures'
 $perfRuns = Join-Path $OutputDirectory ('startup-runs/' + (Get-Date -Format 'yyyyMMdd-HHmmss'))

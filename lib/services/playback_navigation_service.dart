@@ -1,3 +1,4 @@
+import '../features/podcasts/podcast_playback_hooks.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 
@@ -8,11 +9,11 @@ import 'package:video_player/video_player.dart' show VideoPlayerController;
 
 import '../models/video_item.dart';
 import '../widgets/playback_source_viewport.dart';
-import '../features/podcasts/podcast_playback_hooks.dart';
 import '../screens/portrait_video_screen.dart';
 import '../screens/video_player_screen.dart';
 import '../utils/app_toast.dart';
 import 'settings_service.dart';
+import 'community_media_input.dart';
 import 'media_playback_service.dart';
 import 'playback_browse_history.dart';
 import 'playlist_manager.dart';
@@ -187,6 +188,7 @@ class PlaybackNavigationService {
   }
 
   Route<void> buildPortraitRoute(VideoItem item) {
+    requireCommunityPlaybackSource(item.path, source: item.sourceRef);
     return buildPlaybackPageRoute<void>(
       builder: (context) => PortraitVideoScreen(videoItem: item),
       settings: portraitRouteSettings(item),
@@ -196,7 +198,9 @@ class PlaybackNavigationService {
   /// 通知栏点击与媒体卡片使用同一入口页：默认竖屏，开启「跳过竖屏播放页」
   /// 时直接进入横屏。不传入自动播放参数，已在播的会话保持当前播放状态。
   Route<void> buildNotificationPlaybackRoute(VideoItem item) {
-    if (item.sourceRef?.podcast != null && PodcastPlaybackHooks.route != null) {
+    requireCommunityPlaybackSource(item.path, source: item.sourceRef);
+    if (communityMediaIsPodcast(item.path, source: item.sourceRef) &&
+        PodcastPlaybackHooks.route != null) {
       return PodcastPlaybackHooks.route!(item);
     }
     if (entrySkipsPortraitPlayer) {
@@ -228,11 +232,13 @@ class PlaybackNavigationService {
   }) {
     final override = entryRouteOverrideForTesting;
     if (override != null) return override(item);
-    final autoPlayOnEntry =
-        entryAutoPlay ?? SettingsService().autoPlayOnPageEntry;
-    if (item.sourceRef?.podcast != null && PodcastPlaybackHooks.route != null) {
+    requireCommunityPlaybackSource(item.path, source: item.sourceRef);
+    if (communityMediaIsPodcast(item.path, source: item.sourceRef) &&
+        PodcastPlaybackHooks.route != null) {
       return PodcastPlaybackHooks.route!(item);
     }
+    final autoPlayOnEntry =
+        entryAutoPlay ?? SettingsService().autoPlayOnPageEntry;
     if (entrySkipsPortraitPlayer) {
       return buildPlaybackPageRoute<void>(
         settings: landscapeRouteSettings(item),
@@ -334,6 +340,10 @@ class PlaybackNavigationService {
       }
       var item = playbackService.currentItem;
       if (item == null) return;
+      if (!communityMediaIsLocal(item.path)) {
+        await _openPlaybackInternal(item);
+        return;
+      }
 
       // Keep the warmup owner until a real playback page registers. Dropping
       // it after one frame used to deselect Bilibili's video track while the
@@ -382,6 +392,7 @@ class PlaybackNavigationService {
     required VideoItem item,
     VideoPlayerController? existingController,
   }) {
+    if (!communityMediaIsLocal(item.path)) return;
     _holdPlaybackPageVisibleUntilOwned(playbackService);
 
     if (existingController != null) return;
@@ -453,6 +464,10 @@ class PlaybackNavigationService {
       }
       final item = playbackService.currentItem;
       if (item == null) return;
+      if (!communityMediaIsLocal(item.path)) {
+        await _openPlaybackInternal(item, notificationEntry: true);
+        return;
+      }
       final warmOnlineVideo = playbackService.isCurrentItemOnlineBilibiliStream;
       if (warmOnlineVideo) {
         _holdPlaybackPageVisibleUntilOwned(playbackService, maxAttempts: 1800);
@@ -470,6 +485,10 @@ class PlaybackNavigationService {
     Route<dynamic>? inPlaceOf,
     bool? entryAutoPlay,
   }) async {
+    if (!communityMediaIsPlayable(item.path, source: item.sourceRef)) {
+      AppToast.show('社区版支持本地文件与 RSS 播客，请选择可用媒体', type: AppToastType.info);
+      return;
+    }
     final navigator = await _waitForNavigator();
     if (navigator == null) {
       return;

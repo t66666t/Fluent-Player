@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../../theme/app_tokens.dart';
 import 'podcast_typography.dart';
 
@@ -16,6 +17,8 @@ class PodcastEpisodeSummary extends StatefulWidget {
     this.onExpandedChanged,
     this.semanticLabel = '节目简介',
     this.collapsedLines = 3,
+    this.availableHeight,
+    this.controlBelow = false,
   });
 
   final String text;
@@ -25,6 +28,10 @@ class PodcastEpisodeSummary extends StatefulWidget {
   final ValueChanged<bool>? onExpandedChanged;
   final String semanticLabel;
   final int collapsedLines;
+
+  /// For a bounded sidebar, fold only when the full text cannot fit here.
+  final double? availableHeight;
+  final bool controlBelow;
 
   @override
   State<PodcastEpisodeSummary> createState() => _PodcastEpisodeSummaryState();
@@ -39,9 +46,13 @@ class _PodcastEpisodeSummaryState extends State<PodcastEpisodeSummary> {
     TextDirection direction,
     double width,
     int lines,
+    double? availableHeight,
+    bool controlBelow,
+    Locale? locale,
   })?
   _measurement;
   bool _overflows = false;
+  int _visibleLines = 3;
 
   @override
   void didUpdateWidget(covariant PodcastEpisodeSummary oldWidget) {
@@ -65,17 +76,46 @@ class _PodcastEpisodeSummaryState extends State<PodcastEpisodeSummary> {
         direction: Directionality.of(context),
         width: bounds.maxWidth,
         lines: widget.collapsedLines,
+        availableHeight: widget.availableHeight,
+        controlBelow: widget.controlBelow,
+        locale: Localizations.maybeLocaleOf(context),
       );
       // Expansion and row updates don't change the folded text metrics.
       // Remeasure only when content, typography or available width changes.
       if (_measurement != measurement) {
+        final height = measurement.availableHeight;
+        final boundedHeight = height != null && height.isFinite ? height : null;
         final measure = TextPainter(
           text: TextSpan(text: widget.text, style: style),
-          maxLines: widget.collapsedLines,
+          maxLines: boundedHeight == null ? widget.collapsedLines : null,
           textDirection: measurement.direction,
           textScaler: measurement.scaler,
+          locale: measurement.locale,
         )..layout(maxWidth: measurement.width);
-        _overflows = measure.didExceedMaxLines;
+        _visibleLines = widget.collapsedLines;
+        if (boundedHeight == null) {
+          _overflows = measure.didExceedMaxLines;
+        } else {
+          _overflows = measure.height > boundedHeight + .5;
+          if (_overflows) {
+            final label = TextPainter(
+              text: TextSpan(text: '展开', style: style.copyWith(fontSize: 11)),
+              textDirection: measurement.direction,
+              textScaler: measurement.scaler,
+              locale: measurement.locale,
+            )..layout();
+            final controlHeight = math.max(16.0, label.height) + 6;
+            label.dispose();
+            final textHeight = math.max(0.0, boundedHeight - controlHeight);
+            final fitting = measure
+                .computeLineMetrics()
+                .takeWhile(
+                  (line) => line.baseline + line.descent <= textHeight + .5,
+                )
+                .length;
+            _visibleLines = math.max(1, fitting);
+          }
+        }
         measure.dispose();
         _measurement = measurement;
       }
@@ -84,7 +124,7 @@ class _PodcastEpisodeSummaryState extends State<PodcastEpisodeSummary> {
       final expanded = expandable && (widget.expanded ?? _expanded);
       final content = Text(
         widget.text,
-        maxLines: !overflows || expanded ? null : widget.collapsedLines,
+        maxLines: !overflows || expanded ? null : _visibleLines,
         overflow: !overflows || expanded
             ? TextOverflow.visible
             : TextOverflow.ellipsis,
@@ -92,42 +132,53 @@ class _PodcastEpisodeSummaryState extends State<PodcastEpisodeSummary> {
       );
       if (!expandable) return content;
       final label = expanded ? '收起' : '展开';
+      // Keep the gesture on the control. A tap on the copy must not expand,
+      // so the episode row underneath can open playback.
+      final control = Semantics(
+        button: true,
+        expanded: expanded,
+        label: '$label${widget.semanticLabel}',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: () {
+            setState(() => _expanded = !expanded);
+            widget.onExpandedChanged?.call(!expanded);
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: style.copyWith(fontSize: 11)),
+              Icon(
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 16,
+                color: AppTokens.text2,
+              ),
+            ],
+          ),
+        ),
+      );
       final body = Padding(
         padding: const EdgeInsets.symmetric(vertical: 1),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: content),
-            const SizedBox(width: 8),
-            // Keep the gesture on the control. A tap on the copy must not
-            // expand, so the episode row underneath can open playback.
-            Semantics(
-              button: true,
-              expanded: expanded,
-              label: '$label${widget.semanticLabel}',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(5),
-                onTap: () {
-                  setState(() => _expanded = !expanded);
-                  widget.onExpandedChanged?.call(!expanded);
-                },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(label, style: style.copyWith(fontSize: 11)),
-                    Icon(
-                      expanded
-                          ? Icons.expand_less_rounded
-                          : Icons.expand_more_rounded,
-                      size: 16,
-                      color: AppTokens.text2,
-                    ),
-                  ],
-                ),
+        child: widget.controlBelow
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: double.infinity, child: content),
+                  const SizedBox(height: 4),
+                  Align(alignment: Alignment.centerRight, child: control),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: content),
+                  const SizedBox(width: 8),
+                  control,
+                ],
               ),
-            ),
-          ],
-        ),
       );
       return MediaQuery.disableAnimationsOf(context)
           ? body

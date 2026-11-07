@@ -166,6 +166,9 @@ extension ImportCardFeatureX on ImportCardFeature {
 
   String get defaultFolderName => group.label;
 
+  /// Manual local imports always follow the folder where they were started.
+  bool get usesPlacementRules => group.usesPlacementRules;
+
   ImportCardGroup get group => switch (this) {
     ImportCardFeature.localFile ||
     ImportCardFeature.folder ||
@@ -222,6 +225,9 @@ enum ImportCardGroup {
 }
 
 extension ImportCardGroupX on ImportCardGroup {
+  bool get usesPlacementRules =>
+      this != ImportCardGroup.local && this != ImportCardGroup.portable;
+
   String get ruleKey => 'group:$name';
   String get label => switch (this) {
     ImportCardGroup.local => '本地导入',
@@ -279,12 +285,21 @@ class ImportPlacementRule {
 /// Preset-independent exceptions. Changing a preset preserves these choices.
 class ImportPlacementRules {
   static const settingsKey = 'importPlacementRules';
+  static final configurableKeys = <String>{
+    for (final feature in ImportCardFeature.values)
+      if (feature.usesPlacementRules) feature.storageValue,
+    for (final group in ImportCardGroup.values)
+      if (group.usesPlacementRules) group.ruleKey,
+  };
   ImportPlacementRules({
     this.fixedFolderId,
     Map<String, ImportPlacementRule>? overrides,
   }) : overrides = Map.of(overrides ?? const {});
   String? fixedFolderId;
   final Map<String, ImportPlacementRule> overrides;
+
+  int get configurableOverrideCount =>
+      overrides.keys.where(configurableKeys.contains).length;
 
   ImportPlacementRule effectiveRule(
     ImportCardFeature feature,

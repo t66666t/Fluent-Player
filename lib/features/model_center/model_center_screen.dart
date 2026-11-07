@@ -37,6 +37,7 @@ import 'model_center_service.dart';
 import 'offline_model_directory_import.dart';
 import 'model_adapters.dart';
 import 'model_center_widgets.dart';
+import 'subtitle_optimization_panel.dart';
 import 'model_device_info.dart';
 import 'model_download_sources.dart';
 import 'model_language_summary.dart';
@@ -761,7 +762,8 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
       model.engine == 'qwen3-asr';
 
   List<ModelArtifact> _downloadComponents(ModelArtifact model) =>
-      _isQwenAsr(model) ? center.asrDownloadComponents(model) : [model];
+      model.purpose == ModelPurpose.transcription
+      ? center.asrDownloadComponents(model) : [model];
 
   bool _needsDownload(ModelArtifact model) =>
       _downloadComponents(model).any((part) => !center.installed(part.id));
@@ -784,7 +786,7 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
     }
     _detailError.value = null;
     try {
-      if (_isQwenAsr(model)) {
+      if (model.purpose == ModelPurpose.transcription) {
         await center.queueAsrDownload(model);
       } else {
         await center.enqueue(model.id);
@@ -1167,6 +1169,9 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
       final wide = constraints.maxWidth >= 1000;
       final asr = _asrConfiguration();
       final translationCard = _translationConfiguration();
+      const optimization = SubtitleOptimizationPanel(
+        key: ValueKey('model-center-optimization'),
+      );
       final output = ModelCenterPanel(
         key: const ValueKey('model-center-output'),
         title: '字幕输出',
@@ -1208,7 +1213,28 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
                 children: [
                   _managementLinks(),
                   const SizedBox(height: 12),
-                  if (wide && !widget.transcriptionOnly)
+                  if (constraints.maxWidth >= 1280 && !widget.transcriptionOnly) ...[
+                    Row(
+                      key: const ValueKey('model-center-processing-columns'),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: asr),
+                        const SizedBox(width: 16),
+                        const Expanded(child: optimization),
+                        const SizedBox(width: 16),
+                        Expanded(child: translationCard),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: output),
+                        const SizedBox(width: 16),
+                        Expanded(child: device),
+                      ],
+                    ),
+                  ] else if (wide && !widget.transcriptionOnly)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1221,6 +1247,8 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
                         Expanded(
                           child: Column(
                             children: [
+                              optimization,
+                              const SizedBox(height: 12),
                               translationCard,
                               const SizedBox(height: 12),
                               device,
@@ -1232,6 +1260,8 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
                   else ...[
                     asr,
                     if (!widget.transcriptionOnly) ...[
+                      const SizedBox(height: 12),
+                      optimization,
                       const SizedBox(height: 12),
                       translationCard,
                     ],
@@ -2241,7 +2271,7 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
     final missing = components.where((part) => !center.installed(part.id));
     final downloadingComponents = components.any(_modelDownloading);
     final downloadLabel = downloadingComponents
-        ? _isQwenAsr(model)
+        ? model.purpose == ModelPurpose.transcription
               ? '正在下载模型与组件'
               : state!.label
         : components.any(
@@ -2627,7 +2657,7 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
           contentPadding: EdgeInsets.zero,
           title: Text(profile.name),
           subtitle: profile.kind == TranscriptionServiceKind.gongyi
-              ? null
+              ? const Text('识别时上传本地音频，无需配置密钥。')
               : Text('${profile.model}\n${profile.endpoint}', maxLines: 3),
           trailing: profile.kind == TranscriptionServiceKind.gongyi
               ? null
@@ -2644,7 +2674,7 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
           alignment: Alignment.centerLeft,
           child: DesktopButtonClickRegion(child: TextButton.icon(
             onPressed: center.asrProfileId == profile.id
-                ? null
+                  ? null
                 : () => _act(() async {
                     center.asrProfileId = profile.id;
                     await center.settingsChanged();
@@ -3019,23 +3049,20 @@ class _ModelCenterScreenState extends State<ModelCenterScreen> {
         center.diagnostics[model.id] =
             '本机增强推理通过 · ${watch.elapsedMilliseconds} ms\n$message';
       } else {
+        final spec = ModelJobSpec(
+          profile: ModelServiceProfile(
+            id: 'check',
+            name: model.name,
+            kind: TranscriptionServiceKind.local,
+            model: model.id,
+          ),
+          artifactIdentity: model.identity,
+        );
+        final vad = await center.prepareAsrVad(
+          onProgress: (message) => center.updateDiagnostic(model.id, message),
+        );
         await InferenceScheduler.instance.run(
-          () => center.usingModel(model.id, (model, dir) async {
-            final vad = File(
-              p.join((await center.modelRoot()).path, 'silero_vad.onnx'),
-            );
-            if (!await vad.exists()) {
-              final asset = await rootBundle.load(
-                'assets/models/asr/silero_vad.onnx',
-              );
-              await vad.writeAsBytes(
-                asset.buffer.asUint8List(
-                  asset.offsetInBytes,
-                  asset.lengthInBytes,
-                ),
-                flush: true,
-              );
-            }
+          () => center.usingAsrModels(spec, (model, dir, _) async {
             final wave = File(
               p.join(
                 (await center.storage.featureDirectory('model_jobs')).path,

@@ -384,7 +384,9 @@ void main() {
   testWidgets('an already open import sheet follows the device state', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 400));
+    // The local-only import sheet has fewer entries; keep this fixture small
+    // enough to exercise scroll retention when keyboard hints change.
+    await tester.binding.setSurfaceSize(const Size(390, 300));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final keyboard = presence(TargetPlatform.android);
     await tester.pumpWidget(
@@ -532,7 +534,7 @@ void main() {
   }
 
   testWidgets(
-    'open settings add and remove keyboard help while retaining search',
+    'settings omit duplicate keyboard help when a keyboard connects',
     (tester) async {
       final keyboard = presence(TargetPlatform.android);
       final settings = SettingsService()..resetForTest();
@@ -553,9 +555,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('打开设置'));
       await tester.pumpAndSettle();
-      final search = find.byKey(const ValueKey('settings-search'));
-      await tester.enterText(search, '快捷键');
-      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
       expect(
         find.byKey(const ValueKey('keyboardShortcutSettings')),
         findsNothing,
@@ -564,16 +564,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('keyboardShortcutSettings')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(tester.widget<TextField>(search).controller!.text, '快捷键');
+      expect(find.text('媒体库设置'), findsOneWidget);
       await nativeChange(false);
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('keyboardShortcutSettings')),
         findsNothing,
       );
-      expect(tester.widget<TextField>(search).controller!.text, '快捷键');
+      expect(find.text('媒体库设置'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

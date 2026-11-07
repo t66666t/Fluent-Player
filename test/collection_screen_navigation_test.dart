@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/screens/collection_screen.dart';
@@ -10,9 +11,12 @@ import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/media_library_folder_walk.dart';
+import 'package:video_player_app/features/external_ai/external_ai_workspace_context.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
 
   for (final size in [
     const Size(400, 800),
@@ -77,6 +81,32 @@ void main() {
             await tester.pumpAndSettle();
             expect(tester.takeException(), isNull);
             expect(find.text('episode one'), findsOneWidget);
+            expect(
+              ExternalAiWorkspaceContext.instance.snapshot.folderId,
+              'course',
+            );
+            if (size.width == 400 && viewMode == 0 && !proportional) {
+              final navigator = Navigator.of(
+                tester.element(find.byType(CollectionScreen)),
+              );
+              final covering = navigator.push<void>(
+                MaterialPageRoute(
+                  builder: (_) => const Scaffold(body: Text('Other view')),
+                ),
+              );
+              await tester.pumpAndSettle();
+              expect(
+                ExternalAiWorkspaceContext.instance.snapshot.hasCurrentFolder,
+                isFalse,
+              );
+              navigator.pop();
+              await covering;
+              await tester.pumpAndSettle();
+              expect(
+                ExternalAiWorkspaceContext.instance.snapshot.folderId,
+                'course',
+              );
+            }
 
             library.seedVideoForTesting(clip('episode two'));
             folder.childrenIds.add('episode two');
@@ -89,6 +119,10 @@ void main() {
             expect(tester.takeException(), isNull);
             expect(find.text('episode two'), findsOneWidget);
             await tester.pumpWidget(const SizedBox());
+            expect(
+              ExternalAiWorkspaceContext.instance.snapshot.hasCurrentFolder,
+              isFalse,
+            );
           },
         );
       }

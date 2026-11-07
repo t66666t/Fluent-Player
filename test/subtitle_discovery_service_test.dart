@@ -8,6 +8,54 @@ import 'package:video_player_app/utils/subtitle_file_matcher.dart';
 
 void main() {
   test(
+    'batch shares directory snapshot but keeps matching and duration decisions per video',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'subtitle_batch_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final first = File(p.join(directory.path, 'First.srt'));
+      await first.writeAsString('1\n00:00:00,000 --> 00:00:59,500\n内容\n');
+      final batch = SubtitleDiscoveryBatch();
+      const discovery = SubtitleDiscoveryService();
+      final a = await discovery.scanVideoDirectory(
+        videoPath: p.join(directory.path, 'First.mp4'),
+        videoDurationMs: 60000,
+        batch: batch,
+      );
+      expect(a.single.isAuto, isTrue);
+      final b = await discovery.scanVideoDirectory(
+        videoPath: p.join(directory.path, 'Other.mp4'),
+        videoDurationMs: 60000,
+        batch: batch,
+      );
+      expect(b.single.isAuto, isFalse);
+      final c = await discovery.scanVideoDirectory(
+        videoPath: p.join(directory.path, 'First.mp4'),
+        videoDurationMs: 600000,
+        batch: batch,
+      );
+      expect(c.single.isAuto, isFalse);
+      expect(
+        a.single.isAuto,
+        isTrue,
+      ); // No mutated DiscoveredSubtitleFile is shared.
+      await File(p.join(directory.path, 'Other.srt')).writeAsString('新字幕');
+      final oldSnapshot = await discovery.scanVideoDirectory(
+        videoPath: p.join(directory.path, 'Other.mp4'),
+        batch: batch,
+      );
+      expect(oldSnapshot, hasLength(1));
+      final newSnapshot = await discovery.scanVideoDirectory(
+        videoPath: p.join(directory.path, 'Other.mp4'),
+        batch: SubtitleDiscoveryBatch(),
+      );
+      expect(newSnapshot, hasLength(2));
+      expect(newSnapshot.any((f) => f.isAuto), isTrue);
+    },
+  );
+
+  test(
     'discovery returns full candidates and sorts auto group by language weight',
     () async {
       final directory = await Directory.systemTemp.createTemp(

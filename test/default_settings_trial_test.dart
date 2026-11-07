@@ -8,10 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Exercise the plugin's speculative cache as well as durable write failures.
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+import 'package:video_player_app/models/media_library_root_entry.dart';
 import 'package:video_player_app/models/recommended_subtitle_defaults.dart';
 import 'package:video_player_app/models/subtitle_debug_preset.dart';
 import 'package:video_player_app/models/subtitle_style.dart';
 import 'package:video_player_app/services/default_settings_trial.dart';
+import 'package:video_player_app/services/media_library_navigation.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/subtitle_debug_session.dart';
 import 'package:video_player_app/widgets/default_settings_trial_action.dart';
@@ -104,6 +106,55 @@ void main() {
     SettingsService().resetForTest();
     SettingsService().featureSettingsForTrial = MemoryTrialFeatures();
     SettingsService().subtitlePresets = [];
+  });
+
+  test(
+    'fresh startup opens the folder root after a saved page visit',
+    () async {
+      final settings = SettingsService();
+      await settings.init();
+      expect(settings.mediaLibraryRestoreLastPage, isFalse);
+      expect(settings.mediaLibraryStartupEntry, 'folders');
+      await settings.saveMediaLibraryRootChoice('recent');
+      await settings.saveMediaLibraryLastFolder('nested');
+      settings.resetForTest();
+      await settings.init();
+
+      final plan = MediaLibraryNavigation.plan(
+        libraryInitialized: true,
+        hasExistingLibraryContent: true,
+        storedEntry: settings.mediaLibraryRootEntry,
+        userChosen: settings.mediaLibraryRootEntryUserChosen,
+        restoreLastPage: settings.mediaLibraryRestoreLastPage,
+        startupEntry: settings.mediaLibraryStartupEntry,
+        lastFolderId: settings.mediaLibraryLastFolderId,
+        availableEntries: MediaLibraryRootEntry.values.toSet(),
+        revealItemId: null,
+        returnToSearchResults: false,
+        isActiveFolder: (id) => id == 'nested',
+        parentIdOf: (_) => null,
+      );
+      expect(plan.displayedEntry, MediaLibraryRootEntry.folders);
+      expect(plan.folderToOpen, isNull);
+      expect(settings.mediaLibraryRootEntry, 'recent');
+      expect(settings.mediaLibraryLastFolderId, 'nested');
+    },
+  );
+
+  test('saved startup settings survive the new install defaults', () async {
+    SharedPreferences.setMockInitialValues({
+      'mediaLibraryRestoreLastPage': true,
+      'mediaLibraryStartupEntry': 'podcasts',
+      'mediaLibraryRootEntryOrder': 'recent,folders,continueLearning,podcasts',
+    });
+    final settings = SettingsService();
+    await settings.init();
+    expect(settings.mediaLibraryRestoreLastPage, isTrue);
+    expect(settings.mediaLibraryStartupEntry, 'podcasts');
+    expect(
+      settings.mediaLibraryRootEntryOrder,
+      'recent,folders,continueLearning,podcasts',
+    );
   });
 
   group('immutable recovery journal', () {

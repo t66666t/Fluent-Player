@@ -15,7 +15,7 @@
   },
   "files": {
     "Flatbuffers-LICENSE": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",
-    "libfluent_ocr_accel.so": "771a5511968d623aab02365f86716cea87586a1887a818e1ffcc5f9a9be3ad05",
+    "libfluent_ocr_accel.so": "39216a13a9f2e68a7184d502dba28eed9025aa24fbfe590f26fd68cb2c815f04",
     "libocr_qnn.so": "b0fdc5d0c977b8908b3f264ab45a1ee5a581b881aa9eff2b32c7e0b5d0cebe08",
     "libQnnDsp.so": "15db48b699657489575810c2974b6b648d1cb635c4166024ef9bfb5fa302cf44",
     "libQnnDspV66Skel.so": "35a18fa666c08d545726eda56c86459dbf7b067957415ce493fabf9f9b14f5fe",

@@ -10,7 +10,7 @@ import 'package:video_player_app/features/model_center/model_catalog.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'older built-in settings and queued profiles keep their selection',
+    'unverified old default migrates locally while frozen profiles and authorized services retain identity',
     () async {
       SharedPreferences.setMockInitialValues({});
       final temp = await Directory.systemTemp.createTemp(
@@ -52,16 +52,26 @@ void main() {
         );
         centers.add(center);
         await center.initialize();
-        expect(center.asrProfileId, ModelCenterService.legacyProfile.id);
-        expect(center.asrProfile.name, '公益接口');
-        expect(center.profiles.keys, unorderedEquals(['gongyi', 'custom']));
+        expect(
+          center.asrProfileId,
+          ModelCenterService.communityDefaultProfile.id,
+        );
+        expect(center.asrProfile.kind, TranscriptionServiceKind.local);
+        expect(
+          center.profiles.keys,
+          unorderedEquals([
+            'gongyi',
+            ModelCenterService.communityDefaultProfile.id,
+            'custom',
+          ]),
+        );
         expect(center.profiles['custom']!.toJson(), custom.toJson());
         final queued = ModelJobSpec.fromJson({
           'profile': olderBuiltin,
           'threads': 3,
         });
         expect(queued.profile.kind, TranscriptionServiceKind.gongyi);
-        expect(queued.profile.id, center.asrProfileId);
+        expect(queued.profile.id, ModelCenterService.legacyProfile.id);
         expect(queued.profile.name, '公益接口');
         expect(queued.profile.language, 'en');
         expect(queued.threads, 3);
@@ -72,7 +82,10 @@ void main() {
         );
         centers.add(restored);
         await restored.initialize();
-        expect(restored.asrProfileId, 'gongyi');
+        expect(
+          restored.asrProfileId,
+          ModelCenterService.communityDefaultProfile.id,
+        );
         expect(restored.profiles['custom']!.toJson(), custom.toJson());
         center.asrProfileId = 'custom';
         await center.save();

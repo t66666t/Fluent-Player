@@ -114,7 +114,7 @@ flutter pub get
 python tool/download_ocr_smoke_assets.py
 python tool/make_ocr_smoke_fixture.py
 $env:LLAMADART_NATIVE_LIB_DIR = "$PWD/build/native_assets/windows"
-flutter test test/ocr_native_models_test.dart --dart-define=OCR_RUNTIME_ROOT=D:/1spbfq/video_player_app/.artifacts/ocr-upgrade/models
+flutter test test/ocr_native_models_test.dart --dart-define=OCR_RUNTIME_ROOT=.artifacts/ocr-upgrade/models
 python tool/prepare_ocr_comparison.py
 flutter test .artifacts/ocr-upgrade/comparison_test.dart
 python tool/prepare_ocr_comparison.py --cpu-baseline

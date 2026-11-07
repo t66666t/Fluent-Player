@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -127,11 +128,13 @@ class VideoComposeQueueDialog extends StatefulWidget {
     required this.onPreview,
     required this.onOpenOutput,
     required this.openOutputLabel,
+    this.onSaveOutput,
     this.requestDeleteOutputPermission,
   });
 
   final Future<void> Function(VideoComposeTaskState task) onPreview;
   final Future<void> Function(String path) onOpenOutput;
+  final Future<void> Function(String path)? onSaveOutput;
   final String openOutputLabel;
   final Future<bool> Function(List<VideoComposeTaskState> tasks)?
   requestDeleteOutputPermission;
@@ -146,6 +149,8 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
   bool _selecting = false;
   bool _deleting = false;
   String? _previewing;
+  String? _saving;
+  bool get _busy => _deleting || _saving != null;
   late bool _deleteOutput;
 
   @override
@@ -171,7 +176,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
     List<VideoComposeTaskState> tasks, {
     bool clearAll = false,
   }) async {
-    if (_deleting || tasks.isEmpty) return;
+    if (_busy || tasks.isEmpty) return;
     final manager = context.read<VideoComposeManager>();
     final ids = tasks.map((task) => task.taskId).toSet();
     final choice = await showComposeDeleteConfirmation(
@@ -186,7 +191,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
       clearAll: clearAll,
       onDeleteOutputChanged: _rememberDeleteOutput,
     );
-    if (!mounted || choice == null || _deleting) return;
+    if (!mounted || choice == null || _busy) return;
     setState(() => _deleting = true);
     try {
       if (choice &&
@@ -221,7 +226,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
   }
 
   Future<void> _preview(VideoComposeTaskState task) async {
-    if (_previewing != null || _deleting) return;
+    if (_previewing != null || _busy) return;
     setState(() => _previewing = task.taskId);
     try {
       await widget.onPreview(task);
@@ -234,8 +239,23 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
     }
   }
 
+  Future<void> _save(VideoComposeTaskState task) async {
+    if (_busy || widget.onSaveOutput == null) return;
+    setState(() => _saving = task.taskId);
+    try {
+      await widget.onSaveOutput!(task.request.outputPath);
+    } catch (error) {
+      if (mounted) AppToast.show('保存失败，合成视频仍保留', type: AppToastType.error);
+    } finally {
+      if (mounted) setState(() => _saving = null);
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     return Dialog(
       backgroundColor: const Color(0xFF1E1E1E),
@@ -300,7 +320,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                             if (_selecting) ...[
                               DesktopButtonClickRegion(
                                 child: TextButton(
-                                  onPressed: _deleting || tasks.isEmpty
+                                  onPressed: _busy || tasks.isEmpty
                                       ? null
                                       : () => setState(() {
                                           _selected.clear();
@@ -315,7 +335,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                               ),
                               DesktopButtonClickRegion(
                                 child: TextButton.icon(
-                                  onPressed: _deleting || selectedTasks.isEmpty
+                                  onPressed: _busy || selectedTasks.isEmpty
                                       ? null
                                       : () => _delete(selectedTasks),
                                   icon: const Icon(Icons.delete_outline),
@@ -324,7 +344,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                               ),
                               DesktopButtonClickRegion(
                                 child: TextButton(
-                                  onPressed: _deleting
+                                  onPressed: _busy
                                       ? null
                                       : () => setState(() {
                                           _selecting = false;
@@ -336,7 +356,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                             ] else
                               DesktopButtonClickRegion(
                                 child: TextButton.icon(
-                                  onPressed: _deleting || tasks.isEmpty
+                                  onPressed: _busy || tasks.isEmpty
                                       ? null
                                       : () => setState(() => _selecting = true),
                                   icon: const Icon(Icons.checklist),
@@ -345,7 +365,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                               ),
                             DesktopButtonClickRegion(
                               child: TextButton.icon(
-                                onPressed: _deleting || tasks.isEmpty
+                                onPressed: _busy || tasks.isEmpty
                                     ? null
                                     : () => _delete(tasks, clearAll: true),
                                 icon: const Icon(Icons.clear_all),
@@ -432,7 +452,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                   key: ValueKey('compose-select-${task.taskId}'),
                   value: _selected.contains(task.taskId),
                   semanticLabel: '选择 ${task.request.title}',
-                  onChanged: _deleting
+                  onChanged: _busy
                       ? null
                       : (value) => setState(() {
                           if (value == true) {
@@ -469,7 +489,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                   child: IconButton(
                     key: ValueKey('compose-delete-${task.taskId}'),
                     tooltip: '删除合成记录',
-                    onPressed: _deleting ? null : () => _delete([task]),
+                    onPressed: _busy ? null : () => _delete([task]),
                     icon: const Icon(
                       Icons.delete_outline,
                       color: Colors.redAccent,
@@ -537,7 +557,7 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
               children: [
                 DesktopButtonClickRegion(
                   child: OutlinedButton.icon(
-                    onPressed: _deleting || _previewing != null
+                    onPressed: _busy || _previewing != null
                         ? null
                         : () => _preview(task),
                     icon: const Icon(Icons.play_circle_outline, size: 18),
@@ -546,13 +566,21 @@ class _VideoComposeQueueDialogState extends State<VideoComposeQueueDialog> {
                 ),
                 DesktopButtonClickRegion(
                   child: OutlinedButton.icon(
-                    onPressed: _deleting
+                    onPressed: _busy
                         ? null
                         : () => widget.onOpenOutput(task.request.outputPath),
                     icon: const Icon(Icons.open_in_new_outlined, size: 18),
                     label: Text(widget.openOutputLabel),
                   ),
                 ),
+                if (widget.onSaveOutput != null)
+                  DesktopButtonClickRegion(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _save(task),
+                      icon: const Icon(Icons.save_alt, size: 18),
+                      label: Text(_saving == task.taskId ? '正在保存…' : '保存到设备'),
+                    ),
+                  ),
               ],
             ),
           ],

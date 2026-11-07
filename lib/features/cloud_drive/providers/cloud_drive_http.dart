@@ -1,3 +1,4 @@
+import '../../../services/community_media_input.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -56,6 +57,7 @@ Future<HttpClientRequest> openCloudDriveRequest(
   required Duration timeout,
   CloudDriveCancelToken? cancelToken,
 }) async {
+  requireCommunityAuthorizedCloudDrive();
   const cancelled = CloudDriveFailure(CloudDriveFailureKind.network, '网盘请求已取消');
   if (cancelToken?.isCancelled == true) throw cancelled;
   return openNetworkRequest(
@@ -170,6 +172,7 @@ class NetworkCloudDriveHttp implements CloudDriveHttp {
     CloudDriveHttpRequest request, {
     Object? cancelToken,
   }) async {
+    requireCommunityAuthorizedCloudDrive();
     final token = cancelToken is CloudDriveCancelToken ? cancelToken : null;
     final scope = request.connectionScope ?? request.uri.host;
     final generation =

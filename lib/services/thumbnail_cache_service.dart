@@ -39,8 +39,17 @@ class ThumbnailLoadRequest {
 }
 
 class _ThumbnailLoad {
+  _ThumbnailLoad(this.key, this.videoId, this.path, this.prefetch);
+
+  final String key;
+  final String videoId;
+  final String? path;
   final result = Completer<ImageProvider?>();
   int owners = 0;
+  bool prefetch;
+  bool started = false;
+  bool waitingForRepair = false;
+  bool repairStarted = false;
 }
 
 /// 缩略图缓存服务
@@ -48,7 +57,8 @@ class _ThumbnailLoad {
 /// 使用LRU（最近最少使用）策略管理内存缓存，提供高效的缩略图加载和缓存功能。
 /// 单例模式确保全局唯一实例。
 ///
-/// 这里缓存的是已经解码的本地 ImageProvider。远程封面的原始字节、去重和
+/// 这里缓存的是本地 ImageProvider 和路径，解码后的图片由 Flutter ImageCache
+/// 管理。远程封面的原始字节、去重和
 /// 磁盘文件在 MediaArtworkRepository，不要把一次 cacheWidth 当成省下了下载。
 class ThumbnailCacheService {
   // 单例实例
@@ -67,20 +77,116 @@ class ThumbnailCacheService {
 
   final Map<String, String?> _thumbnailPathById = {};
   final Map<String, _ThumbnailLoad> _inFlight = {};
-  final Queue<Future<void> Function()> _loads = Queue();
+  final Queue<_ThumbnailLoad> _visibleLoads = Queue();
+  final Queue<_ThumbnailLoad> _prefetchLoads = Queue();
+  final Queue<_ThumbnailLoad> _visibleRepairs = Queue();
+  final Queue<_ThumbnailLoad> _prefetchRepairs = Queue();
   int _activeLoads = 0;
+  int _activePrefetchLoads = 0;
+  int _activeRepairs = 0;
+  int _activePrefetchRepairs = 0;
 
   void _pumpLoads() {
-    while (_activeLoads < 4 && _loads.isNotEmpty) {
-      final load = _loads.removeFirst();
+    while (_activeLoads < 4) {
+      final _ThumbnailLoad load;
+      if (_visibleLoads.isNotEmpty) {
+        load = _visibleLoads.removeFirst();
+      } else if (_activePrefetchLoads < 2 && _prefetchLoads.isNotEmpty) {
+        load = _prefetchLoads.removeFirst();
+      } else {
+        return;
+      }
+      load.started = true;
+      final wasPrefetch = load.prefetch;
       _activeLoads++;
+      if (wasPrefetch) _activePrefetchLoads++;
       unawaited(
-        load().whenComplete(() {
+        _performLoad(load).whenComplete(() {
           _activeLoads--;
+          if (wasPrefetch) _activePrefetchLoads--;
           _pumpLoads();
         }),
       );
     }
+  }
+
+  Future<void> _performLoad(_ThumbnailLoad load) async {
+    try {
+      final path = _normalizeLocalThumbnailPath(load.path);
+      if (path != null && !_requiresWindowsThumbnailRepair(path)) {
+        final file = File(path);
+        if (await file.exists()) {
+          if (load.owners == 0) {
+            _finishLoad(load, null);
+          } else {
+            final provider = FileImage(file);
+            _addToCache(load.videoId, provider, thumbnailPath: path);
+            _finishLoad(load, provider);
+          }
+          return;
+        }
+      }
+      if (load.owners == 0) {
+        _finishLoad(load, null);
+        return;
+      }
+      // Missing-cover generation can take much longer than a file check.
+      // Keep it in its own bounded queue so existing covers stay responsive.
+      load.waitingForRepair = true;
+      (load.prefetch ? _prefetchRepairs : _visibleRepairs).add(load);
+      _pumpRepairs();
+    } catch (error, stack) {
+      _finishLoad(load, null, error: error, stack: stack);
+    }
+  }
+
+  void _pumpRepairs() {
+    while (_activeRepairs < 4) {
+      final _ThumbnailLoad load;
+      if (_visibleRepairs.isNotEmpty) {
+        load = _visibleRepairs.removeFirst();
+      } else if (_activePrefetchRepairs < 2 && _prefetchRepairs.isNotEmpty) {
+        load = _prefetchRepairs.removeFirst();
+      } else {
+        return;
+      }
+      load.waitingForRepair = false;
+      load.repairStarted = true;
+      final wasPrefetch = load.prefetch;
+      _activeRepairs++;
+      if (wasPrefetch) _activePrefetchRepairs++;
+      unawaited(
+        _repair(load).whenComplete(() {
+          _activeRepairs--;
+          if (wasPrefetch) _activePrefetchRepairs--;
+          _pumpRepairs();
+        }),
+      );
+    }
+  }
+
+  Future<void> _repair(_ThumbnailLoad load) async {
+    try {
+      _finishLoad(load, await _repairThumbnail(load.videoId, load.path));
+    } catch (error, stack) {
+      _finishLoad(load, null, error: error, stack: stack);
+    }
+  }
+
+  void _finishLoad(
+    _ThumbnailLoad load,
+    ImageProvider? image, {
+    Object? error,
+    StackTrace? stack,
+  }) {
+    if (!load.result.isCompleted) {
+      if (error == null) {
+        load.result.complete(image);
+      } else {
+        load.result.completeError(error, stack);
+      }
+    }
+    if (identical(_inFlight[load.key], load)) _inFlight.remove(load.key);
   }
 
   Future<String?> Function(String videoId)? _missingThumbnailResolver;
@@ -132,7 +238,11 @@ class ThumbnailCacheService {
     }
   }
 
-  ThumbnailLoadRequest requestThumbnail(String videoId, String? thumbnailPath) {
+  ThumbnailLoadRequest requestThumbnail(
+    String videoId,
+    String? thumbnailPath, {
+    bool prefetch = false,
+  }) {
     final cached = getThumbnailFromMemory(videoId, thumbnailPath);
     if (cached != null) {
       return ThumbnailLoadRequest(Future.value(cached), () {});
@@ -140,60 +250,61 @@ class ThumbnailCacheService {
     final key = '$videoId\u0000${thumbnailPath ?? ''}';
     var load = _inFlight[key];
     if (load == null) {
-      final created = load = _ThumbnailLoad();
+      final created = load = _ThumbnailLoad(
+        key,
+        videoId,
+        thumbnailPath,
+        prefetch,
+      );
       _inFlight[key] = created;
-      _loads.add(() async {
-        try {
-          created.result.complete(
-            created.owners == 0
-                ? null
-                : await _loadThumbnail(videoId, thumbnailPath),
-          );
-        } catch (error, stack) {
-          created.result.completeError(error, stack);
-        } finally {
-          if (identical(_inFlight[key], created)) _inFlight.remove(key);
-        }
-      });
+      (prefetch ? _prefetchLoads : _visibleLoads).add(created);
+    } else if (!prefetch && load.prefetch && !load.repairStarted) {
+      // A visible card can take over its own queued prefetch immediately,
+      // whether it is waiting for a file check or for cover generation.
+      if (!load.started) {
+        _prefetchLoads.remove(load);
+        _visibleLoads.add(load);
+      } else if (load.waitingForRepair) {
+        _prefetchRepairs.remove(load);
+        _visibleRepairs.add(load);
+      }
+      load.prefetch = false;
     }
     final owned = load;
     owned.owners++;
     _pumpLoads();
-    return ThumbnailLoadRequest(owned.result.future, () => owned.owners--);
+    _pumpRepairs();
+    return ThumbnailLoadRequest(owned.result.future, () {
+      owned.owners--;
+      if (owned.owners == 0 && (!owned.started || owned.waitingForRepair)) {
+        _visibleLoads.remove(owned);
+        _prefetchLoads.remove(owned);
+        _visibleRepairs.remove(owned);
+        _prefetchRepairs.remove(owned);
+        owned.waitingForRepair = false;
+        _finishLoad(owned, null);
+        _pumpLoads();
+        _pumpRepairs();
+      }
+    });
   }
 
-  Future<ImageProvider?> _loadThumbnail(
+  Future<ImageProvider?> _repairThumbnail(
     String videoId,
     String? thumbnailPath,
   ) async {
-    // 2. 如果路径为空或文件丢失，则尝试按需补建缩略图。
-    var resolvedThumbnailPath = _normalizeLocalThumbnailPath(thumbnailPath);
-    File? file;
-    if (resolvedThumbnailPath != null && resolvedThumbnailPath.isNotEmpty) {
-      if (_requiresWindowsThumbnailRepair(resolvedThumbnailPath)) {
-        file = null;
-      } else {
-        file = File(resolvedThumbnailPath);
-        if (!await file.exists()) {
-          file = null;
-        }
-      }
+    final resolvedThumbnailPath = await _resolveMissingThumbnailPath(
+      videoId,
+      _normalizeLocalThumbnailPath(thumbnailPath),
+    );
+    if (resolvedThumbnailPath == null || resolvedThumbnailPath.isEmpty) {
+      debugPrint('缩略图不存在且无法补建: $videoId');
+      return null;
     }
-    if (file == null) {
-      final regeneratedPath = await _resolveMissingThumbnailPath(
-        videoId,
-        resolvedThumbnailPath,
-      );
-      if (regeneratedPath == null || regeneratedPath.isEmpty) {
-        debugPrint('缩略图不存在且无法补建: $videoId');
-        return null;
-      }
-      resolvedThumbnailPath = regeneratedPath;
-      file = File(resolvedThumbnailPath);
-      if (!await file.exists()) {
-        debugPrint('缩略图文件不存在: $resolvedThumbnailPath');
-        return null;
-      }
+    final file = File(resolvedThumbnailPath);
+    if (!await file.exists()) {
+      debugPrint('缩略图文件不存在: $resolvedThumbnailPath');
+      return null;
     }
 
     // 3. 从磁盘加载并缓存
@@ -235,7 +346,12 @@ class ThumbnailCacheService {
   /// [videoId] 视频的唯一标识符
   /// [thumbnailPath] 缩略图文件路径
   Future<void> preloadThumbnail(String videoId, String? thumbnailPath) async {
-    await getThumbnail(videoId, thumbnailPath);
+    final request = requestThumbnail(videoId, thumbnailPath, prefetch: true);
+    try {
+      await request.image;
+    } finally {
+      request.dispose();
+    }
   }
 
   Future<String?> _resolveMissingThumbnailPath(

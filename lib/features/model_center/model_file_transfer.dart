@@ -5,25 +5,31 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
-import '../../services/network/network_dio_stream.dart';
+import '../../services/network/network_http.dart';
 
 class _ParallelRangeUnsupported implements Exception {}
 
-/// Bounded parallel ranges with a contiguous on-disk checkpoint. A sliding
-/// window buffers at most four 8 MiB chunks; no sparse file looks like a complete
-/// model after a crash. Servers without ranges/strong validators use one stream.
+class _RangeTooSlow implements Exception {}
+
+/// Eight active ranges with at most sixteen 2 MiB chunks in flight/buffered.
+/// Only a contiguous prefix reaches disk. Slow ranges reconnect independently,
+/// retaining their bytes, without cancelling healthy workers or changing route.
 class ModelFileTransfer {
   ModelFileTransfer({
     required this.dio,
-    this.parallelism = 4,
-    this.chunkBytes = 8 * 1024 * 1024,
+    this.parallelism = 8,
+    this.chunkBytes = 2 * 1024 * 1024,
     this.minimumParallelBytes = 8 * 1024 * 1024,
     this.idleTimeout = const Duration(seconds: 20),
+    this.recoveryWindow = const Duration(seconds: 5),
+    this.rangeRetries = 2,
   });
 
   final Dio dio;
   final int parallelism, chunkBytes, minimumParallelBytes;
   final Duration idleTimeout;
+  final Duration recoveryWindow;
+  final int rangeRetries;
 
   Future<void> download({
     required String url,
@@ -51,8 +57,9 @@ class ModelFileTransfer {
     Future<Response<ResponseBody>> open(
       int start,
       int? end,
-      String? validator,
-    ) {
+      String? validator, {
+      bool freshConnection = false,
+    }) {
       checkCancelled();
       return openCancellableDioStream(
         (child) => dio.get<ResponseBody>(
@@ -68,6 +75,10 @@ class ModelFileTransfer {
             },
             receiveTimeout: idleTimeout,
             sendTimeout: const Duration(seconds: 15),
+            extra: {
+              if (freshConnection)
+                NetworkHttp.modelDownloadFreshConnectionKey: true,
+            },
             validateStatus: (status) => status == 200 || status == 206,
           ),
         ),
@@ -166,72 +177,167 @@ class ModelFileTransfer {
         return;
       }
 
-      Future<Uint8List> read(
-        Response<ResponseBody> response,
-        int length,
-      ) async {
+      var bestRangeSpeed = 0.0;
+      Future<Uint8List> readRange(
+        int start,
+        int end, {
+        Response<ResponseBody>? initial,
+      }) async {
         final bytes = BytesBuilder(copy: false);
-        await for (final chunk in response.data!.stream.timeout(idleTimeout)) {
+        var retries = 0;
+        while (true) {
           checkCancelled();
-          if (bytes.length + chunk.length > length) {
-            throw const FormatException('下载内容超过请求范围');
+          Timer? watchdog;
+          var slow = false;
+          try {
+            final from = start + bytes.length;
+            final response =
+                initial ??
+                await open(from, end, etag, freshConnection: retries > 0);
+            initial = null;
+            if (response.statusCode != 206) {
+              await response.data!.stream.listen((_) {}).cancel();
+              throw _ParallelRangeUnsupported();
+            }
+            await validate(response, from, end);
+            if (response.headers.value('etag') != etag) {
+              await response.data!.stream.listen((_) {}).cancel();
+              throw const FormatException('分段下载校验已变化');
+            }
+            final clock = Stopwatch()..start();
+            final baseline = bytes.length;
+            var lastBytes = baseline;
+            var lastTime = Duration.zero;
+            var slowWindows = 0;
+            if (retries < rangeRetries) {
+              watchdog = Timer.periodic(recoveryWindow, (_) {
+                final now = clock.elapsed;
+                final speed =
+                    (bytes.length - lastBytes) *
+                    1000000 /
+                    (now - lastTime).inMicroseconds;
+                // Compare individual ranges rather than cancelling a whole
+                // source when other models share the connection's bandwidth.
+                final threshold = math.max(
+                  16 * 1024,
+                  math.min(1024 * 1024, bestRangeSpeed * .2),
+                );
+                slowWindows = speed < threshold ? slowWindows + 1 : 0;
+                bestRangeSpeed = math.max(bestRangeSpeed, speed);
+                lastBytes = bytes.length;
+                lastTime = now;
+                if (slowWindows >= 2) {
+                  slow = true;
+                  response.requestOptions.cancelToken?.cancel('分段持续降速，续传重连');
+                  watchdog?.cancel();
+                }
+              });
+            }
+            await for (final chunk in response.data!.stream.timeout(
+              idleTimeout,
+            )) {
+              checkCancelled();
+              if (bytes.length + chunk.length > end - start + 1) {
+                throw const FormatException('下载内容超过请求范围');
+              }
+              bytes.add(chunk);
+              received += chunk.length;
+              onBytes(received);
+            }
+            if (slow) throw _RangeTooSlow();
+            if (bytes.length != end - start + 1) {
+              throw const HttpException('模型分段未下载完整');
+            }
+            if (bytes.length - baseline >= 64 * 1024 &&
+                clock.elapsedMilliseconds >= 5) {
+              bestRangeSpeed = math.max(
+                bestRangeSpeed,
+                (bytes.length - baseline) * 1000000 / clock.elapsedMicroseconds,
+              );
+            }
+            return bytes.takeBytes();
+          } catch (error) {
+            watchdog?.cancel();
+            checkCancelled();
+            if (local.isCancelled) rethrow;
+            // Cancellation may race the final stream-done event. The validated
+            // range is already complete if every expected byte was delivered.
+            if (slow && bytes.length == end - start + 1) {
+              return bytes.takeBytes();
+            }
+            final transient =
+                error is TimeoutException ||
+                error is IOException ||
+                error is _RangeTooSlow ||
+                error is DioException &&
+                    (const {
+                          DioExceptionType.connectionTimeout,
+                          DioExceptionType.sendTimeout,
+                          DioExceptionType.receiveTimeout,
+                          DioExceptionType.connectionError,
+                        }.contains(error.type) ||
+                        error.type == DioExceptionType.unknown &&
+                            (error.error is IOException ||
+                                error.error is TimeoutException));
+            if (retries >= rangeRetries || (!slow && !transient)) rethrow;
+            retries++;
+            // A local reconnect discards the cancelled socket. The explicit
+            // fresh request also avoids picking another throttled pooled one.
+            if (!slow) {
+              await Future<void>.delayed(Duration(milliseconds: 200 * retries));
+            }
+          } finally {
+            watchdog?.cancel();
           }
-          bytes.add(chunk);
-          received += chunk.length;
-          onBytes(received);
         }
-        if (bytes.length != length) throw const HttpException('模型分段未下载完整');
-        return bytes.takeBytes();
       }
 
-      final initial = await read(first, firstEnd - offset + 1);
-      await sink.addStream(Stream.value(initial));
-      var committed = firstEnd + 1;
-      var next = committed;
+      var next = firstEnd + 1;
+      var active = 0;
       Object? failure;
       final pending = <Future<Uint8List?>>[];
-      Future<Uint8List?> fetch(int start) async {
+      late void Function() fill;
+      Future<Uint8List?> fetch(
+        int start, {
+        Response<ResponseBody>? initial,
+      }) async {
+        active++;
         try {
           final end = math.min(start + rangeBytes, total) - 1;
-          final response = await open(start, end, etag);
-          if (response.statusCode != 206) {
-            await response.data!.stream.listen((_) {}).cancel();
-            throw _ParallelRangeUnsupported();
-          }
-          await validate(response, start, end);
-          if (response.headers.value('etag') != etag) {
-            await response.data!.stream.listen((_) {}).cancel();
-            throw const FormatException('分段下载校验已变化');
-          }
-          return await read(response, end - start + 1);
+          return await readRange(start, end, initial: initial);
         } catch (error) {
           failure ??= error;
           local.cancel('停止当前来源的分段下载');
           return null;
+        } finally {
+          active--;
+          fill();
         }
       }
 
-      void fill() {
+      fill = () {
         while (failure == null &&
-            pending.length < parallelism &&
+            !local.isCancelled &&
+            pending.length < parallelism * 2 &&
+            active < parallelism &&
             next < total) {
           pending.add(fetch(next));
           next += rangeBytes;
         }
-      }
+      };
 
       try {
+        pending.add(fetch(offset, initial: first));
         fill();
         while (pending.isNotEmpty) {
-          // Commit in order, then immediately refill this slot instead of
-          // waiting for the entire batch. The look-ahead remains bounded even
-          // when the earliest chunk stalls.
+          // Completion refills network slots even before this ordered write.
+          // The bounded look-ahead and per-range recovery prevent a slow early
+          // range from leaving all other connections idle indefinitely.
           final chunk = await pending.first;
-          pending.removeAt(0);
           if (chunk == null) throw failure!;
           checkCancelled();
           await sink.addStream(Stream.value(chunk));
-          committed += chunk.length;
+          pending.removeAt(0);
           fill();
         }
         if (failure != null) throw failure!;

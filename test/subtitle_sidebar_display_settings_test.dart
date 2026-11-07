@@ -1,9 +1,13 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_app/widgets/app_text_input_focus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import 'package:video_player_app/models/transcript_typography.dart';
+import 'package:video_player_app/models/recommended_app_defaults.dart';
+import 'package:video_player_app/features/subtitle_article/continuous_article_view.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/subtitle_sidebar.dart';
 
@@ -20,6 +24,8 @@ void main() {
         'landscapeSidebarLocatePositionPercent': 150,
         'portraitSidebarLocatePositionPercent': -10,
         'subtitleArticleSentencesPerParagraph': 0,
+        'transcriptFontWeight': 1100.0,
+        'transcriptShowDividers': true,
       });
 
       final settings = SettingsService();
@@ -33,6 +39,8 @@ void main() {
       expect(settings.landscapeSidebarLocatePositionPercent, 100);
       expect(settings.portraitSidebarLocatePositionPercent, 0);
       expect(settings.subtitleArticleSentencesPerParagraph, 1);
+      expect(settings.transcriptFontWeight, 900);
+      expect(settings.transcriptShowDividers, isTrue);
 
       await settings.updateSetting('landscapeSidebarShowTimestamps', true);
       await settings.updateSetting('landscapeSidebarTimeColumnRatio', 0.22);
@@ -41,6 +49,8 @@ void main() {
       await settings.updateSetting('landscapeSidebarLocatePositionPercent', 40);
       await settings.updateSetting('portraitSidebarLocatePositionPercent', 70);
       await settings.updateSetting('subtitleArticleSentencesPerParagraph', 7);
+      await settings.updateSetting('transcriptFontWeight', 467.0);
+      await settings.updateSetting('transcriptShowDividers', false);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('landscapeSidebarShowTimestamps'), isTrue);
@@ -50,6 +60,8 @@ void main() {
       expect(prefs.getInt('landscapeSidebarLocatePositionPercent'), 40);
       expect(prefs.getInt('portraitSidebarLocatePositionPercent'), 70);
       expect(prefs.getInt('subtitleArticleSentencesPerParagraph'), 7);
+      expect(prefs.getDouble('transcriptFontWeight'), 467);
+      expect(prefs.getBool('transcriptShowDividers'), isFalse);
 
       final layout =
           settings.exportSettingsSnapshot()['layout'] as Map<String, dynamic>;
@@ -60,21 +72,52 @@ void main() {
       expect(layout['landscapeSidebarLocatePositionPercent'], 40);
       expect(layout['portraitSidebarLocatePositionPercent'], 70);
       expect(layout['subtitleArticleSentencesPerParagraph'], 7);
+      expect(layout['transcriptFontWeight'], 467);
+      expect(layout['transcriptShowDividers'], isFalse);
+
+      settings.resetForTest();
+      await settings.init();
+      expect(settings.transcriptFontWeight, 467);
+      expect(settings.transcriptShowDividers, isFalse);
     });
 
-    test('新配置使用向后兼容的默认值', () async {
+    test('新配置默认隐藏时间与分割线，文字只略微加粗', () async {
       SharedPreferences.setMockInitialValues({});
       final settings = SettingsService();
       settings.resetForTest();
       await settings.init();
 
-      expect(settings.landscapeSidebarShowTimestamps, isTrue);
-      expect(settings.portraitSidebarShowTimestamps, isTrue);
+      expect(settings.landscapeSidebarShowTimestamps, isFalse);
+      expect(settings.portraitSidebarShowTimestamps, isFalse);
+      expect(settings.transcriptShowDividers, isFalse);
+      expect(settings.transcriptFontWeight, 450);
       expect(settings.landscapeSidebarTimeColumnRatio, 0.18);
       expect(settings.portraitSidebarTimeColumnRatio, 0.12);
       expect(settings.landscapeSidebarLocatePositionPercent, 30);
       expect(settings.portraitSidebarLocatePositionPercent, 30);
       expect(settings.subtitleArticleSentencesPerParagraph, 4);
+      for (final device in [
+        const DefaultSettingsDevice(TargetPlatform.android, Size(390, 844)),
+        const DefaultSettingsDevice(TargetPlatform.iOS, Size(768, 1024)),
+        const DefaultSettingsDevice(TargetPlatform.windows, Size(1280, 720)),
+      ]) {
+        final defaults = RecommendedAppDefaults.coreOverrides(device);
+        expect(defaults['landscapeSidebarShowTimestamps'], isFalse);
+        expect(defaults['portraitSidebarShowTimestamps'], isFalse);
+      }
+    });
+
+    test('字重限制范围并修正无效数值', () async {
+      SharedPreferences.setMockInitialValues({
+        'transcriptFontWeight': double.nan,
+      });
+      final settings = SettingsService()..resetForTest();
+      await settings.init();
+      expect(settings.transcriptFontWeight, 450);
+      await settings.updateSetting('transcriptFontWeight', 20.0);
+      expect(settings.transcriptFontWeight, 100);
+      await settings.updateSetting('transcriptFontWeight', 456.7);
+      expect(settings.transcriptFontWeight, 457);
     });
   });
 
@@ -132,6 +175,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('字体'), findsOneWidget);
+      expect(find.text('字重'), findsOneWidget);
+      expect(find.text('分割线'), findsOneWidget);
       expect(_tallestScrollableHeight(tester), before);
     });
 
@@ -197,6 +242,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('字体'), findsOneWidget);
+      expect(find.text('字重'), findsOneWidget);
+      expect(find.text('分割线'), findsNothing);
       expect(find.text('每段'), findsOneWidget);
       expect(find.text('定位位置'), findsOneWidget);
       expect(
@@ -205,6 +252,331 @@ void main() {
       );
       expect(find.text('时间'), findsNothing);
       expect(find.text('宽度'), findsNothing);
+    });
+
+    testWidgets('共享字重实时应用到列表、段落、连续文章和横竖屏', (tester) async {
+      const key = ValueKey('shared-weight-sidebar');
+      await _pumpSidebar(tester, controller: controller, sidebarKey: key);
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await tester.pumpAndSettle();
+      final slider = find.byKey(const ValueKey('subtitle-font-weight-slider'));
+      expect(tester.widget<Slider>(slider).divisions, isNull);
+      await tester.drag(slider, const Offset(20, 0));
+      await tester.pumpAndSettle();
+      final weight = SettingsService().transcriptFontWeight;
+      expect(weight, isNot(TranscriptTypography.defaultFontWeight));
+      expect(
+        tester.widget<Text>(find.text('第一条字幕')).style!.fontStyle,
+        FontStyle.normal,
+      );
+      expect(tester.widget<Text>(find.text('第一条字幕')).style!.fontVariations, [
+        FontVariation('wght', weight),
+      ]);
+
+      await tester.tap(find.byIcon(Icons.article));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SubtitleArticleChunk>(find.byType(SubtitleArticleChunk))
+            .fontWeight,
+        weight,
+      );
+      final richText = tester.widget<RichText>(
+        find
+            .descendant(
+              of: find.byType(SubtitleArticleChunk),
+              matching: find.byType(RichText),
+            )
+            .first,
+      );
+      expect(
+        _findTextSpan(
+          richText.text as TextSpan,
+          '第一条字幕',
+        )!.style!.fontVariations,
+        [FontVariation('wght', weight)],
+      );
+
+      await _pumpSidebar(
+        tester,
+        controller: controller,
+        sidebarKey: key,
+        isPortrait: true,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<Slider>(slider).value, weight);
+      await SettingsService().updateSetting(
+        'subtitleArticleParagraphModeEnabled',
+        false,
+      );
+      await tester.pumpAndSettle();
+      final continuous = tester.widget<ContinuousArticleView>(
+        find.byType(ContinuousArticleView),
+      );
+      expect(continuous.style.fontVariations, [FontVariation('wght', weight)]);
+      expect(continuous.layout.key.style, continuous.style);
+      await SettingsService().updateSetting('transcriptFontWeight', 425.0);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ContinuousArticleView>(find.byType(ContinuousArticleView))
+            .style
+            .fontVariations,
+        const [FontVariation('wght', 425)],
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('分割线默认关闭，切换后记忆且横竖屏共用', (tester) async {
+      const key = ValueKey('shared-divider-sidebar');
+      Finder divider(int index) =>
+          find.byKey(ValueKey('subtitle-list-divider-$index'));
+
+      await _pumpSidebar(tester, controller: controller, sidebarKey: key);
+      expect(divider(0), findsNothing);
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('subtitle-show-dividers-switch')),
+      );
+      await tester.pumpAndSettle();
+      expect(divider(0), findsOneWidget);
+      expect(divider(1), findsNothing, reason: '最后一行后无需分割线');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('transcriptShowDividers'), isTrue);
+
+      await _pumpSidebar(
+        tester,
+        controller: controller,
+        sidebarKey: key,
+        isPortrait: true,
+      );
+      await tester.pumpAndSettle();
+      expect(divider(0), findsOneWidget);
+      await SettingsService().updateSetting('transcriptShowDividers', false);
+      await tester.pumpAndSettle();
+      expect(divider(0), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final isPortrait in [false, true]) {
+      testWidgets('${isPortrait ? '竖屏' : '横屏'}分割线居中，行距两侧都可点击跳转', (
+        tester,
+      ) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = isPortrait
+            ? const Size(390, 844)
+            : const Size(800, 600);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final settings = SettingsService();
+        await settings.updateSetting('autoScrollSubtitles', false);
+        final seeks = <Duration>[];
+        await _pumpSidebar(
+          tester,
+          controller: controller,
+          isPortrait: isPortrait,
+          onItemTap: seeks.add,
+        );
+        await tester.pumpAndSettle();
+
+        Finder card(int index) =>
+            find.byKey(ValueKey('subtitle-list-card-$index'));
+        Rect tapBounds(int index) => tester.getRect(
+          find.ancestor(of: card(index), matching: find.byType(InkWell)),
+        );
+        final first = tester.getRect(card(0));
+        final second = tester.getRect(card(1));
+        final gap = second.top - first.bottom;
+        final middle = first.bottom + gap / 2;
+        expect(gap, greaterThan(0));
+        final kind = isPortrait
+            ? PointerDeviceKind.touch
+            : PointerDeviceKind.mouse;
+
+        for (final showDividers in [false, true]) {
+          await settings.updateSetting('transcriptShowDividers', showDividers);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(card(0)), first);
+          expect(tester.getRect(card(1)), second);
+          expect(tapBounds(0).bottom, closeTo(middle, 0.001));
+          expect(tapBounds(1).top, closeTo(middle, 0.001));
+          final divider = find.byKey(const ValueKey('subtitle-list-divider-0'));
+          if (showDividers) {
+            expect(tester.getSize(divider).height, 0.5);
+            expect(tester.getCenter(divider).dy, closeTo(middle, 0.001));
+          }
+
+          seeks.clear();
+          await tester.tapAt(
+            Offset(first.center.dx, middle - gap / 4),
+            kind: kind,
+          );
+          await tester.pumpAndSettle();
+          await tester.tapAt(
+            Offset(first.center.dx, middle + gap / 4),
+            kind: kind,
+          );
+          await tester.pumpAndSettle();
+          expect(seeks, [
+            const Duration(seconds: 5),
+            const Duration(seconds: 9),
+          ]);
+          await tester.tapAt(Offset(first.center.dx, middle), kind: kind);
+          await tester.pumpAndSettle();
+          expect(seeks, hasLength(3), reason: '正好点在中线时也应跳转一次');
+        }
+      });
+    }
+
+    for (final sliderName in [
+      'subtitle-font-size-slider',
+      'subtitle-font-weight-slider',
+      'subtitle-time-column-slider',
+    ]) {
+      testWidgets('$sliderName 拖动时其余设置渐隐，取消和松手均渐显恢复', (tester) async {
+        await _pumpSidebar(tester, controller: controller);
+        await tester.tap(find.byTooltip('文稿显示设置'));
+        await tester.pumpAndSettle();
+        final slider = find.byKey(ValueKey(sliderName));
+        final background = find.byKey(
+          const ValueKey('subtitle-display-settings-background'),
+        );
+        double opacity(Finder finder) => tester
+            .widget<FadeTransition>(
+              find
+                  .descendant(of: finder, matching: find.byType(FadeTransition))
+                  .first,
+            )
+            .opacity
+            .value;
+
+        for (final cancel in [true, false]) {
+          expect(opacity(background), 1);
+          final gesture = await tester.startGesture(tester.getCenter(slider));
+          await gesture.moveBy(const Offset(24, 0));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 90));
+          expect(opacity(background), allOf(greaterThan(0.06), lessThan(1)));
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(opacity(background), closeTo(0.06, 0.001));
+          for (final name in [
+            'subtitle-font-size-slider',
+            'subtitle-font-weight-slider',
+            'subtitle-time-column-slider',
+          ]) {
+            expect(
+              opacity(find.byKey(ValueKey('$name-preview'))),
+              closeTo(name == sliderName ? 1 : 0.06, 0.001),
+            );
+          }
+          // A second pointer lifting on the active control must not end the preview.
+          final second = await tester.startGesture(tester.getCenter(slider));
+          await second.up();
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(opacity(background), closeTo(0.06, 0.001));
+          if (cancel) {
+            await gesture.cancel();
+          } else {
+            await gesture.up();
+          }
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 90));
+          expect(opacity(background), allOf(greaterThan(0.06), lessThan(1)));
+          await tester.pumpAndSettle();
+          expect(opacity(background), 1);
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+
+    testWidgets('拖动中切换方向或关闭设置不会留下透明状态或失效手势', (tester) async {
+      const key = ValueKey('interrupted-settings-sidebar');
+      await _pumpSidebar(tester, controller: controller, sidebarKey: key);
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await tester.pumpAndSettle();
+      final weight = find.byKey(const ValueKey('subtitle-font-weight-slider'));
+      var gesture = await tester.startGesture(tester.getCenter(weight));
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pumpAndSettle();
+      await _pumpSidebar(
+        tester,
+        controller: controller,
+        sidebarKey: key,
+        isPortrait: true,
+      );
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      final background = find.byKey(
+        const ValueKey('subtitle-display-settings-background'),
+      );
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.descendant(
+                of: background,
+                matching: find.byType(AnimatedOpacity),
+              ),
+            )
+            .opacity,
+        1,
+      );
+
+      gesture = await tester.startGesture(tester.getCenter(weight));
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.descendant(
+                of: background,
+                matching: find.byType(AnimatedOpacity),
+              ),
+            )
+            .opacity,
+        1,
+      );
+      await tester.drag(weight, const Offset(15, 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('旋转中结束拖动仍保存原来方向的字号', (tester) async {
+      const key = ValueKey('rotate-held-font-size');
+      await _pumpSidebar(tester, controller: controller, sidebarKey: key);
+      final initialFontSize = tester
+          .widget<Text>(find.text('第一条字幕'))
+          .style!
+          .fontSize!;
+      await tester.tap(find.byTooltip('文稿显示设置'));
+      await tester.pumpAndSettle();
+      final slider = find.byKey(const ValueKey('subtitle-font-size-slider'));
+      final gesture = await tester.startGesture(tester.getCenter(slider));
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pumpAndSettle();
+      final scale =
+          tester.widget<Text>(find.text('第一条字幕')).style!.fontSize! /
+          initialFontSize;
+      expect(scale, isNot(1));
+      await _pumpSidebar(
+        tester,
+        controller: controller,
+        sidebarKey: key,
+        isPortrait: true,
+      );
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(
+        SettingsService().landscapeSidebarFontSizeScale,
+        closeTo(scale, 0.001),
+      );
+      expect(SettingsService().portraitSidebarFontSizeScale, 1);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('列表与文章视图使用相同的文字字号和水平边距', (tester) async {
@@ -450,6 +822,7 @@ TextSpan? _findTextSpan(TextSpan span, String text) {
 Future<void> _pumpSidebar(
   WidgetTester tester, {
   required VideoPlayerController? controller,
+  ValueChanged<Duration>? onItemTap,
   bool isPortrait = false,
   Key? sidebarKey,
   double width = 320,
@@ -484,6 +857,7 @@ Future<void> _pumpSidebar(
                 ),
               ],
               controller: controller,
+              onItemTap: onItemTap,
               isCompact: true,
               isPortrait: isPortrait,
             ),

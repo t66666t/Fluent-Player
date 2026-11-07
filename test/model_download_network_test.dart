@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_app/services/network/network_http.dart';
 import 'package:video_player_app/services/network/network_proxy_bridge.dart';
@@ -55,9 +56,30 @@ void main() {
       expect(connections, 1);
       expect(ports.length, 1);
       expect(resolver.calls, 1);
+      expect(
+        (await dio.get<String>(
+          'http://model.test/recover',
+          options: Options(
+            extra: {NetworkHttp.modelDownloadFreshConnectionKey: true},
+          ),
+        )).data,
+        'weights',
+      );
+      expect(
+        connections,
+        2,
+        reason: 'recovery creates a fresh socket on the same proxy route',
+      );
+      expect(ports.length, 2);
+      expect(resolver.calls, 2);
+      expect(
+        (await dio.get<String>('http://model.test/healthy')).data,
+        'weights',
+      );
+      expect(connections, 2, reason: 'healthy pooled connections are retained');
       settings.deviceNetworkChanged();
       expect((await dio.get<String>('http://model.test/next')).data, 'weights');
-      expect(connections, 2);
+      expect(connections, 3);
       await settings.setUnifiedMode(NetworkMode.direct);
       final context = await settings.context(NetworkScope.modelDownloads);
       final direct = network.createClient(context: context);
@@ -74,7 +96,7 @@ void main() {
           Uri.parse('http://model.test/direct'),
         )).close();
         await response.drain<void>();
-        expect(connections, 2);
+        expect(connections, 3);
       } finally {
         direct.close(force: true);
       }

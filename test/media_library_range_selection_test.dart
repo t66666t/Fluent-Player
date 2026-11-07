@@ -172,6 +172,24 @@ void main() {
     );
   });
 
+  for (final height in [24.0, 80.0, 128.0]) {
+    test('短视口 $height 的上下滚动热区互不重叠', () {
+      double speed(double y) =>
+          MediaLibrarySelectionAutoScroll.velocityPxPerSecond(
+            pointerY: y,
+            viewportTop: 100,
+            viewportBottom: 100 + height,
+          );
+      expect(speed(101), lessThan(0));
+      expect(speed(100 + height / 2), 0);
+      expect(speed(99 + height), greaterThan(0));
+      expect(
+        speed(100 + height),
+        MediaLibrarySelectionAutoScroll.maxSpeedPxPerSecond,
+      );
+    });
+  }
+
   test('鼠标框选手势在任意平台都只认单键鼠标', () {
     expect(
       MediaLibraryRangeSelection.isMouseBoxGesture(

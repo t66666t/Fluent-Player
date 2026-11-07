@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:video_player_app/utils/app_branding.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -132,7 +133,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
     await tester.pump();
-    expect(clipboard, contains('Fluent Player 存储诊断'));
+    expect(clipboard, contains('$kAppDisplayName 存储诊断'));
     await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
     expect(service.scans, 1);

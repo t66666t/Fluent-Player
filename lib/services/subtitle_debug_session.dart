@@ -1,16 +1,22 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/subtitle_debug_preset.dart';
+import 'subtitle_font_service.dart';
 
 /// Global subtitle mode; the historical name is retained for integrations.
 class SubtitleDebugSession extends ChangeNotifier {
   static const available = true;
   static const storageKey = 'globalSubtitlePresetMode.v1';
   static final instance = SubtitleDebugSession();
+  SubtitleDebugSession({SubtitleFontService? fontService})
+    : _fontService = fontService ?? SubtitleFontService.instance;
+  final SubtitleFontService _fontService;
   SharedPreferences? _prefs;
   Future<void> _writes = Future<void>.value();
   bool _initialized = false;
+  bool _disposed = false;
   int _revision = 0;
   bool _enabled = false;
   bool _catalogVisible = true;
@@ -41,7 +47,29 @@ class SubtitleDebugSession extends ChangeNotifier {
 
   SubtitleDebugPreset resolvedForDisplay(String id, {bool ghost = false}) {
     final p = resolved(id);
-    return ghost ? p.copyWith(textScale: ghostTextScale(id)) : p;
+    final library = _fontService;
+    final downloaded = library.downloadedNotoSerif;
+    final primary = p.primaryFont == 'Noto Serif CJK SC'
+        ? downloaded != null && library.isLoaded(downloaded.id)
+              ? downloaded.id
+              : 'Noto Sans SC'
+        : p.primaryFont;
+    return p.copyWith(
+      primaryFont: primary,
+      textScale: ghost ? ghostTextScale(id) : p.textScale,
+    );
+  }
+
+  Future<void> _prepareOptionalPresetFont() async {
+    try {
+      final library = _fontService;
+      await library.ready;
+      final font = library.downloadedNotoSerif;
+      if (font != null) await library.ensureLoaded(font.id);
+      if (!_disposed) notifyListeners();
+    } catch (_) {
+      // Missing optional fonts keep the clearly labelled Noto Sans fallback.
+    }
   }
 
   Future<void> initialize([SharedPreferences? preferences]) async {
@@ -61,6 +89,10 @@ class SubtitleDebugSession extends ChangeNotifier {
       _selectedId = subtitleDebugPresets.any((p) => p.id == id)
           ? id as String
           : null;
+      if (_selectedId != null &&
+          resolved(_selectedId!).primaryFont == 'Noto Serif CJK SC') {
+        unawaited(_prepareOptionalPresetFont());
+      }
       final custom = data['custom'];
       if (custom is Map) {
         for (final value in custom.values) {
@@ -129,7 +161,16 @@ class SubtitleDebugSession extends ChangeNotifier {
   Future<void> select(SubtitleDebugPreset? preset) {
     if (!_enabled) return Future<void>.value();
     _selectedId = preset?.id;
+    if (preset?.primaryFont == 'Noto Serif CJK SC') {
+      unawaited(_prepareOptionalPresetFont());
+    }
     return _commit();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   Future<void> useOriginal() {

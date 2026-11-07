@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $ocrManifest)) { throw 'Build Windows Release f
 # output. MSBuild copies runner/plugin DLLs without listing all of them here.
 $ocrFiles = @(Get-Content -LiteralPath $ocrManifest) +
     @(Get-ChildItem -LiteralPath $ocrRelease -Filter '*.dll' -File | ForEach-Object FullName) +
-    @((Join-Path $ocrRelease 'video_player_app.exe'))
+    @((Join-Path $ocrRelease 'fluent-player.exe'))
 foreach ($ocrFile in ($ocrFiles | Sort-Object -Unique)) {
     $ocrAbsolute = [IO.Path]::GetFullPath($ocrFile)
     if (-not $ocrAbsolute.StartsWith($ocrRelease + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {

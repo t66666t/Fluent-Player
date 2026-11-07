@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import '../models/media_source_ref.dart';
 import '../models/video_item.dart';
+import 'community_media_input.dart';
 
 typedef PlaybackSourceExists = bool Function(String path);
 
@@ -10,8 +10,8 @@ typedef PlaybackSourceExists = bool Function(String path);
 ///
 /// Opening an item is a separate concern: a missing local item may still open
 /// its detail/player page so the user can restore its source. It must never be
-/// inserted into a playback queue. A valid Bilibili stream is intentionally a
-/// queue source even though its URI is virtual.
+/// inserted into a playback queue. Existing local files and validated podcast identities are queue sources;
+/// unrelated historical online references remain excluded.
 ///
 /// Library queues always exclude recycled items. Recycle-bin preview is the
 /// exception: pass [allowRecycled] so videos shown in one recycle-bin
@@ -25,26 +25,10 @@ class PlaybackQueuePolicy {
   bool isEligible(VideoItem item, {bool allowRecycled = false}) {
     if (item.isRecycled && !allowRecycled) return false;
 
-    final source = item.sourceRef;
-    if (source?.kind == MediaSourceKind.cloudDrive) {
-      final cloud = source?.cloudDrive;
-      return cloud != null &&
-          cloud.providerId.trim().isNotEmpty &&
-          cloud.remoteAccountId.trim().isNotEmpty &&
-          cloud.driveId.trim().isNotEmpty &&
-          cloud.fileId.trim().isNotEmpty;
-    }
-    if (source?.kind == MediaSourceKind.podcastEpisode) return source?.podcast?.mediaUrl.startsWith('http') == true;
-    if (source?.kind == MediaSourceKind.bilibiliStream) {
-      return source!.bvid?.trim().isNotEmpty == true &&
-          source.cid != null &&
-          source.cid! > 0;
-    }
-
-    final path = item.path.trim();
-    if (path.isEmpty) return false;
+    if (communityMediaIsPodcast(item.path, source: item.sourceRef)) return true;
+    if (!communityMediaIsLocal(item.path)) return false;
     try {
-      return _sourceExists(path);
+      return _sourceExists(communityLocalMediaPath(item.path));
     } catch (_) {
       return false;
     }

@@ -132,14 +132,29 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(tester.takeException(), isNull);
+        final toolbar = find.byKey(const ValueKey('cache-queue-toolbar'));
+        final toolbarBounds = tester.getRect(toolbar);
+        expect(toolbarBounds.top, greaterThan(size.height / 2));
+        expect(
+          find.ancestor(of: toolbar, matching: find.byType(Scrollable)),
+          findsNothing,
+        );
         final scroll = find.byType(CustomScrollView);
-        await tester.drag(scroll, const Offset(0, -600));
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('cache-task-0')),
+          150,
+          scrollable: find
+              .descendant(of: scroll, matching: find.byType(Scrollable))
+              .first,
+        );
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('cache-task-0')), findsOneWidget);
+        expect(tester.getRect(toolbar), toolbarBounds);
         expect(tester.takeException(), isNull);
         tester.widget<CustomScrollView>(scroll).controller!.jumpTo(0);
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('已缓存 1'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('已缓存 1'));
         await tester.pumpAndSettle();
         await tester.drag(scroll, const Offset(0, -800));

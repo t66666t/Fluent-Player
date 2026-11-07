@@ -20,12 +20,12 @@ void main() {
   }
 
   group('MediaLibraryNavigation', () {
-    test('新装默认最近添加，旧库首次升级默认文件夹', () {
+    test('新装和未保存入口的旧库默认文件夹', () {
       expect(
         MediaLibraryNavigation.firstRunDefault(
           hasExistingLibraryContent: false,
         ),
-        MediaLibraryRootEntry.recent,
+        MediaLibraryRootEntry.folders,
       );
       expect(
         MediaLibraryNavigation.firstRunDefault(hasExistingLibraryContent: true),
@@ -51,7 +51,7 @@ void main() {
       expect(plan.folderToOpen, isNull);
     });
 
-    test('初始化后的空库会持久化最近添加默认值', () {
+    test('初始化后的空库默认文件夹且不写入恢复偏好', () {
       final plan = MediaLibraryNavigation.plan(
         libraryInitialized: true,
         hasExistingLibraryContent: false,
@@ -64,18 +64,18 @@ void main() {
         isActiveFolder: (_) => false,
         parentIdOf: (_) => null,
       );
-      expect(plan.preferredEntry, MediaLibraryRootEntry.recent);
-      expect(plan.persistPreferred, isTrue);
-      // S04 has not mounted 最近添加, so the shown surface stays 文件夹.
+      expect(plan.preferredEntry, MediaLibraryRootEntry.folders);
+      expect(plan.persistPreferred, isFalse);
       expect(plan.displayedEntry, MediaLibraryRootEntry.folders);
     });
 
-    test('用户选过的入口优先于首次默认', () {
+    test('开启恢复时用户选过的入口优先于首次默认', () {
       final plan = MediaLibraryNavigation.plan(
         libraryInitialized: true,
         hasExistingLibraryContent: true,
         storedEntry: 'recent',
         userChosen: true,
+        restoreLastPage: true,
         lastFolderId: '',
         availableEntries: allEntries,
         revealItemId: null,
@@ -371,6 +371,7 @@ class _NavHostState extends State<_NavHost> {
       hasExistingLibraryContent: true,
       storedEntry: storedEntry.storageValue,
       userChosen: true,
+      restoreLastPage: true,
       lastFolderId: widget.lastFolderId,
       availableEntries: widget.availableEntries,
       revealItemId: widget.revealItemId,

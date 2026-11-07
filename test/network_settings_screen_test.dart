@@ -8,6 +8,58 @@ import 'network_settings_service_test.dart'
     show MemoryNetworkStore, MemoryCredentials;
 
 void main() {
+  testWidgets(
+    'only local learning services are offered without changing stored legacy modes',
+    (tester) async {
+      final store = MemoryNetworkStore()
+        ..saved = NetworkConfiguration(
+          modes: {
+            NetworkScope.bilibili: NetworkMode.system,
+            NetworkScope.cloudDrive: NetworkMode.system,
+            NetworkScope.translation: NetworkMode.direct,
+          },
+        );
+      final settings = NetworkSettingsService(
+        store: store,
+        credentials: MemoryCredentials(),
+        migrateLegacy: false,
+      );
+      await settings.ready;
+      final before = Map.of(settings.configuration.featureModes);
+      await tester.binding.setSurfaceSize(const Size(700, 1900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(home: NetworkSettingsScreen(service: settings)),
+      );
+      await tester.pumpAndSettle();
+      for (final scope in [
+        NetworkScope.speechRecognition,
+        NetworkScope.cloudTranscription,
+        NetworkScope.translation,
+        NetworkScope.updates,
+        NetworkScope.modelDownloads,
+        NetworkScope.other,
+      ]) {
+        expect(find.text(scope.label), findsOneWidget);
+      }
+      for (final scope in [
+        NetworkScope.bilibili,
+        NetworkScope.cloudDrive,
+        NetworkScope.ytDlpDomestic,
+        NetworkScope.ytDlpOther,
+        NetworkScope.podcastsDomestic,
+        NetworkScope.podcasts,
+      ]) {
+        expect(find.text(scope.label), findsNothing);
+      }
+      expect(find.text('媒体缓存传输'), findsNothing);
+      expect(find.textContaining('播客'), findsNothing);
+      expect(find.textContaining('YTDLP'), findsNothing);
+      expect(settings.configuration.featureModes, before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('unified settings fit a narrow screen with larger text', (
     tester,
   ) async {
@@ -64,14 +116,14 @@ void main() {
         find.byType(CapsuleDropdownButtonFormField<NetworkMode>),
         findsNothing,
       );
-      expect(find.text('播客 · 使用统一设置'), findsOneWidget);
+      expect(find.text('播客 · 使用统一设置'), findsNothing);
       await tester.tap(find.byType(CapsuleDropdownButtonFormField<String>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('按功能分别设置（默认）').last);
       await tester.pumpAndSettle();
       expect(settings.configuration.unifiedMode, isNull);
       expect(
-        settings.configuration.modes[NetworkScope.bilibili],
+        settings.configuration.modes[NetworkScope.speechRecognition],
         NetworkMode.direct,
       );
       expect(find.text('语音识别接口'), findsOneWidget);
@@ -121,7 +173,7 @@ void main() {
           username: 'account',
           credentialKey: 'missing',
         ),
-        modes: {NetworkScope.ytDlpOther: NetworkMode.custom},
+        modes: {NetworkScope.translation: NetworkMode.custom},
       );
     final credentials = MemoryCredentials();
     final settings = NetworkSettingsService(
@@ -148,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(settings.isLoaded, isTrue);
     expect(
-      settings.configuration.modes[NetworkScope.ytDlpOther],
+      settings.configuration.modes[NetworkScope.translation],
       NetworkMode.custom,
     );
     expect(

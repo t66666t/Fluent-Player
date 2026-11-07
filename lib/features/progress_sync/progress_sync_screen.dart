@@ -433,7 +433,7 @@ class _ProgressSyncScreenState extends State<ProgressSyncScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                '在自己的另一台设备导入此码，再选择对应文件夹。同步码含有关联权限，请妥善保管。',
+                '在自己的同版本设备导入此码，再选择对应文件夹。同步码含有关联权限，请妥善保管。',
                 style: TextStyle(color: AppTokens.text2, height: 1.5),
               ),
               const SizedBox(height: 16),
@@ -468,7 +468,7 @@ class _ProgressSyncScreenState extends State<ProgressSyncScreen> {
       final code = await _textInput(
         title: '导入同步码',
         label: '同步码',
-        description: '从自己的另一台设备复制同步码。导入后，选择本机对应文件夹。',
+        description: '从自己的同版本设备复制同步码。导入后，选择本机对应文件夹。',
         action: '导入',
         maxLines: 4,
       );
@@ -595,7 +595,7 @@ class _ProgressSyncScreenState extends State<ProgressSyncScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '关联文件夹，让内容和观看进度自动互通。',
+                          '社区版只与同版本同步。本地文件可传输；播客只同步订阅和逐集进度。',
                           style: TextStyle(
                             fontSize: 13,
                             color: AppTokens.text2,

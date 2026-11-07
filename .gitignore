@@ -60,6 +60,8 @@ packages/ios_ytdlp/ios/Vendor/
 
 # Local build, test and download artifacts
 .artifacts/
+/assets/binaries/windows/ffmpeg.exe
+/windows/runtime/*.dll
 
 # Reproducible hardened packages; private maps remain under .artifacts/.
 dist/hardened/

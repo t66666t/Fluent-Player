@@ -54,7 +54,7 @@ void main() {
         current: MediaLibraryRootEntry.folders,
         dx: -40,
       ),
-      MediaLibraryRootEntry.recent,
+      MediaLibraryRootEntry.podcasts,
     );
     expect(
       MediaLibraryRootSwipePolicy.neighbor(
@@ -75,36 +75,35 @@ void main() {
         current: MediaLibraryRootEntry.recent,
         dx: -40,
       ),
-      MediaLibraryRootEntry.bilibili,
-    );
-    expect(
-      MediaLibraryRootSwipePolicy.neighbor(
-        current: MediaLibraryRootEntry.bilibili,
-        dx: 40,
-      ),
-      MediaLibraryRootEntry.recent,
-    );
-    expect(
-      MediaLibraryRootSwipePolicy.neighbor(
-        current: MediaLibraryRootEntry.bilibili,
-        dx: -40,
-      ),
-      MediaLibraryRootEntry.podcasts,
+      isNull,
     );
     expect(
       MediaLibraryRootSwipePolicy.neighbor(
         current: MediaLibraryRootEntry.podcasts,
         dx: -40,
       ),
-      MediaLibraryRootEntry.cloudDrive,
+      MediaLibraryRootEntry.recent,
     );
     expect(
       MediaLibraryRootSwipePolicy.neighbor(
-        current: MediaLibraryRootEntry.cloudDrive,
-        dx: -40,
+        current: MediaLibraryRootEntry.recent,
+        dx: 40,
       ),
-      isNull,
+      MediaLibraryRootEntry.podcasts,
     );
+    for (final retired in [
+      MediaLibraryRootEntry.bilibili,
+      MediaLibraryRootEntry.cloudDrive,
+    ]) {
+      expect(
+        MediaLibraryRootSwipePolicy.neighbor(current: retired, dx: -40),
+        isNull,
+      );
+      expect(
+        MediaLibraryRootSwipePolicy.neighbor(current: retired, dx: 40),
+        isNull,
+      );
+    }
   });
 
   test('a reverse flick returns to the current page', () {
@@ -151,7 +150,7 @@ void main() {
         width: 400,
         velocityDx: -1400,
       ),
-      MediaLibraryRootEntry.recent,
+      MediaLibraryRootEntry.podcasts,
     );
     expect(
       MediaLibraryRootSwipePolicy.settleTarget(
@@ -160,7 +159,7 @@ void main() {
         width: 400,
         velocityDx: 0,
       ),
-      MediaLibraryRootEntry.recent,
+      MediaLibraryRootEntry.podcasts,
     );
     expect(
       MediaLibraryRootSwipePolicy.settleTarget(

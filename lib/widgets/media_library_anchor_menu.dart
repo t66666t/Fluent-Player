@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../utils/keyboard_focus_visibility.dart';
+import 'package:flutter/services.dart';
 
+import '../services/app_haptics.dart';
 import '../theme/app_tokens.dart';
 
 import 'media_library_layout_profile.dart';
@@ -133,7 +136,57 @@ class MediaLibraryAnchorMenuMetrics {
     );
   }
 
-  double get dividerIndent => horizontalPadding + iconSize + iconGap;
+  double get dividerIndent => horizontalPadding;
+
+  TextStyle get textStyle => TextStyle(
+    color: Colors.white,
+    fontSize: fontSize,
+    height: 1.15,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.2,
+  );
+}
+
+/// An inset rounded indicator matching the menu, without changing hit areas.
+class MediaLibraryMenuItemFocus extends StatelessWidget {
+  const MediaLibraryMenuItemFocus({
+    super.key,
+    required this.focused,
+    required this.radius,
+    required this.child,
+  });
+
+  final bool focused;
+  final double radius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.passthrough,
+    children: [
+      child,
+      Positioned.fill(
+        left: 4,
+        right: 4,
+        top: 2,
+        bottom: 2,
+        child: IgnorePointer(
+          child: KeyboardFocusHighlight(
+            focused: focused,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .06),
+              border: Border.all(
+                color: Colors.lightBlueAccent.withValues(alpha: .8),
+                width: 1.5,
+              ),
+              borderRadius: BorderRadius.circular(radius),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 /// Scales out of [anchor], same chrome as the card overflow menu.
@@ -280,7 +333,7 @@ class _AnchorMenuRoute extends PopupRoute<String> {
   }
 }
 
-class _AnchorMenuPanel extends StatelessWidget {
+class _AnchorMenuPanel extends StatefulWidget {
   const _AnchorMenuPanel({
     required this.items,
     required this.metrics,
@@ -292,54 +345,119 @@ class _AnchorMenuPanel extends StatelessWidget {
   final ValueChanged<String> onChoose;
 
   @override
+  State<_AnchorMenuPanel> createState() => _AnchorMenuPanelState();
+}
+
+class _AnchorMenuPanelState extends State<_AnchorMenuPanel> {
+  late final List<FocusNode> _rows = List.generate(
+    widget.items.length,
+    (index) => FocusNode(debugLabel: 'library menu item $index'),
+  );
+
+  @override
+  void dispose() {
+    for (final node in _rows) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && event is KeyDownEvent) {
+      Navigator.of(context).pop();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
+      if (_rows.isEmpty) return KeyEventResult.handled;
+      final current = _rows.indexWhere((row) => row.hasFocus);
+      final step = key == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      final next = current < 0 ? 0 : (current + step) % _rows.length;
+      _rows[next].requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        (key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter ||
+            key == LogicalKeyboardKey.space)) {
+      final current = _rows.indexWhere((row) => row.hasFocus);
+      if (current >= 0) {
+        widget.onChoose(widget.items[current].value);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final metrics = widget.metrics;
+    final items = widget.items;
+    final onChoose = widget.onChoose;
     final radius = metrics.radius;
-    return Semantics(
-      namesRoute: true,
-      label: '菜单',
-      child: Material(
-        color: Colors.transparent,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(radius),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.38),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppTokens.bgOverlay,
-                borderRadius: BorderRadius.circular(radius),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  vertical: metrics.verticalPadding,
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _onKey,
+      child: Semantics(
+        namesRoute: true,
+        label: '菜单',
+        child: Material(
+          color: Colors.transparent,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < items.length; i++) ...[
-                      if (i > 0)
-                        Divider(
-                          height: 0.5,
-                          thickness: 0.5,
-                          color: const Color(0x22FFFFFF),
-                          indent: metrics.dividerIndent,
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppTokens.bgOverlay,
+                  borderRadius: BorderRadius.circular(radius),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.09),
+                  ),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    vertical: metrics.verticalPadding,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < items.length; i++) ...[
+                        if (i > 0)
+                          Divider(
+                            height: 0.5,
+                            thickness: 0.5,
+                            color: const Color(0x22FFFFFF),
+                            indent: metrics.dividerIndent,
+                            endIndent: metrics.dividerIndent,
+                          ),
+                        _AnchorMenuRow(
+                          entry: items[i],
+                          metrics: metrics,
+                          focusNode: _rows[i],
+                          autofocus: i == 0,
+                          onTap: () {
+                            AppHaptics.pulse();
+                            onChoose(items[i].value);
+                          },
                         ),
-                      _AnchorMenuRow(
-                        entry: items[i],
-                        metrics: metrics,
-                        onTap: () => onChoose(items[i].value),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -355,51 +473,69 @@ class _AnchorMenuRow extends StatelessWidget {
     required this.entry,
     required this.metrics,
     required this.onTap,
+    required this.focusNode,
+    required this.autofocus,
   });
 
   final MediaLibraryAnchorMenuEntry entry;
   final MediaLibraryAnchorMenuMetrics metrics;
   final VoidCallback onTap;
+  final FocusNode focusNode;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      key: entry.key,
-      onTap: onTap,
-      overlayColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.pressed)
-            ? Colors.transparent
-            : const Color(0x22FFFFFF),
+    return AnimatedBuilder(
+      animation: focusNode,
+      builder: (context, child) => MediaLibraryMenuItemFocus(
+        focused: focusNode.hasPrimaryFocus,
+        radius: metrics.radius - 3,
+        child: child!,
       ),
-      child: SizedBox(
-        height: metrics.rowHeight,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
-          child: Row(
-            children: [
-              Icon(entry.icon, size: metrics.iconSize, color: Colors.white),
-              SizedBox(width: metrics.iconGap),
-              Expanded(
-                child: Text(
-                  entry.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: metrics.fontSize,
-                    height: 1.15,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: -0.2,
+      child: InkWell(
+        key: entry.key,
+        focusNode: focusNode,
+        autofocus: autofocus,
+        onTap: onTap,
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.hovered) &&
+                  !states.contains(WidgetState.pressed)
+              ? const Color(0x22FFFFFF)
+              : Colors.transparent,
+        ),
+        child: SizedBox(
+          height: metrics.rowHeight,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.horizontalPadding,
+            ),
+            child: Row(
+              children: [
+                Icon(entry.icon, size: metrics.iconSize, color: Colors.white),
+                SizedBox(width: metrics.iconGap),
+                Expanded(
+                  child: Text(
+                    entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: metrics.fontSize,
+                      height: 1.15,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
-              ),
-              if (entry.checked)
-                Icon(
-                  Icons.check,
-                  size: metrics.iconSize,
-                  color: AppTokens.accent,
-                ),
-            ],
+                if (entry.checked)
+                  Icon(
+                    Icons.check,
+                    size: metrics.iconSize,
+                    color: AppTokens.accent,
+                  ),
+              ],
+            ),
           ),
         ),
       ),

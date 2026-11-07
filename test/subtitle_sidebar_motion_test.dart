@@ -11,14 +11,40 @@ import 'package:video_player_app/features/subtitle_article/continuous_article_vi
 import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/subtitle_sidebar.dart';
+import 'package:video_player_app/widgets/transcript_scroll_motion.dart';
 
 void main() {
   for (final mode in ['list', 'paragraph', 'continuous']) {
+    for (final size in [
+      const Size(360, 480),
+      const Size(760, 900),
+      const Size(1280, 900),
+    ]) {
+      testWidgets('$mode reading motion adapts to $size', (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final host = await _Host.create(tester, mode: mode, width: size.width);
+        host.update(() => host.height = size.height);
+        host.sidebar.locateToTime(host.cues[120].startTime, animated: false);
+        await tester.pumpAndSettle();
+        final from = host.scrollable.position.pixels;
+        host.sidebar.locateToTime(host.cues[123].startTime);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(host.scrollable.position.pixels, greaterThan(from));
+        expect(host.scrollable.position.isScrollingNotifier.value, isTrue);
+        host.expectOpaqueSingleList();
+        await tester.pumpAndSettle();
+        host.expectLocated(123);
+        expect(host.scrollable.position.outOfRange, isFalse);
+        await host.dispose();
+      });
+    }
     for (final hz in [60, 144]) {
       for (final auto in [false, true]) {
         for (final distance in [2.0, 8.0, 20.0, 40.0, 80.0, 240.0]) {
           testWidgets(
-            '$mode Windows $hz Hz $distance px ${auto ? 'follow' : 'tap'} is calm and linear',
+            '$mode Windows $hz Hz $distance px ${auto ? 'follow' : 'tap'} eases in and out',
             (tester) async {
               final host = await _Host.create(
                 tester,
@@ -56,7 +82,7 @@ void main() {
               final interval = Duration(microseconds: (1000000 / hz).round());
               await tester.pump(interval);
               var previous = position.pixels;
-              double? step;
+              final steps = <double>[];
               var movingFrames = 0;
               for (var frame = 0; frame < hz; frame++) {
                 await tester.pump(interval);
@@ -69,24 +95,25 @@ void main() {
                 if (!position.isScrollingNotifier.value) break;
                 final delta = current - previous;
                 expect(delta, greaterThan(0));
-                if (step != null) expect(delta, closeTo(step, .005));
-                step = delta;
+                steps.add(delta);
                 previous = current;
                 movingFrames++;
                 expect(host.readingOpacity, 1);
               }
               final movingSeconds =
                   movingFrames * interval.inMicroseconds / 1e6;
-              // Distance adds diminishing reading time. The sampled count
-              // excludes startup and the last partial frame.
-              final expectedSeconds = <double, double>{
-                2: .027273,
-                8: .085714,
-                20: .150,
-                40: .200,
-                80: .240,
-                240: .276923,
-              }[distance]!;
+              // Check the actual scroll activity's pacing and soft endpoints.
+              final expectedSeconds = TranscriptScrollMotion(
+                from: from,
+                to: from + distance,
+                viewport: viewport,
+                isAuto: auto,
+              ).seconds;
+              if (steps.length >= 6) {
+                final peak = steps.reduce((a, b) => a > b ? a : b);
+                expect(steps.first, lessThan(peak));
+                expect(steps.last, lessThan(peak));
+              }
               expect(
                 movingSeconds,
                 greaterThanOrEqualTo(
@@ -108,7 +135,7 @@ void main() {
     for (final hz in [60, 120, 144]) {
       for (final auto in [false, true]) {
         testWidgets(
-          '$mode $hz Hz fifth cue ${auto ? 'follow' : 'tap'} has uniform movement',
+          '$mode $hz Hz fifth cue ${auto ? 'follow' : 'tap'} has smooth movement',
           (tester) async {
             await tester.binding.setSurfaceSize(const Size(900, 900));
             addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -144,7 +171,7 @@ void main() {
             var previousVisual =
                 host.actualItemLeading(125) *
                 host.scrollable.position.viewportDimension;
-            double? step;
+            final steps = <double>[];
             for (var frame = 0; frame < 12; frame++) {
               await tester.pump(interval);
               final current = host.scrollable.position.pixels;
@@ -152,14 +179,17 @@ void main() {
               final visual =
                   host.actualItemLeading(125) *
                   host.scrollable.position.viewportDimension;
-              expect(delta, greaterThan(.1));
+              expect(delta, greaterThan(0));
               expect(previousVisual - visual, closeTo(delta, .005));
-              if (step != null) expect(delta, closeTo(step, .005));
+              steps.add(delta);
               expect(host.readingOpacity, 1);
-              step = delta;
               previous = current;
               previousVisual = visual;
             }
+            expect(
+              steps.reduce((a, b) => a > b ? a : b),
+              greaterThan(steps.first * 1.5),
+            );
             await tester.pumpAndSettle();
             expect(host.seeks, auto ? 0 : 1);
             host.expectLocated(125);
@@ -406,7 +436,7 @@ void main() {
       },
     );
 
-    testWidgets('$mode nearby locate moves at a uniform readable pace', (
+    testWidgets('$mode nearby locate accelerates gently from rest', (
       tester,
     ) async {
       final host = await _Host.create(tester, mode: mode, followSeeks: true);
@@ -416,16 +446,16 @@ void main() {
       expect(host.seeks, 1);
       expect(host.player.value.position, host.cues[subtitle].startTime);
       var previous = host.scrollable.position.pixels;
-      double? step;
+      final steps = <double>[];
       for (var frame = 0; frame < 8; frame++) {
         await tester.pump(const Duration(microseconds: 6944));
         final current = host.scrollable.position.pixels;
         final delta = current - previous;
-        expect(delta.abs(), greaterThan(.1));
-        if (step != null) expect(delta, closeTo(step, .005));
-        step = delta;
+        expect(delta.abs(), greaterThan(0));
+        steps.add(delta);
         previous = current;
       }
+      expect(steps.last.abs(), greaterThan(steps.first.abs() * 2));
       await tester.pumpAndSettle();
       host.expectLocated(subtitle);
       await host.dispose();
@@ -513,7 +543,7 @@ void main() {
     }
 
     testWidgets(
-      '$mode a held tap stops motion and restarts uniformly on release',
+      '$mode a held tap stops motion and restarts gently on release',
       (tester) async {
         final host = await _Host.create(tester, mode: mode, followSeeks: true);
         host.sidebar.locateToTime(host.cues[120].startTime, animated: false);
@@ -534,11 +564,12 @@ void main() {
         final start = host.scrollable.position.pixels;
         await tester.pump(const Duration(milliseconds: 8));
         final firstStep = host.scrollable.position.pixels - start;
-        expect(firstStep, greaterThan(previousStep * .65));
+        expect(firstStep, greaterThan(0));
+        expect(firstStep, lessThan(previousStep));
         await tester.pump(const Duration(milliseconds: 8));
         expect(
           host.scrollable.position.pixels - start,
-          closeTo(firstStep * 2, .01),
+          greaterThan(firstStep * 2),
         );
         await tester.pumpAndSettle();
         host.expectLocated(122);
@@ -1278,6 +1309,7 @@ class _Host {
     bool followSeeks = false,
     int locatePositionPercent = 30,
     int cueCount = 300,
+    double width = 360,
   }) async {
     SharedPreferences.setMockInitialValues({
       'autoScrollSubtitles': following,
@@ -1319,7 +1351,7 @@ class _Host {
                 return Align(
                   alignment: Alignment.topLeft,
                   child: SizedBox(
-                    width: 360,
+                    width: width,
                     height: host.height,
                     child: TickerMode(
                       enabled: host.visible,

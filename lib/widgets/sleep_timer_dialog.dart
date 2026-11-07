@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../services/app_haptics.dart';
 import '../services/media_playback_service.dart';
 import '../services/settings_service.dart';
 import '../services/sleep_timer_controller.dart';
@@ -229,7 +230,10 @@ class _SleepTimerDialogState extends State<_SleepTimerDialog> {
           DesktopButtonClickRegion(
             child: IconButton(
               tooltip: '关闭',
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                AppHaptics.pulse(light: true);
+                Navigator.of(context).pop();
+              },
               icon: const Icon(Icons.close_rounded),
               color: Colors.white54,
               iconSize: 20,
@@ -448,7 +452,7 @@ class _StatusAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return DesktopButtonClickRegion(
       child: TextButton(
-        onPressed: onPressed,
+        onPressed: AppHaptics.wrap(onPressed, light: true),
         style: TextButton.styleFrom(
           minimumSize: const Size(0, 28),
           padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -806,7 +810,7 @@ class _QuickDurationButton extends StatelessWidget {
       height: dense ? 28 : 34,
       child: DesktopButtonClickRegion(
         child: OutlinedButton(
-          onPressed: onPressed,
+          onPressed: AppHaptics.wrap(onPressed),
           style: OutlinedButton.styleFrom(
             padding: EdgeInsets.zero,
             foregroundColor: Colors.white70,
@@ -841,7 +845,10 @@ class _CountingModeSwitch extends StatelessWidget {
       builder: (context, _) {
         final value = _countsPlaybackTime(timer);
         return InkWell(
-          onTap: () => unawaited(timer.setCountOnlyWhilePlaying(!value)),
+          onTap: () {
+            AppHaptics.pulse();
+            unawaited(timer.setCountOnlyWhilePlaying(!value));
+          },
           borderRadius: BorderRadius.circular(8),
           child: Container(
             height: dense ? 32 : 38,
@@ -907,7 +914,7 @@ class _CompletionButton extends StatelessWidget {
       height: dense ? 30 : 36,
       child: DesktopButtonClickRegion(
         child: OutlinedButton.icon(
-          onPressed: onPressed,
+          onPressed: AppHaptics.wrap(onPressed),
           icon: Icon(icon, size: dense ? 14 : 16),
           label: FittedBox(
             fit: BoxFit.scaleDown,
@@ -1067,7 +1074,7 @@ class _CustomItemCountButtonState extends State<_CustomItemCountButton> {
               message: '设置再播数量',
               child: DesktopButtonClickRegion(
                 child: TextButton(
-                  onPressed: widget.onSubmitted,
+                  onPressed: AppHaptics.wrap(widget.onSubmitted, light: true),
                   style: TextButton.styleFrom(
                     minimumSize: Size(0, dense ? 30 : 36),
                     padding: EdgeInsets.symmetric(horizontal: dense ? 6 : 8),
@@ -1114,7 +1121,10 @@ class _PlaybackSettingTile extends StatelessWidget {
       label: title,
       toggled: value,
       child: InkWell(
-        onTap: () => unawaited(onChanged(!value)),
+        onTap: () {
+          AppHaptics.pulse();
+          unawaited(onChanged(!value));
+        },
         borderRadius: BorderRadius.circular(8),
         child: SizedBox(
           height: compact ? 43 : (dense ? 42 : 48),
@@ -1190,7 +1200,7 @@ class _SmallFilledButton extends StatelessWidget {
       height: dense ? 34 : 38,
       child: DesktopButtonClickRegion(
         child: FilledButton(
-          onPressed: onPressed,
+          onPressed: AppHaptics.wrap(onPressed, light: true),
           style: FilledButton.styleFrom(
             padding: EdgeInsets.symmetric(horizontal: dense ? 9 : 12),
             backgroundColor: const Color(0xFF3978E8),
@@ -1223,7 +1233,7 @@ class _ClockTimeButton extends StatelessWidget {
       height: dense ? 34 : 38,
       child: DesktopButtonClickRegion(
         child: OutlinedButton.icon(
-          onPressed: onPressed,
+          onPressed: AppHaptics.wrap(onPressed, light: true),
           icon: Icon(Icons.schedule_rounded, size: dense ? 14 : 16),
           label: const FittedBox(
             fit: BoxFit.scaleDown,

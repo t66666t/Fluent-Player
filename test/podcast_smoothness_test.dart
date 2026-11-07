@@ -22,6 +22,7 @@ import 'package:video_player_app/services/settings_service.dart';
 
 PodcastEpisode _episode(PodcastChannel channel, int index) {
   return PodcastEpisode(
+    sourceFeedUrl: 'https://publisher.test/rss',
     id: 'ep-$index',
     channelId: channel.id,
     title: index % 5 == 0 ? '很长的节目标题' * 8 : '第 $index 集',
@@ -357,6 +358,7 @@ void main() {
 class _ReadyPlatform extends VideoPlayerPlatform {
   final events = <int, StreamController<VideoEvent>>{};
   final playing = <int>{};
+  final positions = <int, Duration>{};
   var next = 1;
 
   @override
@@ -404,12 +406,19 @@ class _ReadyPlatform extends VideoPlayerPlatform {
   Future<void> setPlaybackSpeed(int playerId, double speed) async {}
 
   @override
-  Future<void> seekTo(int playerId, Duration position) async {}
+  Future<void> seekTo(int playerId, Duration position) async {
+    positions[playerId] = position;
+  }
 
   @override
-  Future<Duration> getPosition(int playerId) async => playing.contains(playerId)
-      ? const Duration(milliseconds: 40)
-      : Duration.zero;
+  Future<Duration> getPosition(int playerId) async {
+    final previous = positions[playerId] ?? Duration.zero;
+    final next = playing.contains(playerId)
+        ? previous + const Duration(milliseconds: 40)
+        : previous;
+    positions[playerId] = next;
+    return next;
+  }
 
   @override
   Future<void> setMixWithOthers(bool mixWithOthers) async {}

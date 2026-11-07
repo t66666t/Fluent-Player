@@ -26,7 +26,6 @@ import '../features/portable_transfer/portable_export_settings_memory.dart';
 import '../features/web_media/web_media_browser_preferences.dart';
 import '../features/web_media/web_media_queue_settings.dart';
 import '../features/youtube_download/models/youtube_download_models.dart';
-import '../features/youtube_download/platform/yt_dlp_native_bridge.dart';
 import '../features/youtube_download/services/yt_dlp_download_service.dart';
 import '../models/subtitle_punctuation.dart';
 import '../utils/serial_task_queue.dart';
@@ -38,6 +37,8 @@ import 'network/network_settings_service.dart';
 import 'settings_service.dart';
 import 'sleep_timer_controller.dart';
 import 'subtitle_manual_translation_settings.dart';
+import 'subtitle_file_processing_settings.dart';
+import 'subtitle_optimization.dart';
 import 'subtitle_translate_settings.dart';
 import 'transcription_hotword_store.dart';
 
@@ -62,9 +63,7 @@ class SettingsExportService {
        _mediaCachePreferences =
            mediaCachePreferences ?? _readMediaCachePreferences,
        _networkPreferences = networkPreferences ?? _readNetworkPreferences,
-       _nativeYtDlpPreferences =
-           nativeYtDlpPreferences ??
-           YtDlpNativeBridge().loadYoutubeSessionConfig;
+       _nativeYtDlpPreferences = nativeYtDlpPreferences ?? (() async => null);
 
   static const schemaVersion = 2;
   static const fileName = 'video_player_settings_export.json';
@@ -196,7 +195,8 @@ class SettingsExportService {
             'preferAiSubtitles': bilibili.preferAiSubtitles,
             'downloadDanmaku': bilibili.downloadDanmaku,
             'autoDeleteTaskAfterImport': bilibili.autoDeleteTaskAfterImport,
-            'autoDeleteOnlineTaskAfterImport': bilibili.autoDeleteOnlineTaskAfterImport,
+            'autoDeleteOnlineTaskAfterImport':
+                bilibili.autoDeleteOnlineTaskAfterImport,
             'keepScreenAwakeDuringProcessing':
                 bilibili.keepScreenAwakeDuringProcessing,
           }
@@ -238,23 +238,27 @@ class SettingsExportService {
       WebMediaBrowserPreferences.storageKey,
     );
     final cloud = CloudDriveViewPreferences(prefs);
+    final optimization = _jsonPreference(
+      prefs,
+      SubtitleOptimizationSettings.preferencesKey,
+    );
+    final fileProcessing = _jsonPreference(
+      prefs,
+      SubtitleFileProcessingSettings.preferencesKey,
+    );
     final sessionRaw = _jsonPreference(prefs, 'yt_dlp_session_config_v1');
-    // fromJson treats absent nullable retry fields as null; overlay defaults
-    // first so a never-opened page exports the actual new-install defaults.
+    // Preserve dormant, non-secret preferences as data. Exporting local settings
+    // must not initialize, normalize through, or call a disabled downloader.
+    // Defaults only fill fields absent from a never-opened preference record.
     final nativeSession = liveYtDlp == null && sessionRaw.isEmpty
         ? await _nativeYtDlpPreferences()
         : null;
-    final session = YtDlpDownloadService.sessionPreferencesForExport(
-      nativeSession ??
-          DownloadSessionConfig.fromJson({
-            ...DownloadSessionConfig.defaults().toJson(),
-            ...sessionRaw,
-          }),
-      speedAndRetryDefaultsApplied:
-          prefs.getBool('yt_dlp_speed_and_retry_defaults_v2') == true,
-      parallelDefaultsApplied:
-          prefs.getBool('yt_dlp_parallel_download_defaults_v3') == true,
-    );
+    final session =
+        nativeSession ??
+        DownloadSessionConfig.fromJson({
+          ...DownloadSessionConfig.defaults().toJson(),
+          ...sessionRaw,
+        });
     final languageProfiles = _jsonPreference(
       prefs,
       SubtitleTranslateSettings.languageProfilesKey,
@@ -357,7 +361,8 @@ class SettingsExportService {
         'manualCaptureMode':
             prefs.getBool(DouyinDownloadPreferences.manualModeKey) ?? false,
         'autoRemoveAfterImport':
-            prefs.getBool(DouyinDownloadPreferences.autoRemoveAfterImportKey) ?? false,
+            prefs.getBool(DouyinDownloadPreferences.autoRemoveAfterImportKey) ??
+            false,
       },
       'cloudDrive': {
         'lastProvider': cloud.providerId,
@@ -383,6 +388,16 @@ class SettingsExportService {
         },
       },
       'modelProcessing': _modelSnapshot(model),
+      'subtitleFileProcessing': {
+        'optimize': fileProcessing['optimize'] ?? (optimization['enabled'] == true),
+        'translate': fileProcessing['translate'] != false,
+      },
+      'subtitleOptimization': {
+        'enabled': optimization['enabled'] == true,
+        'prompt': optimization['prompt'] is String
+            ? optimization['prompt'] as String
+            : defaultSubtitleOptimizationPrompt,
+      },
       'transcriptionHotwords': {
         'presets': TranscriptionHotwordStore.decodePresets(
           prefs.getString(TranscriptionHotwordStore.presetsKey),

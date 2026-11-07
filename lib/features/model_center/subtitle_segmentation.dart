@@ -137,8 +137,15 @@ class SubtitleSegmentationOptions {
 // worker, cancellation callbacks and services, which must not be transferred.
 Future<List<SubtitleItem>> segmentAsrSubtitlesAsync(
   List<SubtitleItem> cues,
-  SubtitleSegmentationOptions options,
-) => Isolate.run(() => segmentAsrSubtitles(cues, options));
+  SubtitleSegmentationOptions options, {
+  int? textProcessingVersion,
+}) => Isolate.run(
+  () => segmentAsrSubtitles(
+    cues,
+    options,
+    textProcessingVersion: textProcessingVersion,
+  ),
+);
 
 /// Regroup existing text without rewriting words or fabricating word timings.
 /// Limits are targets: a complete word or an atomic native token may exceed
@@ -146,9 +153,13 @@ Future<List<SubtitleItem>> segmentAsrSubtitlesAsync(
 /// explicitly opts into estimated sentence times.
 List<SubtitleItem> segmentAsrSubtitles(
   List<SubtitleItem> cues,
-  SubtitleSegmentationOptions options,
-) {
+  SubtitleSegmentationOptions options, {
+  int? textProcessingVersion,
+}) {
   if (!options.enabled) return cues;
+  if ((textProcessingVersion ?? 0) >= 3) {
+    return _segmentByReadingRate(cues, options);
+  }
   final result = <SubtitleItem>[];
   for (final cue
       in options.naturalBreaks ? joinAsrContinuations(cues, options) : cues) {
@@ -318,6 +329,7 @@ Iterable<SubtitleItem> joinAsrContinuations(
           right.alternateText,
         ].where((v) => v.isNotEmpty).join(' '),
         notes: {...left.notes, ...right.notes}.toList(),
+        pauses: [...left.pauses, ...right.pauses],
       ),
     );
     aligned = aligned && nextAligned;
@@ -762,3 +774,307 @@ bool _isCjk(int rune) =>
     rune >= 0xac00 && rune <= 0xd7af ||
     rune >= 0xf900 && rune <= 0xfaff ||
     rune >= 0x20000 && rune <= 0x323af;
+
+const _readingMin = Duration(milliseconds: 830);
+const _readingTarget = Duration(milliseconds: 6000);
+const _readingHard = Duration(milliseconds: 7000);
+const _smallKana = 'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶー々';
+const _weakEnglish = {
+  'a',
+  'an',
+  'the',
+  'to',
+  'of',
+  'and',
+  'or',
+  'in',
+  'on',
+  'for',
+};
+
+/// v3 display cuts. Old processing versions never call this, so their captions
+/// stay byte-for-byte on the previous splitter.
+List<SubtitleItem> _segmentByReadingRate(
+  List<SubtitleItem> cues,
+  SubtitleSegmentationOptions options,
+) {
+  final source = options.naturalBreaks
+      ? joinAsrContinuations(cues, options).toList()
+      : cues;
+  final result = <SubtitleItem>[];
+  for (final cue in source) {
+    result.addAll(_readingPieces(cue));
+  }
+  return [
+    for (var i = 0; i < result.length; i++)
+      result[i].copyWith(
+        index: i + 1,
+        asrInfo: result[i].asrInfo.copyWith(pauses: const []),
+      ),
+  ];
+}
+
+bool _blockedScript(String text) => RegExp(
+  r'[\u0e00-\u0e7f\u1000-\u109f\u1780-\u17ff\u0e80-\u0eff]',
+).hasMatch(text);
+
+double _readingRate(String text) {
+  if (RegExp(r'[\u3040-\u30ff]').hasMatch(text)) return 7;
+  if (RegExp(r'[\uac00-\ud7af]').hasMatch(text)) return 12;
+  if (RegExp(r'[\u3400-\u9fff]').hasMatch(text)) return 9;
+  return 20;
+}
+
+int _readingBudget(String text) {
+  if (RegExp(r'[\u3040-\u30ff]').hasMatch(text)) return 52;
+  if (RegExp(r'[\uac00-\ud7af]').hasMatch(text) ||
+      RegExp(r'[\u3400-\u9fff]').hasMatch(text)) {
+    return 64;
+  }
+  return 84;
+}
+
+bool _readingTooWide(String text) => _displayWidth(text) > _readingBudget(text);
+
+List<SubtitleItem> _readingPieces(SubtitleItem cue) {
+  if (!_plainCue(cue) || cue.text.characters.length < 2) return [cue];
+  final glyphs = cue.text.characters.toList();
+  final offsets = <int>[0];
+  for (final glyph in glyphs) {
+    offsets.add(offsets.last + glyph.length);
+  }
+  final aligned = hasUsableAsrTiming(cue);
+  final blocked = _blockedScript(cue.text) && !aligned;
+  final seconds = (cue.endTime - cue.startTime).inMilliseconds / 1000;
+  final crowded =
+      seconds > 0 && glyphs.length / seconds > _readingRate(cue.text) * 1.15;
+  final tooLong = cue.endTime - cue.startTime > _readingHard;
+  final slow = aligned && cue.endTime - cue.startTime > _readingTarget;
+  if (blocked && (tooLong || _readingTooWide(cue.text))) {
+    return [
+      cue.copyWith(
+        asrInfo: cue.asrInfo.copyWith(
+          notes: [
+            ...cue.asrInfo.notes,
+            if (!cue.asrInfo.notes.contains('无空格文字缺少词时间，保留原句供复核'))
+              '无空格文字缺少词时间，保留原句供复核',
+          ],
+        ),
+      ),
+    ];
+  }
+  if (!aligned && !tooLong && !_readingTooWide(cue.text)) return [cue];
+  if (aligned && !slow && !crowded && !_readingTooWide(cue.text) && !tooLong) {
+    return [cue];
+  }
+  final weights = <double>[0];
+  for (final glyph in glyphs) {
+    weights.add(weights.last + _syllableWeight(glyph));
+  }
+  final cuts = <int>[0];
+  var start = 0;
+  while (start < glyphs.length) {
+    var best = -1;
+    var bestScore = double.infinity;
+    for (var end = start + 1; end <= glyphs.length; end++) {
+      if (end < glyphs.length && !_readingBreak(glyphs, offsets, cue, end)) {
+        continue;
+      }
+      final score = _readingScore(cue, glyphs, offsets, weights, start, end);
+      if (score < bestScore) {
+        best = end;
+        bestScore = score;
+      }
+    }
+    if (best <= start) best = glyphs.length;
+    cuts.add(best);
+    if (best == glyphs.length) break;
+    start = best;
+  }
+  if (cuts.length <= 2) return [cue];
+  final pieces = <SubtitleItem>[];
+  for (var i = 0; i < cuts.length - 1; i++) {
+    pieces.add(
+      _readingCue(cue, glyphs, offsets, weights, cuts[i], cuts[i + 1]),
+    );
+  }
+  // Punctuation is its own slice, so a one-character tail can sit behind
+  // another short syllable. Keep folding until the caption is readable.
+  while (pieces.length >= 2 &&
+      (pieces.last.endTime - pieces.last.startTime < _readingMin ||
+          pieces.last.text.characters.length <= 2)) {
+    final tail = pieces.removeLast();
+    final head = pieces.removeLast();
+    pieces.add(
+      head.copyWith(
+        text: '${head.text}${tail.text}',
+        endTime: tail.endTime,
+        timedSpans: [
+          ...head.timedSpans,
+          for (final span in tail.timedSpans)
+            span.shifted(Duration.zero, textOffset: head.text.length),
+        ],
+        asrInfo: head.asrInfo,
+      ),
+    );
+  }
+  return pieces;
+}
+
+bool _readingBreak(
+  List<String> glyphs,
+  List<int> offsets,
+  SubtitleItem cue,
+  int index,
+) {
+  final here = glyphs[index];
+  final previous = glyphs[index - 1];
+  if (_smallKana.contains(here) || _opening.contains(previous)) return false;
+  if (cue.asrInfo.wordBoundaries.contains(offsets[index])) return true;
+  if (RegExp(r'\s').hasMatch(previous) || _punctuationRank(glyphs, index) > 0) {
+    return true;
+  }
+  final left = previous.runes.first;
+  final right = here.runes.first;
+  final hangul =
+      left >= 0xac00 && left <= 0xd7af || right >= 0xac00 && right <= 0xd7af;
+  if (hangul || _blockedScript(here) || _blockedScript(previous)) return false;
+  final han =
+      left >= 0x3400 && left <= 0x9fff && right >= 0x3400 && right <= 0x9fff;
+  final kana =
+      (left >= 0x3040 && left <= 0x30ff) ||
+      (right >= 0x3040 && right <= 0x30ff);
+  return han || kana;
+}
+
+double _syllableWeight(String glyph) {
+  if (glyph.trim().isEmpty || _punctuationRank([glyph], 1) > 0) return 0;
+  if (_smallKana.contains(glyph) && glyph != 'ー' && glyph != '々') return 0;
+  final rune = glyph.runes.first;
+  if (rune >= 0x3400 && rune <= 0x9fff) return 1;
+  if (rune >= 0x3040 && rune <= 0x30ff) return 1;
+  if (rune >= 0xac00 && rune <= 0xd7af) return 1;
+  if (RegExp(r'[0-9]').hasMatch(glyph)) return 1;
+  if (RegExp(r'[aeiouyAEIOUYàáâäèéêëìíîïòóôöùúûü]').hasMatch(glyph)) {
+    return 1;
+  }
+  if (RegExp(r'[A-Za-z]').hasMatch(glyph)) return .2;
+  return .5;
+}
+
+double _readingScore(
+  SubtitleItem cue,
+  List<String> glyphs,
+  List<int> offsets,
+  List<double> weights,
+  int start,
+  int end,
+) {
+  final times = _readingTimes(cue, offsets, weights, start, end);
+  final duration = times.$2 - times.$1;
+  final text = glyphs.sublist(start, end).join();
+  final seconds = math.max(.2, duration.inMilliseconds / 1000);
+  final rate = text.characters.length / seconds;
+  var score = 0.0;
+  if (duration < _readingMin) {
+    score += math.pow((_readingMin - duration).inMilliseconds / 80, 2);
+  }
+  if (duration > _readingTarget) {
+    score += math.pow((duration - _readingTarget).inMilliseconds / 80, 2);
+  }
+  if (duration > _readingHard) score += 100000;
+  // A longer comfortable slice beats the shortest legal one. The slope stays
+  // below one punctuation rank, so a sentence ending still wins.
+  if (duration < const Duration(milliseconds: 4500)) {
+    score += (4500 - duration.inMilliseconds) / 80;
+  }
+  final limit = _readingRate(text);
+  if (rate > limit) score += math.pow(rate - limit, 2) * 25;
+  if (_readingTooWide(text)) score += 100000;
+  score += (end == glyphs.length ? 0 : 4 - _punctuationRank(glyphs, end)) * 40;
+  final tail = text.trim().split(RegExp(r'\s+')).last.toLowerCase();
+  if (_weakEnglish.contains(tail)) score += 200;
+  return score.toDouble();
+}
+
+(Duration, Duration) _readingTimes(
+  SubtitleItem cue,
+  List<int> offsets,
+  List<double> weights,
+  int start,
+  int end,
+) {
+  final acousticStart = _spanEdge(cue, offsets[start], startEdge: true);
+  final acousticEnd = _spanEdge(cue, offsets[end], startEdge: false);
+  if (acousticStart != null &&
+      acousticEnd != null &&
+      acousticEnd > acousticStart) {
+    return (acousticStart, acousticEnd);
+  }
+  final total = math.max(weights.last, .001);
+  final span = cue.endTime - cue.startTime;
+  var from = cue.startTime + span * (weights[start] / total);
+  var to = cue.startTime + span * (weights[end] / total);
+  for (final pause in cue.asrInfo.pauses) {
+    if (pause.length < 2) continue;
+    final pauseStart = Duration(microseconds: pause[0]);
+    final pauseEnd = Duration(microseconds: pause[1]);
+    if ((to - pauseStart).abs() <= const Duration(milliseconds: 400)) {
+      to = pauseStart;
+    }
+    if ((from - pauseEnd).abs() <= const Duration(milliseconds: 400)) {
+      from = pauseEnd;
+    }
+  }
+  if (to <= from) to = from + _readingMin;
+  if (from < cue.startTime) from = cue.startTime;
+  if (to > cue.endTime) to = cue.endTime;
+  if (to <= from) to = cue.endTime;
+  return (from, to);
+}
+
+Duration? _spanEdge(SubtitleItem cue, int offset, {required bool startEdge}) {
+  for (final span in cue.timedSpans) {
+    if (startEdge && span.textStart == offset) return span.startTime;
+    if (!startEdge && span.textEnd == offset) return span.endTime;
+  }
+  return null;
+}
+
+SubtitleItem _readingCue(
+  SubtitleItem cue,
+  List<String> glyphs,
+  List<int> offsets,
+  List<double> weights,
+  int start,
+  int end,
+) {
+  final text = glyphs.sublist(start, end).join();
+  final fromOffset = offsets[start];
+  final toOffset = offsets[end];
+  final times = _readingTimes(cue, offsets, weights, start, end);
+  final acoustic =
+      _spanEdge(cue, fromOffset, startEdge: true) != null &&
+      _spanEdge(cue, toOffset, startEdge: false) != null;
+  final spans = acoustic
+      ? [
+          for (final span in cue.timedSpans)
+            if (span.textStart >= fromOffset && span.textEnd <= toOffset)
+              span.shifted(Duration.zero, textOffset: -fromOffset),
+        ]
+      : const <SubtitleTimedSpan>[];
+  final estimated = !acoustic;
+  final note = cue.asrInfo.pauses.isNotEmpty ? '分句时间按停顿估计' : '分句时间按语速估计';
+  return cue.copyWith(
+    text: text,
+    startTime: times.$1,
+    endTime: times.$2,
+    timedSpans: spans,
+    asrInfo: cue.asrInfo.copyWith(
+      notes: [
+        ...cue.asrInfo.notes,
+        if (estimated && !cue.asrInfo.notes.contains(note)) note,
+      ],
+    ),
+  );
+}

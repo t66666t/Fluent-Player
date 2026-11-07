@@ -6,7 +6,7 @@ import UIKit
 /// owner of media publication. This registry contains identity and sandbox
 /// paths, never cookies, signed URLs or proxy passwords.
 final class MediaCacheDownloadBridge: NSObject, URLSessionDownloadDelegate {
-  static let prefix = "com.example.video_player_app.media-cache."
+  static let prefix = (Bundle.main.bundleIdentifier ?? "cn.teezy.fluentplayer.standard") + ".media-cache."
   private let defaultsKey = "mediaCacheBackgroundTransfers.v1"
   private var channel: FlutterMethodChannel?
   private var records: [String: [String: Any]] = [:]

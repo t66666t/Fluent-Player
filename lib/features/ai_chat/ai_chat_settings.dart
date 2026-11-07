@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'ai_qwen_limits.dart';
+import '../../services/ai_api_connection_sync.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1241,6 +1242,128 @@ class AiChatSettingsStore {
   final Future<SharedPreferences> Function() _preferences;
   final Duration operationTimeout;
 
+  AiApiConnectionSync get _connections => AiApiConnectionSync(
+    chatProfileId: (url, protocol) => aiApiProfileId(
+      url,
+      AiApiProtocol.values.firstWhere(
+        (p) => p.name == protocol,
+        orElse: () => AiApiProtocol.openAiCompatible,
+      ),
+    ),
+    preferences: _preferences,
+    readSecret: (key) => _secrets.read(key).timeout(operationTimeout),
+    writeSecret: (key, value) =>
+        _secrets.write(key, value).timeout(operationTimeout),
+    deleteSecret: (key) => _secrets.delete(key).timeout(operationTimeout),
+  );
+
+  /// Refresh connection data without changing chat prompts, backend or a model
+  /// the user already selected. An occupied custom slot is never replaced.
+  Future<AiChatSettings> withSharedApiConnections(
+    AiChatSettings settings,
+  ) async {
+    final sync = _connections;
+    await sync.prepare();
+    final activeId = settings.resolvedApiProfileId;
+    final profiles = <String, AiApiProfile>{...settings.apiProfiles};
+    profiles.putIfAbsent(
+      activeId,
+      () => AiApiProfile(
+        baseUrl: settings.baseUrl,
+        protocol: settings.apiProtocol,
+        model: settings.backend == AiBackend.api
+            ? settings.model
+            : settings.apiModel,
+        apiKey: settings.apiKey,
+        models: settings.savedModels,
+        modelCatalogBaseUrl: settings.modelCatalogBaseUrl,
+        modelCatalogProtocol: settings.modelCatalogProtocol,
+      ),
+    );
+    Future<AiApiProfile?> hydrate(String id, AiApiProfile profile) async {
+      final shared = await sync.resolve(
+        owner: 'chat:$id',
+        baseUrl: profile.baseUrl,
+        protocol: profile.protocol.name,
+        apiKey: profile.apiKey,
+        model: profile.model,
+        models: profile.models.map((m) => m.id).toList(),
+      );
+      if (shared == null) return null;
+      return profile.copyWith(
+        apiKey: shared.apiKey,
+        model: profile.model.isEmpty ? shared.model : profile.model,
+        models: profile.models.isEmpty
+            ? [for (final id in shared.models) AiModelInfo(id: id)]
+            : profile.models,
+        modelCatalogBaseUrl: profile.models.isEmpty
+            ? profile.baseUrl
+            : profile.modelCatalogBaseUrl,
+        modelCatalogProtocol: profile.models.isEmpty
+            ? profile.protocol
+            : profile.modelCatalogProtocol,
+      );
+    }
+
+    for (final id in profiles.keys.toList()) {
+      profiles[id] = await hydrate(id, profiles[id]!) ?? profiles[id]!;
+    }
+    final available = await sync.metadata();
+    for (final shared in available) {
+      final protocol = AiApiProtocol.values
+          .where((p) => p.name == shared.protocol)
+          .firstOrNull;
+      if (protocol == null) continue;
+      final id = aiApiProfileId(shared.baseUrl, protocol);
+      if (profiles.containsKey(id)) continue;
+      final identity = shared.identity;
+      // Custom services cannot silently occupy each other's single UI slot.
+      if (id == 'custom' &&
+          available
+                  .where(
+                    (s) =>
+                        aiApiProfileId(
+                          s.baseUrl,
+                          AiApiProtocol.values.firstWhere(
+                            (p) => p.name == s.protocol,
+                          ),
+                        ) ==
+                        'custom',
+                  )
+                  .map((s) => s.identity)
+                  .toSet()
+                  .length !=
+              1) {
+        continue;
+      }
+      if (available.where((s) => s.identity == identity).length != 1) continue;
+      final profile = AiApiProfile(baseUrl: shared.baseUrl, protocol: protocol);
+      final hydrated = await hydrate(id, profile);
+      if (hydrated != null) profiles[id] = hydrated;
+    }
+    final active = profiles[activeId]!;
+    final matches =
+        aiApiConnectionIdentity(active.baseUrl, active.protocol.name) != null &&
+        aiApiConnectionIdentity(active.baseUrl, active.protocol.name) ==
+            aiApiConnectionIdentity(
+              settings.baseUrl,
+              settings.apiProtocol.name,
+            );
+    return settings.copyWith(
+      apiProfiles: Map.unmodifiable(profiles),
+      apiKey: matches ? active.apiKey : settings.apiKey,
+      savedModels: matches && settings.backend == AiBackend.api
+          ? active.models
+          : settings.savedModels,
+      modelCatalogBaseUrl: matches && settings.backend == AiBackend.api
+          ? active.modelCatalogBaseUrl
+          : settings.modelCatalogBaseUrl,
+      modelCatalogProtocol: matches && settings.backend == AiBackend.api
+          ? active.modelCatalogProtocol
+          : settings.modelCatalogProtocol,
+    );
+  }
+
   /// Read a non-secret subset without touching the OS keychain.
   Future<Map<String, dynamic>> preferenceFieldsForTrial(
     Set<String> fields,
@@ -1298,17 +1421,40 @@ class AiChatSettingsStore {
           .copyWith(apiKey: legacy);
     }
     final activeKey = profiles[activeId]?.apiKey ?? legacy ?? '';
-    return settings.copyWith(
-      apiKey: activeKey,
-      apiProfileId: activeId,
-      apiProfiles: Map.unmodifiable(profiles),
+    return withSharedApiConnections(
+      settings.copyWith(
+        apiKey: activeKey,
+        apiProfileId: activeId,
+        apiProfiles: Map.unmodifiable(profiles),
+      ),
     );
   }
 
   Future<void> save(AiChatSettings settings) async {
+    await _connections.prepare();
+    // Resolve pre-existing equal keys before this edit rotates or clears one.
+    final sharedBefore = await load();
+    final nativeKeys = await _readKeyMap();
     final activeId = settings.resolvedApiProfileId;
     final profiles = <String, AiApiProfile>{
-      for (final entry in settings.apiProfiles.entries) entry.key: entry.value,
+      for (final entry in settings.apiProfiles.entries)
+        entry.key:
+            entry.value.apiKey.isNotEmpty &&
+                entry.value.apiKey == (nativeKeys[entry.key] ?? '') &&
+                aiApiConnectionIdentity(
+                      entry.value.baseUrl,
+                      entry.value.protocol.name,
+                    ) ==
+                    aiApiConnectionIdentity(
+                      sharedBefore.apiProfiles[entry.key]?.baseUrl ?? '',
+                      sharedBefore.apiProfiles[entry.key]?.protocol.name ?? '',
+                    )
+            ? entry.value.copyWith(
+                apiKey:
+                    sharedBefore.apiProfiles[entry.key]?.apiKey ??
+                    entry.value.apiKey,
+              )
+            : entry.value,
     };
     final current = profiles[activeId];
     profiles[activeId] = (current ?? const AiApiProfile()).copyWith(
@@ -1361,6 +1507,17 @@ class AiChatSettingsStore {
       jsonEncode(persisted.toJson()),
     );
     if (!saved) throw StateError('AI 设置保存失败，请重试。');
+    for (final entry in profiles.entries) {
+      final value = entry.value;
+      await _connections.publish(
+        owner: 'chat:${entry.key}',
+        baseUrl: value.baseUrl,
+        protocol: value.protocol.name,
+        apiKey: value.apiKey,
+        model: value.model,
+        models: value.models.map((m) => m.id).toList(),
+      );
+    }
   }
 
   Future<Map<String, String>> _readKeyMap() async {

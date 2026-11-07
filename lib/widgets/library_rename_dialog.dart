@@ -75,10 +75,7 @@ class _LibraryRenameDialogState extends State<_LibraryRenameDialog> {
     _nameWeight = collection != null ? FontWeight.w600 : FontWeight.w500;
     _scopeDescription =
         widget.scopeDescription ??
-        (collection?.sourceRef?.cloudDrive != null ||
-                media?.sourceRef?.cloudDrive != null
-            ? '仅修改媒体库中这张卡片的名称，各媒体库页面同步显示；网盘原名不变。'
-            : collection?.isPodcast == true || media?.sourceRef?.podcast != null
+        (collection?.isPodcast == true || media?.sourceRef?.podcast != null
             ? '修改应用内的播客别名，各页面同步显示；RSS 原始标题不变。'
             : null);
     _showCoverField =

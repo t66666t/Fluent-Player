@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/app_haptics.dart';
 import '../services/settings_service.dart';
 import '../theme/app_tokens.dart';
 import '../utils/app_toast.dart';
@@ -238,7 +239,10 @@ class _ClipboardDetectionCheckboxState
             DesktopButtonClickRegion(
               child: TextButton(
                 key: const ValueKey('clipboard-detection-disable-cancel'),
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(dialogContext, false),
+                  light: true,
+                ),
                 style: TextButton.styleFrom(
                   minimumSize: const Size(64, 44),
                   shape: RoundedRectangleBorder(
@@ -251,7 +255,10 @@ class _ClipboardDetectionCheckboxState
             DesktopButtonClickRegion(
               child: FilledButton(
                 key: const ValueKey('clipboard-detection-disable-confirm'),
-                onPressed: () => Navigator.pop(dialogContext, true),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(dialogContext, true),
+                  light: true,
+                ),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 44),
                   shape: RoundedRectangleBorder(
@@ -300,7 +307,7 @@ class _ClipboardDetectionCheckboxState
                 : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-        onChanged: _confirming ? null : _changed,
+        onChanged: AppHaptics.wrapValue(_confirming ? null : _changed),
       ),
     ),
   );

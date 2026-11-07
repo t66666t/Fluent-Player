@@ -9,14 +9,15 @@
 #endif
 
 [Setup]
-AppId={{9B96EEC0-E65C-4D95-B59B-BB90E07BE26C}
+AppId={{627EC819-F9DA-4D7C-84F3-B9BC408AD30C}
 AppName=Fluent Player
 AppVersion={#AppVersion}
-AppPublisher=Fluent Player contributors
-AppPublisherURL=https://github.com/t66666t/Video-master
-AppSupportURL=https://github.com/t66666t/Video-master/issues
-AppUpdatesURL=https://github.com/t66666t/Video-master/releases
-DefaultDirName={localappdata}\Programs\FluentPlayer
+AppPublisher=Teezy Community
+AppPublisherURL=https://github.com/t66666t/Fluent-Player
+AppSupportURL=https://github.com/t66666t/Fluent-Player/issues
+AppUpdatesURL=https://github.com/t66666t/Fluent-Player/releases
+DefaultDirName={localappdata}\Programs\Fluent Player
+UsePreviousAppDir=no
 DefaultGroupName=Fluent Player
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -25,7 +26,7 @@ MinVersion=10.0
 OutputDir={#OutputDir}
 OutputBaseFilename=FluentPlayer-v{#AppVersion}-windows-x64-setup
 SetupIconFile=..\..\windows\runner\resources\app_icon.ico
-UninstallDisplayIcon={app}\video_player_app.exe
+UninstallDisplayIcon={app}\fluent-player.exe
 LicenseFile=..\..\LICENSE
 Compression=lzma2
 SolidCompression=yes
@@ -40,12 +41,18 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Fluent Player"; Filename: "{app}\video_player_app.exe"; WorkingDir: "{app}"; AppUserModelID: "io.github.t66666t.FluentPlayer"
-Name: "{autodesktop}\Fluent Player"; Filename: "{app}\video_player_app.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "io.github.t66666t.FluentPlayer"
+Name: "{group}\Fluent Player"; Filename: "{app}\fluent-player.exe"; WorkingDir: "{app}"; AppUserModelID: "cn.teezy.fluentplayer.standard"
+Name: "{autodesktop}\Fluent Player"; Filename: "{app}\fluent-player.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "cn.teezy.fluentplayer.standard"
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.github.t66666t.FluentPlayer"; ValueType: string; ValueName: "DisplayName"; ValueData: "Fluent Player"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.github.t66666t.FluentPlayer"; ValueType: string; ValueName: "IconUri"; ValueData: "{app}\data\flutter_assets\android\app\src\main\res\mipmap-xxxhdpi\launcher_icon.png"
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\cn.teezy.fluentplayer.standard"; ValueType: string; ValueName: "DisplayName"; ValueData: "Fluent Player"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\cn.teezy.fluentplayer.standard"; ValueType: string; ValueName: "IconUri"; ValueData: "{app}\data\flutter_assets\android\app\src\main\res\mipmap-xxxhdpi\launcher_icon.png"
 
 [Run]
-Filename: "{app}\video_player_app.exe"; Description: "Open Fluent Player"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\fluent-player.exe"; Description: "Open Fluent Player"; Flags: nowait postinstall skipifsilent unchecked
+
+#define EditionRunner "fluent-player.exe"
+#define OtherEditionRunner "fluent-player-pro.exe"
+#define EditionCompany "Teezy Community"
+#define EditionProduct "Fluent Player"
+#include "edition_guard.iss"

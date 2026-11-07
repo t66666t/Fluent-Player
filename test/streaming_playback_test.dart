@@ -13,7 +13,7 @@ import 'package:video_player_app/services/streaming_subtitle_store.dart';
 import 'package:video_player_app/services/subtitle_word_timing_store.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
 
-import 'support/web_media_preview_video_platform.dart';
+import 'support/fake_video_player_platform.dart';
 
 class _Manager extends TranscriptionManager {
   final events = StreamController<SubtitleStreamUpdate>.broadcast(sync: true);
@@ -171,14 +171,12 @@ void main() {
     });
   }
 
-  test('rapid online pause/resume retains streaming word timings', () async {
+  test('rapid local pause/resume retains streaming word timings', () async {
     SharedPreferences.setMockInitialValues({});
     final previousPlatform = VideoPlayerPlatform.instance;
-    final platform = WebMediaPreviewVideoPlatform();
+    final platform = FakeVideoPlayerPlatform();
     VideoPlayerPlatform.instance = platform;
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse('https://example.invalid/audio.mp3'),
-    );
+    final controller = VideoPlayerController.file(File('/media.mp3'));
     addTearDown(() async {
       await playback.stop();
       await controller.dispose();
@@ -188,14 +186,13 @@ void main() {
       VideoItem(
         id: 'media',
         path: controller.dataSource,
-        title: 'Online audio',
+        title: 'Local audio',
         type: MediaType.audio,
         durationMs: 60000,
         lastUpdated: 0,
       ),
     );
-    // Exercise the real online resume/refresh path without a native decoder.
-    playback.debugOnlineStartupClock = (_, _) async {};
+    // Exercise the native local resume path without a platform decoder.
     await controller.initialize();
     await playback.setController(controller);
     append(1, publish: false);
@@ -228,6 +225,23 @@ void main() {
     expect(playback.subtitles.last.timedSpans, hasLength(2));
     expect(playback.secondarySubtitles, hasLength(2));
   });
+
+  test(
+    'a network controller cannot replace the current local session',
+    () async {
+      final item = playback.currentItem;
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse('https://example.invalid/audio.mp3'),
+      );
+      addTearDown(controller.dispose);
+      await expectLater(
+        playback.setController(controller),
+        throwsUnsupportedError,
+      );
+      expect(playback.currentItem, same(item));
+      expect(playback.controller, isNull);
+    },
+  );
 
   test('completed streams still reload files and timing companions', () async {
     append(1, publish: false);

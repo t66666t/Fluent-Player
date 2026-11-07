@@ -75,29 +75,14 @@ void main() {
     );
   });
 
-  test('Bilibili and recycle bin pages open above the frame', () {
+  test('recycle bin and playback open above the media library frame', () {
+    // 社区版已退役 Bilibili 卡片导航；兼容层不再从 card_actions 打开全屏页。
     final cardActions = read('lib/screens/bilibili/bilibili_card_actions.dart');
     expect(
       'pushAboveMediaLibrary('.allMatches(cardActions).length,
-      2,
-      reason: 'loading page and download page',
+      0,
+      reason: 'community edition: no Bilibili card shell navigation',
     );
-    for (final entry in <String, String>{
-      'lib/screens/bilibili/bilibili_account_screen.dart':
-          'Future<void> openBilibiliAccount(',
-      'lib/screens/bilibili/bilibili_settings_screen.dart':
-          'Future<void> openBilibiliSettings(',
-      'lib/screens/bilibili/bilibili_watch_history_screen.dart':
-          'Future<void> openBilibiliWatchHistory(',
-      'lib/screens/bilibili/bilibili_uploader_screen.dart':
-          'openBilibiliUploader(',
-    }.entries) {
-      final source = read(entry.key);
-      final start = source.indexOf(entry.value);
-      expect(start, isNonNegative, reason: entry.key);
-      final body = source.substring(start, start + 500);
-      expect(body, contains('pushAboveMediaLibrary('), reason: entry.key);
-    }
     for (final path in <String>[
       'lib/screens/home_screen.dart',
       'lib/screens/collection_screen.dart',
@@ -119,8 +104,16 @@ void main() {
   });
 
   test('menus and sheets opened from library pages cover the card', () {
+    final settingsSource = read('lib/widgets/media_library_settings_sheet.dart');
+    // 设置页改为根 Navigator 全屏 push，与 useRootNavigator 的 sheet 等价。
+    expect(
+      settingsSource,
+      contains(
+        'Navigator.of(\n    context,\n    rootNavigator: true,\n  ).push<void>(AppMaterialPageRoute(builder: buildSurface)',
+      ),
+      reason: 'lib/widgets/media_library_settings_sheet.dart',
+    );
     for (final entry in <String, String>{
-      'lib/widgets/media_library_settings_sheet.dart': 'showModalBottomSheet<',
       'lib/widgets/media_library_style_sheet.dart': 'showModalBottomSheet<',
       'lib/widgets/library_folder_picker.dart': 'showModalBottomSheet<',
       'lib/features/podcasts/podcast_menu.dart': 'showGeneralDialog<',
@@ -129,19 +122,20 @@ void main() {
       'lib/widgets/video_action_buttons.dart': 'showModalBottomSheet(',
       'lib/widgets/media_library_compact_app_bar.dart':
           'CapsulePopupMenuButton<',
-      'lib/screens/bilibili/bilibili_import_buttons.dart':
-          'CapsulePopupMenuButton<',
-      'lib/features/cloud_drive/presentation/cloud_drive_screen.dart':
-          'CapsulePopupMenuButton<',
-      'lib/features/cloud_drive/presentation/cloud_drive_browser_pane.dart':
-          'CapsulePopupMenuButton<',
     }.entries) {
       final source = read(entry.key);
       final matches = entry.value.allMatches(source).toList();
       expect(matches, isNotEmpty, reason: entry.key);
       for (final match in matches) {
         final call = source.substring(match.start, match.start + 200);
-        expect(call, contains('useRootNavigator: true'), reason: entry.key);
+        expect(
+          call,
+          anyOf(
+            contains('useRootNavigator: true'),
+            contains('rootNavigator: true'),
+          ),
+          reason: entry.key,
+        );
       }
     }
   });

@@ -16,7 +16,14 @@ import 'package:video_player_app/utils/subtitle_font_resolver.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  for (final retired in const ['方正黑体', '方正楷体', '方正黑体简体', '方正楷体简体']) {
+  for (final retired in const [
+    '方正黑体',
+    '方正楷体',
+    '方正黑体简体',
+    '方正楷体简体',
+    'MiSans',
+    'Noto Serif CJK SC',
+  ]) {
     test(
       'saved styles migrate $retired across legacy and multilingual fields',
       () {
@@ -61,7 +68,7 @@ void main() {
     );
   }
 
-  for (final retired in const ['方正黑体', '方正楷体']) {
+  for (final retired in const ['方正黑体', '方正楷体', 'MiSans', 'Noto Serif CJK SC']) {
     test(
       'legacy $retired renders and exports with the embedded replacement',
       () {
@@ -73,7 +80,7 @@ void main() {
         expect(style.getTextStyle().fontFamily, 'Noto Sans SC');
         final fonts = VideoComposeFontService();
         expect(fonts.requiresBundledFonts(style), isTrue);
-        expect(fonts.resolveSystemFont(retired), 'Noto Sans CJK SC');
+        expect(fonts.resolveSystemFont(retired), 'Noto Sans SC');
         final ass = VideoComposeAssRenderer(fonts).buildAssContent(
           width: 1280,
           height: 720,
@@ -89,7 +96,7 @@ void main() {
           style: style,
           alignment: Alignment.bottomCenter,
         );
-        expect(ass, contains('Style: Default,Noto Sans CJK SC,'));
+        expect(ass, contains('Style: Default,Noto Sans SC,'));
         expect(ass, isNot(contains(retired)));
       },
     );
@@ -124,7 +131,7 @@ void main() {
           jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
       expect(jsonEncode(manifest), isNot(contains('方正')));
       final fallback = manifest
-          .where((node) => node['family'] == 'Noto Sans SC')
+          .where((node) => node['family'] == 'Noto Sans CJK Fallback')
           .single;
       expect(
         (fallback['fonts'] as List).any(

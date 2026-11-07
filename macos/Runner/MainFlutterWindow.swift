@@ -47,6 +47,7 @@ class MainFlutterWindow: NSWindow {
     setTextInputActive(false)
 
     super.awakeFromNib()
+    self.title = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Fluent Player"
   }
 
   @objc private func reapplyImeGate() {

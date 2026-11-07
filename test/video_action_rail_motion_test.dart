@@ -261,6 +261,7 @@ class _HarnessState extends State<_Harness> {
     availableHeight: 500,
     textScaler: TextScaler.noScaling,
     showLabels: true,
+    actionCount: 8,
   );
   late final actions = [
     for (var index = 0; index < 8; index++)

@@ -163,8 +163,8 @@ void main() {
     (tester) async {
       await tester.runAsync(() async {
         for (final font in {
-          'MiSans': 'assets/fonts/MiSans-Regular.otf',
-        'monospace': 'assets/fonts/MiSans-Regular.otf',
+          'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
+        'monospace': 'assets/fonts/NotoSansSC-Variable.ttf',
           'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
         }.entries) {
           await (FontLoader(
@@ -189,7 +189,7 @@ void main() {
                 theme: ThemeData(
                   brightness: Brightness.dark,
                   useMaterial3: true,
-                  fontFamily: 'MiSans',
+                  fontFamily: 'Noto Sans SC',
                 ),
                 home: Scaffold(
                   body: RepaintBoundary(

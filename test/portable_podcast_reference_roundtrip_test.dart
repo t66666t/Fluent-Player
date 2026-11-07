@@ -191,9 +191,17 @@ void main() {
     expect(task.status, PortableTransferStatus.completed, reason: task.error);
     final input = InputFileStream(output);
     final archive = ZipDecoder().decodeStream(input);
-    expect(archive.files.where((e) => e.name.endsWith('.url')), hasLength(1));
-    archive.clear();
-    await input.close();
+    try {
+      final opml = archive.files.where((entry) => entry.name.endsWith('.opml'));
+      expect(opml, hasLength(1));
+      expect(utf8.decode(opml.single.content), contains(feed.channel.feedUrl));
+      expect(archive.files.where((entry) => entry.name.endsWith('.url')), isEmpty);
+      expect(archive.files.where((entry) =>
+          ['.mp3', '.mp4', '.m4a'].contains(p.extension(entry.name))), isEmpty);
+    } finally {
+      archive.clear();
+      await input.close();
+    }
     library.resetLibraryForTesting();
     library.skipImportSidecarWorkForTesting = true;
     final incoming = await transfer.importArchive(

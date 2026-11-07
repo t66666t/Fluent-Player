@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'sidebar_activity.dart';
 import 'landscape_sidebar_layout.dart';
+import 'subtitle_settings_layout.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ocr_subtitle_models.dart';
@@ -502,7 +503,10 @@ class _OcrSubtitlePanelState extends State<OcrSubtitlePanel> {
             : '',
         dropdownColor: const Color(0xFF252930),
         isExpanded: true,
-        style: const TextStyle(color: Colors.white),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: SubtitleSettingsTheme.foreground,
+          fontSize: 13,
+        ),
         decoration: InputDecoration(
           labelText: missing ? '识别模型（必选）' : '识别模型',
           labelStyle: missing ? TextStyle(color: errorColor) : null,
@@ -1008,561 +1012,576 @@ class _OcrSubtitlePanelState extends State<OcrSubtitlePanel> {
     final layout = LandscapeSidebarLayout.fromSize(sidebarSize);
     final managerJob = _manager.job;
     final running = (managerJob?.isRunning ?? false) || _startingOcr;
-    return Container(
-      color: const Color(0xFF17191D),
-      child: SafeArea(
-        child: Column(
-          children: [
-            SizedBox(
-              height: layout.headerHeight,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: layout.horizontalPadding,
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final textScale =
-                        MediaQuery.textScalerOf(context).scale(12) / 12;
-                    return Row(
-                      children: [
-                        SizedBox.square(
-                          dimension: layout.controlHeight,
-                          child: DesktopButtonClickRegion(
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              onPressed: widget.onBack,
-                              icon: Icon(
-                                Icons.arrow_back,
-                                color: Colors.white,
-                                size: layout.iconSize,
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: layout.isNarrow ? 2 : 6),
-                        Expanded(
-                          child: Text(
-                            'OCR 字幕',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: layout.titleSize,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ListenableBuilder(
-                          listenable: _manager.processingKeepAwake,
-                          builder: (context, _) => OcrKeepAwakeAction(
-                            key: const ValueKey('ocr-processing-keep-awake'),
-                            checked: _manager.keepScreenAwakeDuringProcessing,
-                            active: _manager.processingKeepAwake.isActive,
-                            compact: constraints.maxWidth < 300 * textScale,
-                            showLabel: constraints.maxWidth >= 200 * textScale,
-                            height: layout.controlHeight,
-                            onChanged: (value) => unawaited(
-                              _manager.setKeepScreenAwakeDuringProcessing(
-                                value,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  for (final entry in [(false, '识别'), (true, 'OCR 模型')])
-                    Expanded(
-                      child: DesktopButtonClickRegion(
-                        child: TextButton(
-                          key: ValueKey(
-                            entry.$1 ? 'ocr-tab-models' : 'ocr-tab-recognition',
-                          ),
-                          onPressed: () => setState(() {
-                            _modelsTab = entry.$1;
-                            _focusedModelId = null;
-                            _modelDetailsTrackIndex = null;
-                          }),
-                          style: TextButton.styleFrom(
-                            foregroundColor: _modelsTab == entry.$1
-                                ? const Color(0xFF8FB8FF)
-                                : Colors.white54,
-                          ),
-                          child: Text(
-                            entry.$2,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: _modelsTab
-                  ? OcrModelsPane(
-                      manager: _manager.modelManager,
-                      language: _tracks[_modelDetailsTrackIndex ?? 0].language,
-                      canChoose: !running,
-                      onChoose: _choosePreset,
-                      focusModelId: _focusedModelId,
-                    )
-                  : ListView(
-                      key: const PageStorageKey('ocr-options'),
-                      padding: EdgeInsets.fromLTRB(
-                        layout.horizontalPadding,
-                        layout.sectionGap,
-                        layout.horizontalPadding,
-                        layout.sectionGap,
-                      ),
-                      children: [
-                        // Keep form fields mounted so submit validation can focus
-                        // a missing model even when its field is off screen.
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (_preparationProgress != null) ...[
-                              MediaMaterializationProgressCard(
-                                progress: _preparationProgress!,
-                                error: _preparationError,
-                                onCancel: _preparingOnlineFrame
-                                    ? () {
-                                        final cancellation =
-                                            _preparationCancellation;
-                                        if (cancellation != null &&
-                                            !cancellation.isCompleted) {
-                                          cancellation.complete();
-                                        }
-                                      }
-                                    : null,
-                              ),
-                              const SizedBox(height: 12),
-                            ] else
-                              _buildActiveTaskCard(),
-                            if (_needsOnlineMaterialization) ...[
-                              _card(
-                                title: '视频素材',
-                                child: OcrVideoQualityField(
-                                  qualities: _videoQualities,
-                                  value: _videoQualityId,
-                                  loading: _loadingQualities,
-                                  enabled:
-                                      !running &&
-                                      !_preparingOnlineFrame &&
-                                      !_confirmingOnlineDownload &&
-                                      !_startingOcr,
-                                  podcast:
-                                      widget.videoItem.sourceRef?.podcast !=
-                                      null,
-                                  error: _qualityError,
-                                  onChanged: _changeVideoQuality,
-                                  onRetry: () =>
-                                      unawaited(_loadVideoQualities()),
+    return SubtitleSettingsTheme(
+      child: Container(
+        color: SubtitleSettingsTheme.background,
+        child: SafeArea(
+          child: Column(
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(minHeight: layout.headerHeight),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: layout.horizontalPadding,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final textScale =
+                          MediaQuery.textScalerOf(context).scale(12) / 12;
+                      return Row(
+                        children: [
+                          SizedBox.square(
+                            dimension: SubtitleSettingsTheme.controlHeight,
+                            child: DesktopButtonClickRegion(
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                onPressed: widget.onBack,
+                                icon: Icon(
+                                  Icons.arrow_back,
+                                  color: Colors.white,
+                                  size: layout.iconSize,
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                            ],
-                            _card(
-                              title: '字幕区域',
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (_previewPath != null &&
-                                      File(_previewPath!).existsSync())
-                                    SizedBox(
-                                      height: 118,
-                                      child: ListView.separated(
-                                        key: const PageStorageKey('ocr-tracks'),
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: _tracks.length,
-                                        separatorBuilder: (_, _) =>
-                                            const SizedBox(width: 8),
-                                        itemBuilder: (context, index) =>
-                                            SizedBox(
-                                              width: 190,
-                                              child: Stack(
-                                                children: [
-                                                  Positioned.fill(
-                                                    child: ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                      child: OcrRegionPreview(
-                                                        imagePath:
-                                                            _previewPath!,
-                                                        region: _tracks[index]
-                                                            .region,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    left: 6,
-                                                    top: 6,
-                                                    child: _numberBadge(
-                                                      index + 1,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                      ),
-                                    ),
-                                  const SizedBox(height: 9),
-                                  for (final track in _tracks)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
-                                      child: Text(
-                                        '区域 ${track.number} · ${_regionSummary(track.region)}',
-                                        style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    running
-                                        ? '任务准备和运行时会锁定本次配置；结束后可以调整。'
-                                        : '区域、语言和模型会自动保存；开始识别时使用当前显示的设置。',
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 13,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      DesktopButtonClickRegion(
-                                        child: OutlinedButton.icon(
-                                          onPressed:
-                                              running ||
-                                                  _preparingOnlineFrame ||
-                                                  _confirmingOnlineDownload ||
-                                                  _startingOcr
-                                              ? null
-                                              : _selectRegion,
-                                          icon: const Icon(Icons.crop_free),
-                                          label: const Text('精确框选字幕区域'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                            ),
+                          ),
+                          SizedBox(width: layout.isNarrow ? 2 : 6),
+                          Expanded(
+                            child: Text(
+                              'OCR 字幕',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: layout.titleSize,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            _card(
-                              title: '识别设置',
-                              child: Column(
-                                children: [
-                                  for (
-                                    var index = 0;
-                                    index < _tracks.length;
-                                    index++
-                                  ) ...[
-                                    Row(
-                                      children: [
-                                        _numberBadge(index + 1),
-                                        const SizedBox(width: 9),
-                                        Expanded(
-                                          child: CapsuleDropdownButtonFormField<OcrSubtitleLanguage>(
-                                            isExpanded: true,
-                                            key: ValueKey(
-                                              'ocr_language_${index}_${_tracks[index].language.name}',
-                                            ),
-                                            initialValue:
-                                                _tracks[index].language,
-                                            dropdownColor: const Color(
-                                              0xFF252930,
-                                            ),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                            ),
-                                            decoration: InputDecoration(
-                                              labelText:
-                                                  '区域 ${index + 1} 的字幕语言',
-                                              border:
-                                                  const OutlineInputBorder(),
-                                              isDense: true,
-                                            ),
-                                            items: [
-                                              for (final language
-                                                  in OcrSubtitleLanguage.values)
-                                                DropdownMenuItem(
-                                                  value: language,
-                                                  child: Text(
-                                                    language.label,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
+                          ),
+                          const SizedBox(width: 8),
+                          ListenableBuilder(
+                            listenable: _manager.processingKeepAwake,
+                            builder: (context, _) => OcrKeepAwakeAction(
+                              key: const ValueKey('ocr-processing-keep-awake'),
+                              checked: _manager.keepScreenAwakeDuringProcessing,
+                              active: _manager.processingKeepAwake.isActive,
+                              compact: constraints.maxWidth < 300 * textScale,
+                              showLabel:
+                                  constraints.maxWidth >= 200 * textScale,
+                              height: SubtitleSettingsTheme.controlHeight,
+                              onChanged: (value) => unawaited(
+                                _manager.setKeepScreenAwakeDuringProcessing(
+                                  value,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const Divider(color: Colors.white10, height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    for (final entry in [(false, '识别'), (true, 'OCR 模型')])
+                      Expanded(
+                        child: DesktopButtonClickRegion(
+                          child: TextButton(
+                            key: ValueKey(
+                              entry.$1
+                                  ? 'ocr-tab-models'
+                                  : 'ocr-tab-recognition',
+                            ),
+                            onPressed: () => setState(() {
+                              _modelsTab = entry.$1;
+                              _focusedModelId = null;
+                              _modelDetailsTrackIndex = null;
+                            }),
+                            style: TextButton.styleFrom(
+                              foregroundColor: _modelsTab == entry.$1
+                                  ? const Color(0xFF8FB8FF)
+                                  : Colors.white54,
+                            ),
+                            child: Text(
+                              entry.$2,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _modelsTab
+                    ? OcrModelsPane(
+                        manager: _manager.modelManager,
+                        language:
+                            _tracks[_modelDetailsTrackIndex ?? 0].language,
+                        canChoose: !running,
+                        onChoose: _choosePreset,
+                        focusModelId: _focusedModelId,
+                      )
+                    : ListView(
+                        key: const PageStorageKey('ocr-options'),
+                        padding: EdgeInsets.fromLTRB(
+                          layout.horizontalPadding,
+                          layout.sectionGap,
+                          layout.horizontalPadding,
+                          layout.sectionGap,
+                        ),
+                        children: [
+                          // Keep form fields mounted so submit validation can focus
+                          // a missing model even when its field is off screen.
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (_preparationProgress != null) ...[
+                                MediaMaterializationProgressCard(
+                                  progress: _preparationProgress!,
+                                  error: _preparationError,
+                                  onCancel: _preparingOnlineFrame
+                                      ? () {
+                                          final cancellation =
+                                              _preparationCancellation;
+                                          if (cancellation != null &&
+                                              !cancellation.isCompleted) {
+                                            cancellation.complete();
+                                          }
+                                        }
+                                      : null,
+                                ),
+                                const SizedBox(height: 8),
+                              ] else
+                                _buildActiveTaskCard(),
+                              if (_needsOnlineMaterialization) ...[
+                                _card(
+                                  title: '视频素材',
+                                  child: OcrVideoQualityField(
+                                    qualities: _videoQualities,
+                                    value: _videoQualityId,
+                                    loading: _loadingQualities,
+                                    enabled:
+                                        !running &&
+                                        !_preparingOnlineFrame &&
+                                        !_confirmingOnlineDownload &&
+                                        !_startingOcr,
+                                    podcast:
+                                        widget.videoItem.sourceRef?.podcast !=
+                                        null,
+                                    error: _qualityError,
+                                    onChanged: _changeVideoQuality,
+                                    onRetry: () =>
+                                        unawaited(_loadVideoQualities()),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              _card(
+                                title: '字幕区域',
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (_previewPath != null &&
+                                        File(_previewPath!).existsSync())
+                                      SizedBox(
+                                        height: 118,
+                                        child: ListView.separated(
+                                          key: const PageStorageKey(
+                                            'ocr-tracks',
+                                          ),
+                                          scrollDirection: Axis.horizontal,
+                                          itemCount: _tracks.length,
+                                          separatorBuilder: (_, _) =>
+                                              const SizedBox(width: 8),
+                                          itemBuilder: (context, index) =>
+                                              SizedBox(
+                                                width: 190,
+                                                child: Stack(
+                                                  children: [
+                                                    Positioned.fill(
+                                                      child: ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
+                                                        child: OcrRegionPreview(
+                                                          imagePath:
+                                                              _previewPath!,
+                                                          region: _tracks[index]
+                                                              .region,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      left: 6,
+                                                      top: 6,
+                                                      child: _numberBadge(
+                                                        index + 1,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                            ],
-                                            onChanged: running
-                                                ? null
-                                                : (value) {
-                                                    if (value == null) return;
-                                                    setState(() {
-                                                      _tracks[index] =
-                                                          _tracks[index].copyWith(
-                                                            language: value,
-                                                            modelId: _manager
-                                                                .rememberedModelIdFor(
-                                                                  value,
-                                                                ),
-                                                            modelIdentity: '',
-                                                          );
-                                                      _tracksEditedInThisPanel =
-                                                          true;
-                                                    });
-                                                    _manager.rememberTracks(
-                                                      widget.videoItem.id,
-                                                      _tracks,
-                                                    );
-                                                    _refreshModelAndEstimate();
-                                                  },
+                                              ),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 9),
+                                    for (final track in _tracks)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 3,
+                                        ),
+                                        child: Text(
+                                          '区域 ${track.number} · ${_regionSummary(track.region)}',
+                                          style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 11,
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
+                                      ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      running
+                                          ? '任务准备和运行时会锁定本次配置；结束后可以调整。'
+                                          : '区域、语言和模型会自动保存；开始识别时使用当前显示的设置。',
+                                      style: SubtitleSettingsTheme.description,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
                                         DesktopButtonClickRegion(
-                                          child: IconButton(
-                                            key: ValueKey(
-                                              'ocr-delete-region-$index',
-                                            ),
-                                            tooltip: _tracks.length <= 1
-                                                ? '至少保留一个字幕区域'
-                                                : '删除区域 ${index + 1}',
-                                            style: IconButton.styleFrom(
-                                              fixedSize: const Size.square(48),
-                                              minimumSize: const Size.square(
-                                                48,
-                                              ),
-                                              maximumSize: const Size.square(
-                                                48,
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                              visualDensity:
-                                                  VisualDensity.standard,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              foregroundColor: Colors.white70,
-                                              disabledForegroundColor:
-                                                  Colors.white24,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                            iconSize: 20,
+                                          child: OutlinedButton.icon(
                                             onPressed:
-                                                running || _tracks.length <= 1
+                                                running ||
+                                                    _preparingOnlineFrame ||
+                                                    _confirmingOnlineDownload ||
+                                                    _startingOcr
                                                 ? null
-                                                : () => _deleteTrack(index),
-                                            icon: const Icon(
-                                              Icons.delete_outline,
-                                            ),
+                                                : _selectRegion,
+                                            icon: const Icon(Icons.crop_free),
+                                            label: const Text('精确框选字幕区域'),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    _modelSelector(index, running: running),
-                                    if (index != _tracks.length - 1)
-                                      const SizedBox(height: 12),
                                   ],
-                                  const SizedBox(height: 4),
-                                  SwitchListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    title: const Text(
-                                      '自选时间范围',
-                                      style: TextStyle(color: Colors.white),
-                                    ),
-                                    subtitle: _customRange
-                                        ? Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: DesktopButtonClickRegion(
-                                              child: TextButton.icon(
-                                                key: const ValueKey(
-                                                  'ocr-edit-time-range',
-                                                ),
-                                                onPressed:
-                                                    running ||
-                                                        widget.duration <=
-                                                            Duration.zero
-                                                    ? null
-                                                    : _editRange,
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor:
-                                                      Colors.white70,
-                                                  disabledForegroundColor:
-                                                      Colors.white38,
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        vertical: 4,
-                                                      ),
-                                                  minimumSize: Size.zero,
-                                                  tapTargetSize:
-                                                      MaterialTapTargetSize
-                                                          .shrinkWrap,
-                                                ),
-                                                iconAlignment:
-                                                    IconAlignment.end,
-                                                icon: const Icon(
-                                                  Icons.edit_outlined,
-                                                  size: 14,
-                                                ),
-                                                label: Text(
-                                                  '${_formatMs(_startMs)} — ${_formatMs(_endMs)}',
-                                                ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _card(
+                                title: '识别设置',
+                                child: Column(
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < _tracks.length;
+                                      index++
+                                    ) ...[
+                                      Row(
+                                        children: [
+                                          _numberBadge(index + 1),
+                                          const SizedBox(width: 9),
+                                          Expanded(
+                                            child: CapsuleDropdownButtonFormField<OcrSubtitleLanguage>(
+                                              useInputTheme: true,
+                                              isExpanded: true,
+                                              key: ValueKey(
+                                                'ocr_language_${index}_${_tracks[index].language.name}',
                                               ),
-                                            ),
-                                          )
-                                        : const Text(
-                                            '整个视频',
-                                            style: TextStyle(
-                                              color: Colors.white54,
+                                              initialValue:
+                                                  _tracks[index].language,
+                                              dropdownColor: const Color(
+                                                0xFF252930,
+                                              ),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    '区域 ${index + 1} 的字幕语言',
+                                                border:
+                                                    const OutlineInputBorder(),
+                                                isDense: true,
+                                              ),
+                                              items: [
+                                                for (final language
+                                                    in OcrSubtitleLanguage
+                                                        .values)
+                                                  DropdownMenuItem(
+                                                    value: language,
+                                                    child: Text(
+                                                      language.label,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                              ],
+                                              onChanged: running
+                                                  ? null
+                                                  : (value) {
+                                                      if (value == null) return;
+                                                      setState(() {
+                                                        _tracks[index] =
+                                                            _tracks[index].copyWith(
+                                                              language: value,
+                                                              modelId: _manager
+                                                                  .rememberedModelIdFor(
+                                                                    value,
+                                                                  ),
+                                                              modelIdentity: '',
+                                                            );
+                                                        _tracksEditedInThisPanel =
+                                                            true;
+                                                      });
+                                                      _manager.rememberTracks(
+                                                        widget.videoItem.id,
+                                                        _tracks,
+                                                      );
+                                                      _refreshModelAndEstimate();
+                                                    },
                                             ),
                                           ),
-                                    value: _customRange,
-                                    onChanged: running
-                                        ? null
-                                        : (value) {
-                                            setState(
-                                              () => _customRange = value,
-                                            );
-                                            unawaited(
-                                              _refreshModelAndEstimate(),
-                                            );
-                                          },
-                                  ),
-                                  if (_customRange) ...[
-                                    Listener(
-                                      onPointerDown: (event) => _rangePointerX =
-                                          event.localPosition.dx,
-                                      onPointerUp: (_) => _rangePointerX = null,
-                                      onPointerCancel: (_) =>
-                                          _rangePointerX = null,
-                                      child: SliderTheme(
-                                        data: SliderTheme.of(context).copyWith(
-                                          minThumbSeparation: 0,
-                                          thumbSelector: _selectRangeThumb,
-                                          showValueIndicator:
-                                              ShowValueIndicator.never,
-                                        ),
-                                        child: RangeSlider(
-                                          // A known track inset also lets handle
-                                          // selection use the original pointer down.
-                                          padding: EdgeInsets.zero,
-                                          values: RangeValues(_startMs, _endMs),
-                                          min: 0,
-                                          max: widget.duration.inMilliseconds
-                                              .toDouble()
-                                              .clamp(1, double.infinity),
-                                          onChanged:
-                                              running ||
-                                                  widget.duration <=
-                                                      Duration.zero
-                                              ? null
-                                              : _changeRange,
-                                          onChangeEnd: (_) =>
-                                              _refreshModelAndEstimate(),
-                                        ),
+                                          const SizedBox(width: 8),
+                                          DesktopButtonClickRegion(
+                                            child: IconButton(
+                                              key: ValueKey(
+                                                'ocr-delete-region-$index',
+                                              ),
+                                              tooltip: _tracks.length <= 1
+                                                  ? '至少保留一个字幕区域'
+                                                  : '删除区域 ${index + 1}',
+                                              style: IconButton.styleFrom(
+                                                fixedSize: const Size.square(
+                                                  48,
+                                                ),
+                                                minimumSize: const Size.square(
+                                                  48,
+                                                ),
+                                                maximumSize: const Size.square(
+                                                  48,
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                visualDensity:
+                                                    VisualDensity.standard,
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                foregroundColor: Colors.white70,
+                                                disabledForegroundColor:
+                                                    Colors.white24,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                              iconSize: 20,
+                                              onPressed:
+                                                  running || _tracks.length <= 1
+                                                  ? null
+                                                  : () => _deleteTrack(index),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                      const SizedBox(height: 8),
+                                      _modelSelector(index, running: running),
+                                      if (index != _tracks.length - 1)
+                                        const SizedBox(height: 8),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    SwitchListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: const Text(
+                                        '自选时间范围',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                      subtitle: _customRange
+                                          ? Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: DesktopButtonClickRegion(
+                                                child: TextButton.icon(
+                                                  key: const ValueKey(
+                                                    'ocr-edit-time-range',
+                                                  ),
+                                                  onPressed:
+                                                      running ||
+                                                          widget.duration <=
+                                                              Duration.zero
+                                                      ? null
+                                                      : _editRange,
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor:
+                                                        Colors.white70,
+                                                    disabledForegroundColor:
+                                                        Colors.white38,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 4,
+                                                        ),
+                                                    minimumSize: Size.zero,
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                  ),
+                                                  iconAlignment:
+                                                      IconAlignment.end,
+                                                  icon: const Icon(
+                                                    Icons.edit_outlined,
+                                                    size: 14,
+                                                  ),
+                                                  label: Text(
+                                                    '${_formatMs(_startMs)} — ${_formatMs(_endMs)}',
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                          : const Text(
+                                              '整个视频',
+                                              style: TextStyle(
+                                                color: Colors.white54,
+                                              ),
+                                            ),
+                                      value: _customRange,
+                                      onChanged: running
+                                          ? null
+                                          : (value) {
+                                              setState(
+                                                () => _customRange = value,
+                                              );
+                                              unawaited(
+                                                _refreshModelAndEstimate(),
+                                              );
+                                            },
                                     ),
-                                  ],
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        _modelInstalled
-                                            ? Icons.offline_pin
-                                            : Icons.inventory_2_outlined,
-                                        size: 17,
-                                        color: _modelInstalled
-                                            ? Colors.greenAccent
-                                            : const Color(0xFF65A2FF),
-                                      ),
-                                      const SizedBox(width: 7),
-                                      Expanded(
-                                        child: Text(
-                                          _modelInstalled
-                                              ? '所选语言模型均已就绪，可完全离线识别'
-                                              : _tracks.any(
-                                                  (track) =>
-                                                      track.modelId.isEmpty,
-                                                )
-                                              ? '请为每个字幕区域选择识别模型'
-                                              : '开始识别时会自动下载所选模型，完成后继续 OCR',
-                                          style: const TextStyle(
-                                            color: Colors.white60,
-                                            fontSize: 12,
+                                    if (_customRange) ...[
+                                      Listener(
+                                        onPointerDown: (event) =>
+                                            _rangePointerX =
+                                                event.localPosition.dx,
+                                        onPointerUp: (_) =>
+                                            _rangePointerX = null,
+                                        onPointerCancel: (_) =>
+                                            _rangePointerX = null,
+                                        child: SliderTheme(
+                                          data: SliderTheme.of(context)
+                                              .copyWith(
+                                                minThumbSeparation: 0,
+                                                thumbSelector:
+                                                    _selectRangeThumb,
+                                                showValueIndicator:
+                                                    ShowValueIndicator.never,
+                                              ),
+                                          child: RangeSlider(
+                                            // A known track inset also lets handle
+                                            // selection use the original pointer down.
+                                            padding: EdgeInsets.zero,
+                                            values: RangeValues(
+                                              _startMs,
+                                              _endMs,
+                                            ),
+                                            min: 0,
+                                            max: widget.duration.inMilliseconds
+                                                .toDouble()
+                                                .clamp(1, double.infinity),
+                                            onChanged:
+                                                running ||
+                                                    widget.duration <=
+                                                        Duration.zero
+                                                ? null
+                                                : _changeRange,
+                                            onChangeEnd: (_) =>
+                                                _refreshModelAndEstimate(),
                                           ),
                                         ),
                                       ),
                                     ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            _card(
-                              title: '识别设备',
-                              child: OcrComputeSettings(manager: _manager),
-                            ),
-                            const SizedBox(height: 12),
-                            _card(
-                              title: '处理流程',
-                              child: Text(
-                                '当前有 ${_tracks.length} 个独立字幕区域。\n'
-                                '模型就绪后，任务会按设备余量自动分配算力。'
-                                '各区域共享视频抽帧，逐段识别并分别保存 SRT 字幕。'
-                                '取消或完成后会清理临时帧。',
-                                style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 12,
-                                  height: 1.55,
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _modelInstalled
+                                              ? Icons.offline_pin
+                                              : Icons.inventory_2_outlined,
+                                          size: 17,
+                                          color: _modelInstalled
+                                              ? Colors.greenAccent
+                                              : const Color(0xFF65A2FF),
+                                        ),
+                                        const SizedBox(width: 7),
+                                        Expanded(
+                                          child: Text(
+                                            _modelInstalled
+                                                ? '所选语言模型均已就绪，可完全离线识别'
+                                                : _tracks.any(
+                                                    (track) =>
+                                                        track.modelId.isEmpty,
+                                                  )
+                                                ? '请为每个字幕区域选择识别模型'
+                                                : '开始识别时会自动下载所选模型，完成后继续 OCR',
+                                            style: SubtitleSettingsTheme
+                                                .description,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(height: 8),
+                              _card(
+                                title: '识别设备',
+                                child: OcrComputeSettings(manager: _manager),
+                              ),
+                              const SizedBox(height: 8),
+                              _card(
+                                title: '处理流程',
+                                child: Text(
+                                  '当前有 ${_tracks.length} 个独立字幕区域。\n'
+                                  '模型就绪后，任务会按设备余量自动分配算力。'
+                                  '各区域共享视频抽帧，逐段识别并分别保存 SRT 字幕。'
+                                  '取消或完成后会清理临时帧。',
+                                  style: SubtitleSettingsTheme.description,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+              ),
+              SidebarValueBuilder<Object>(
+                listenable: _manager,
+                select: () => (_manager.job, _manager.materializationProgress),
+                builder: (context, _, _) {
+                  final current = _manager.job;
+                  final own = current?.videoId == widget.videoItem.id;
+                  final active = current?.isRunning ?? false;
+                  return RepaintBoundary(
+                    key: const ValueKey('ocr-pinned-footer-boundary'),
+                    child: _buildPinnedTaskAction(
+                      layout: layout,
+                      job: own || active ? current : null,
+                      running: active,
+                      runningOtherVideo: active && !own,
                     ),
-            ),
-            SidebarValueBuilder<Object>(
-              listenable: _manager,
-              select: () => (_manager.job, _manager.materializationProgress),
-              builder: (context, _, _) {
-                final current = _manager.job;
-                final own = current?.videoId == widget.videoItem.id;
-                final active = current?.isRunning ?? false;
-                return RepaintBoundary(
-                  key: const ValueKey('ocr-pinned-footer-boundary'),
-                  child: _buildPinnedTaskAction(
-                    layout: layout,
-                    job: own || active ? current : null,
-                    running: active,
-                    runningOtherVideo: active && !own,
-                  ),
-                );
-              },
-            ),
-          ],
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1725,11 +1744,7 @@ class _OcrSubtitlePanelState extends State<OcrSubtitlePanel> {
                 child: SelectableText(
                   diagnostic,
                   key: const ValueKey('ocr-task-diagnostic'),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
+                  style: SubtitleSettingsTheme.description,
                 ),
               ),
             ),
@@ -1780,7 +1795,7 @@ class _OcrSubtitlePanelState extends State<OcrSubtitlePanel> {
           ),
           const SizedBox(height: 7),
           SizedBox(
-            height: layout.controlHeight,
+            height: SubtitleSettingsTheme.controlHeight,
             child: running
                 ? DesktopButtonClickRegion(
                     child: OutlinedButton.icon(
@@ -1875,43 +1890,23 @@ class _OcrSubtitlePanelState extends State<OcrSubtitlePanel> {
     );
   }
 
-  Widget _card({required String title, required Widget child}) => Material(
-    color: const Color(0xFF20242A),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
-      side: const BorderSide(color: Colors.white10),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    ),
-  );
+  Widget _card({required String title, required Widget child}) =>
+      SubtitleSettingsGroup(title: title, child: child);
 
   Widget _numberBadge(int number) => Container(
     width: 26,
     height: 26,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: const Color(0xFF65A2FF),
+      color: SubtitleSettingsTheme.divider,
       borderRadius: BorderRadius.circular(7),
     ),
     child: Text(
       '$number',
-      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800),
+      style: const TextStyle(
+        color: SubtitleSettingsTheme.foreground,
+        fontWeight: FontWeight.w600,
+      ),
     ),
   );
 

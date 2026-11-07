@@ -1,3 +1,4 @@
+import 'package:video_player_app/utils/app_branding.dart';
 import '../../services/app_storage_service.dart';
 import 'dart:io';
 import 'package:flutter/widgets.dart';
@@ -9,7 +10,7 @@ import 'podcast_media_store.dart';
 import 'podcast_notifications.dart';
 import 'podcast_store.dart';
 
-const podcastBackgroundTask = 'com.example.video_player_app.podcasts.refresh';
+const podcastBackgroundTask = '$kApplicationId.podcasts.refresh';
 @pragma('vm:entry-point')
 void podcastBackgroundDispatcher() {
   Workmanager().executeTask((task, inputData) async {

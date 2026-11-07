@@ -50,12 +50,12 @@ void main() {
   );
 
   testWidgets(
-    'real MiSans glyphs stay visually centered in short and mixed captions',
+    'real Noto glyphs stay visually centered in short and mixed captions',
     (tester) async {
       await tester.runAsync(() async {
         await (FontLoader(
-          'MiSans',
-        )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+          'Noto Sans SC',
+        )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
       });
       for (final fontSize in [10.5, 11.0]) {
         for (final scale in [1.0, 1.5, 2.0]) {
@@ -78,7 +78,7 @@ void main() {
                 child: MediaQuery(
                   data: MediaQueryData(textScaler: TextScaler.linear(scale)),
                   child: DefaultTextStyle(
-                    style: const TextStyle(fontFamily: 'MiSans', fontSize: 14),
+                    style: const TextStyle(fontFamily: 'Noto Sans SC', fontSize: 14),
                     child: Center(
                       child: RepaintBoundary(
                         key: key,

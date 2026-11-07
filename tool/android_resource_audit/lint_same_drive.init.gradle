@@ -6,7 +6,7 @@ gradle.projectsEvaluated {
         def sourceDrive = project.projectDir.toPath().root
         def outputDrive = project.layout.buildDirectory.get().asFile.toPath().root
         if (sourceDrive != outputDrive) {
-            def auditCache = new File('C:/Users/11/AppData/Local/Temp/android-resource-audit-lint-20261101')
+            def auditCache = new File(System.getProperty('java.io.tmpdir'), 'android-resource-audit-lint')
             project.layout.buildDirectory.set(new File(auditCache, project.name))
         }
     }

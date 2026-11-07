@@ -408,11 +408,16 @@ class AiVideoContextLoader {
     this.ytDlpTasks,
     this.onlineTimeout = const Duration(seconds: 15),
     this.failedRetryDelay = const Duration(seconds: 30),
+    this.allowRemoteSubtitleSources = false,
   });
 
   BilibiliSubtitleTracks? bilibiliTracks;
   final SubtitleDiscoveryService discovery;
   final BilibiliOfflineDetails? offlineDetails;
+
+  /// Online link learning only uses user-supplied text. It cannot fetch legacy
+  /// platform subtitle lists or promote downloader metadata into the context.
+  final bool allowRemoteSubtitleSources;
   Iterable<YtDlpTaskRecord> Function()? ytDlpTasks;
 
   /// The chat session outlives the panel that created it. Each time a panel
@@ -560,8 +565,10 @@ class AiVideoContextLoader {
         ).toString();
       }
     }
-    _addYtDlpMetadata(video, metadata);
-    final bili = bilibiliPlayerVideoOf(video);
+    if (allowRemoteSubtitleSources) _addYtDlpMetadata(video, metadata);
+    final bili = allowRemoteSubtitleSources
+        ? bilibiliPlayerVideoOf(video)
+        : null;
     if (bili != null) {
       metadata['bvid'] = bili.bvid;
       metadata['page'] = bili.page;
@@ -674,7 +681,7 @@ class AiVideoContextLoader {
         ),
       );
     }
-    final service = bilibiliTracks;
+    final service = allowRemoteSubtitleSources ? bilibiliTracks : null;
     if (service != null && BilibiliSubtitleTracks.covers(video)) {
       final clock = Stopwatch()..start();
       var listingTimedOut = false;

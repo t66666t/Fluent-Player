@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../../screens/import_location_settings_screen.dart';
 import '../../screens/network_settings_screen.dart';
-import '../../services/bilibili/bilibili_download_service.dart';
-import '../../services/library_service.dart';
 import '../../services/settings_service.dart';
 import '../../theme/app_page_transitions.dart';
-import '../../widgets/bilibili_login_dialogs.dart';
 import '../model_center/model_center_screen.dart';
 import 'onboarding_screen.dart';
 import 'onboarding_store.dart';
@@ -33,7 +28,7 @@ class OnboardingFlow {
             preview: preview,
             settings: settings,
             openDestination: (pageContext, destination) =>
-                _openDestination(pageContext, settings, destination),
+                _openDestination(pageContext, destination),
           ),
         ),
       );
@@ -44,26 +39,15 @@ class OnboardingFlow {
 
   static Future<void> _openDestination(
     BuildContext context,
-    SettingsService settings,
     OnboardingDestination destination,
   ) async {
     switch (destination) {
       case OnboardingDestination.network:
         await openNetworkSettings(context);
       case OnboardingDestination.bilibili:
-        await context.read<BilibiliDownloadService>().apiService.init();
-        if (!context.mounted) return;
-        await showBilibiliLoginDialog(context);
+        return; // Retired saved destination; never reopen a website.
       case OnboardingDestination.importLocation:
-        final library = context.read<LibraryService?>();
-        await Navigator.of(context).push<bool>(
-          AppMaterialPageRoute(
-            builder: (_) => ImportLocationSettingsScreen(
-              settings: settings,
-              library: library,
-            ),
-          ),
-        );
+        return; // Retained identity; local imports always follow their folder.
       case OnboardingDestination.subtitleServices:
         await openModelCenter(context);
     }

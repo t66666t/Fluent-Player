@@ -16,6 +16,7 @@ import 'cached_thumbnail_widget.dart';
 import 'bilibili_queue_thumbnail.dart';
 import '../utils/app_toast.dart';
 import '../theme/app_tokens.dart';
+import '../utils/keyboard_focus_visibility.dart';
 
 /// 底部播放卡片组件
 class MiniPlaybackCard extends StatefulWidget {
@@ -53,11 +54,18 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
   Widget? _lastVisibleProgress;
 
   static const Duration _tooltipWaitDuration = Duration(milliseconds: 450);
+  // Logical pixels keep the reading pace consistent across screen densities.
+  // Derive each loop's duration from its distance so long titles stay gentle.
+  static const double _titleScrollPixelsPerSecond = 18;
+  static const double _titleScrollGap = 50;
+
+  void _openPlayback() {
+    unawaited(AppHaptics.cardTap(SettingsService()));
+    widget.onTap?.call();
+  }
 
   /// 点按高亮会跟着路由 ticker 走。播放页盖住媒体库后 ticker 停住，
   /// 返回时才把没播完的高亮淡掉，卡片就会从亮闪回暗色。
-  static const WidgetStateProperty<Color?> _noTapOverlay =
-      WidgetStatePropertyAll<Color?>(Colors.transparent);
 
   @override
   void initState() {
@@ -78,10 +86,7 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
         );
 
     // 初始化标题滚动动画控制器
-    _scrollController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    );
+    _scrollController = AnimationController(vsync: this);
 
     _scrollAnimation = Tween<double>(
       begin: 0.0,
@@ -263,14 +268,12 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: widget.onTap == null
-                      ? null
-                      : () {
-                          unawaited(AppHaptics.cardTap(SettingsService()));
-                          widget.onTap!();
-                        },
+                  canRequestFocus: false,
+                  onTap: widget.onTap == null ? null : _openPlayback,
                   splashFactory: NoSplash.splashFactory,
-                  overlayColor: _noTapOverlay,
+                  overlayColor: const WidgetStatePropertyAll(
+                    Colors.transparent,
+                  ),
                   splashColor: Colors.transparent,
                   highlightColor: Colors.transparent,
                   hoverColor: Colors.transparent,
@@ -387,22 +390,31 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
   ) {
     return Row(
       children: [
-        // 缩略图
-        _buildThumbnail(currentItem, dimensions),
+        // 封面和标题是同一个进入播放页的目标：悬停和方向键选中都包住这两块。
+        Expanded(
+          child: _MiniFocusOutline(
+            borderRadius: _MiniPlaybackEntrySurface.radius,
+            child: _MiniPlaybackEntrySurface(
+              onTap: widget.onTap == null ? null : _openPlayback,
+              cover: _buildThumbnail(currentItem, dimensions),
+              spacing: dimensions.padding,
+              title: _buildScrollingTitle(currentItem, dimensions),
+            ),
+          ),
+        ),
 
         SizedBox(width: dimensions.padding),
 
-        // 标题（带滚动动画）
-        Expanded(child: _buildScrollingTitle(currentItem, dimensions)),
-
-        SizedBox(width: dimensions.padding),
-
-        PlaybackModeButton(
-          key: const ValueKey('mini-playback-mode'),
-          size: Size.square(_resolveButtonSize(dimensions)),
-          iconSize: dimensions.iconSize,
-          backgroundColor: Colors.white.withValues(alpha: 0.04),
-          foregroundColor: Colors.white,
+        _MiniFocusOutline(
+          circular: true,
+          child: PlaybackModeButton(
+            key: const ValueKey('mini-playback-mode'),
+            size: Size.square(_resolveButtonSize(dimensions)),
+            iconSize: dimensions.iconSize,
+            backgroundColor: Colors.white.withValues(alpha: 0.04),
+            foregroundColor: Colors.white,
+            focusColor: Colors.transparent,
+          ),
         ),
         SizedBox(width: dimensions.padding / 3),
 
@@ -528,6 +540,22 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
             _scrollController.reset();
           }
           _titleOverflows = textWidth > containerWidth;
+          final scrollDistance = textWidth + _titleScrollGap;
+          if (_titleOverflows) {
+            final duration = Duration(
+              microseconds:
+                  (scrollDistance /
+                          _titleScrollPixelsPerSecond *
+                          Duration.microsecondsPerSecond)
+                      .round(),
+            );
+            if (_scrollController.duration != duration) {
+              // A running repeat keeps its old period until restarted. Stop
+              // without resetting the phase when font or layout metrics change.
+              _scrollController.stop();
+              _scrollController.duration = duration;
+            }
+          }
           _syncTitleTicker();
 
           // 如果文本宽度超过容器宽度，启用滚动
@@ -554,12 +582,12 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
                     textDirection: TextDirection.ltr,
                     children: [
                       text,
-                      const SizedBox(width: 50),
+                      const SizedBox(width: _titleScrollGap),
                       ExcludeSemantics(child: text),
                     ],
                   ),
                   builder: (context, child) {
-                    final offset = _scrollAnimation.value * (textWidth + 50);
+                    final offset = _scrollAnimation.value * scrollDistance;
                     return Transform.translate(
                       offset: Offset(-offset, 0),
                       transformHitTests: false,
@@ -733,88 +761,104 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
           // 进度条
           SizedBox(
             height: 27.0,
-            child: Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: _progressHaptics.pointerDown,
-              onPointerMove: (event) {
-                _progressHaptics.pointerMove(event);
-                if (!_isDraggingProgress) return;
-                final isInCancelArea = _isInCancelArea(event.position);
-                if (isInCancelArea != _isProgressDragCanceling) {
-                  _progressHaptics.setCanceling(isInCancelArea);
+            // 描边画在控件边缘上。进度条本身又贴着这块区域的两端，
+            // 框就会压住轨道。左右留出与时间文字相同的 8px，框改成胶囊。
+            child: _MiniFocusOutline(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              borderRadius: const BorderRadius.all(Radius.circular(14)),
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _progressHaptics.pointerDown,
+                onPointerMove: (event) {
+                  _progressHaptics.pointerMove(event);
+                  if (!_isDraggingProgress) return;
+                  final isInCancelArea = _isInCancelArea(event.position);
+                  if (isInCancelArea != _isProgressDragCanceling) {
+                    _progressHaptics.setCanceling(isInCancelArea);
+                    setState(() {
+                      _isProgressDragCanceling = isInCancelArea;
+                    });
+                  }
+                },
+                onPointerCancel: (event) {
+                  _progressHaptics.reset();
+                  _progressDragWasCancelled = true;
+                  if (!_isDraggingProgress) return;
                   setState(() {
-                    _isProgressDragCanceling = isInCancelArea;
+                    _isDraggingProgress = false;
+                    _isProgressDragCanceling = false;
                   });
-                }
-              },
-              onPointerCancel: (event) {
-                _progressHaptics.reset();
-                _progressDragWasCancelled = true;
-                if (!_isDraggingProgress) return;
-                setState(() {
-                  _isDraggingProgress = false;
-                  _isProgressDragCanceling = false;
-                });
-              },
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 2.0,
-                  trackShape: const RoundedRectSliderTrackShape(),
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 4.0,
+                },
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 2.0,
+                    trackShape: const RoundedRectSliderTrackShape(),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 4.0,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 10.0,
+                    ),
+                    activeTrackColor: _isProgressDragCanceling
+                        ? Colors.grey
+                        : Colors.blue,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: _isProgressDragCanceling
+                        ? Colors.grey
+                        : Colors.blue,
+                    overlayColor: _isProgressDragCanceling
+                        ? Colors.grey.withValues(alpha: 0.2)
+                        : Colors.blue.withValues(alpha: 0.2),
                   ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 10.0,
+                  child: MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(navigationMode: NavigationMode.directional),
+                    child: Slider(
+                      key: const ValueKey('mini-playback-progress'),
+                      // Preserve the current compact thumb until its replacement
+                      // has matching geometry in the mini-player layout.
+                      // ignore: deprecated_member_use
+                      year2023: true,
+                      padding: EdgeInsets.zero,
+                      value: currentProgress.clamp(0.0, 1.0),
+                      onChangeStart: (value) {
+                        _progressDragWasCancelled = false;
+                        if (duration > Duration.zero) {
+                          _progressHaptics.begin(value);
+                        }
+                        setState(() {
+                          _isDraggingProgress = true;
+                          _isProgressDragCanceling = false;
+                          _dragProgressValue = value;
+                        });
+                      },
+                      onChanged: (value) {
+                        _progressHaptics.update(value);
+                        setState(() {
+                          _isDraggingProgress = true;
+                          _dragProgressValue = value;
+                        });
+                      },
+                      onChangeEnd: (value) {
+                        final commit =
+                            !_isProgressDragCanceling &&
+                            !_progressDragWasCancelled;
+                        _progressHaptics.end(committed: commit);
+                        if (commit) {
+                          final newPosition = Duration(
+                            milliseconds: (value * duration.inMilliseconds)
+                                .round(),
+                          );
+                          playbackService.seekTo(newPosition);
+                        }
+                        setState(() {
+                          _isDraggingProgress = false;
+                          _isProgressDragCanceling = false;
+                        });
+                      },
+                    ),
                   ),
-                  activeTrackColor: _isProgressDragCanceling
-                      ? Colors.grey
-                      : Colors.blue,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: _isProgressDragCanceling
-                      ? Colors.grey
-                      : Colors.blue,
-                  overlayColor: _isProgressDragCanceling
-                      ? Colors.grey.withValues(alpha: 0.2)
-                      : Colors.blue.withValues(alpha: 0.2),
-                ),
-                child: Slider(
-                  // Preserve the current compact thumb until its replacement
-                  // has matching geometry in the mini-player layout.
-                  // ignore: deprecated_member_use
-                  year2023: true,
-                  padding: EdgeInsets.zero,
-                  value: currentProgress.clamp(0.0, 1.0),
-                  onChangeStart: (value) {
-                    _progressDragWasCancelled = false;
-                    if (duration > Duration.zero) _progressHaptics.begin(value);
-                    setState(() {
-                      _isDraggingProgress = true;
-                      _isProgressDragCanceling = false;
-                      _dragProgressValue = value;
-                    });
-                  },
-                  onChanged: (value) {
-                    _progressHaptics.update(value);
-                    setState(() {
-                      _isDraggingProgress = true;
-                      _dragProgressValue = value;
-                    });
-                  },
-                  onChangeEnd: (value) {
-                    final commit =
-                        !_isProgressDragCanceling && !_progressDragWasCancelled;
-                    _progressHaptics.end(committed: commit);
-                    if (commit) {
-                      final newPosition = Duration(
-                        milliseconds: (value * duration.inMilliseconds).round(),
-                      );
-                      playbackService.seekTo(newPosition);
-                    }
-                    setState(() {
-                      _isDraggingProgress = false;
-                      _isProgressDragCanceling = false;
-                    });
-                  },
                 ),
               ),
             ),
@@ -1041,30 +1085,160 @@ class _MiniPlaybackCardState extends State<MiniPlaybackCard>
     return Tooltip(
       message: tooltip,
       waitDuration: _tooltipWaitDuration,
-      child: SizedBox(
-        width: buttonSize,
-        height: buttonSize,
-        child: Material(
-          color: resolvedBackgroundColor,
-          shape: shape == BoxShape.circle
-              ? const CircleBorder()
-              : RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(buttonSize * 0.28),
-                ),
-          clipBehavior: Clip.antiAlias,
-          child: InkResponse(
-            onTap: onPressed,
-            containedInkWell: true,
-            highlightShape: shape == BoxShape.circle
-                ? BoxShape.circle
-                : BoxShape.rectangle,
-            radius: buttonSize / 2,
-            child: Center(
-              child: Icon(icon, size: iconSize, color: iconColor),
+      child: _MiniFocusOutline(
+        circular: shape == BoxShape.circle,
+        child: SizedBox(
+          width: buttonSize,
+          height: buttonSize,
+          child: Material(
+            color: resolvedBackgroundColor,
+            shape: shape == BoxShape.circle
+                ? const CircleBorder()
+                : RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(buttonSize * 0.28),
+                  ),
+            clipBehavior: Clip.antiAlias,
+            child: InkResponse(
+              onTap: AppHaptics.wrap(onPressed, light: true),
+              focusColor: Colors.transparent,
+              containedInkWell: true,
+              highlightShape: shape == BoxShape.circle
+                  ? BoxShape.circle
+                  : BoxShape.rectangle,
+              radius: buttonSize / 2,
+              child: Center(
+                child: Icon(icon, size: iconSize, color: iconColor),
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Cover and title as one control that opens the player.
+///
+/// The previous hover lived on the title ink, which is painted on the
+/// [Material] underneath. The cover is opaque, so that ink never reaches the
+/// artwork. The shared wash is therefore split: one layer behind the title
+/// glyphs, and one layer over the cover.
+class _MiniPlaybackEntrySurface extends StatefulWidget {
+  const _MiniPlaybackEntrySurface({
+    required this.onTap,
+    required this.cover,
+    required this.spacing,
+    required this.title,
+  });
+
+  static const BorderRadius radius = BorderRadius.all(Radius.circular(12));
+
+  final VoidCallback? onTap;
+  final Widget cover;
+  final double spacing;
+  final Widget title;
+
+  @override
+  State<_MiniPlaybackEntrySurface> createState() =>
+      _MiniPlaybackEntrySurfaceState();
+}
+
+class _MiniPlaybackEntrySurfaceState extends State<_MiniPlaybackEntrySurface> {
+  bool _hovered = false;
+
+  Widget _wash(Color color, bool visible) {
+    return IgnorePointer(
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : KeyboardFocusVisibility.fadeDuration,
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: visible ? color : color.withValues(alpha: 0),
+          borderRadius: _MiniPlaybackEntrySurface.radius,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hover = Theme.of(context).hoverColor;
+    final showHover = _hovered && widget.onTap != null;
+    final wash = _wash(hover, showHover);
+    return InkWell(
+      key: const ValueKey('mini-playback-title'),
+      onTap: widget.onTap,
+      onHover: widget.onTap == null
+          ? null
+          : (hovered) {
+              if (_hovered != hovered) setState(() => _hovered = hovered);
+            },
+      // Keep ink off this surface. A splash here would sit under the cover
+      // and can resume after the player route covers the library.
+      hoverColor: Colors.transparent,
+      focusColor: Colors.transparent,
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      splashFactory: NoSplash.splashFactory,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      borderRadius: _MiniPlaybackEntrySurface.radius,
+      child: Stack(
+        children: [
+          Positioned.fill(child: wash),
+          Row(
+            children: [
+              Stack(
+                children: [
+                  widget.cover,
+                  Positioned.fill(child: _wash(hover, showHover)),
+                ],
+              ),
+              SizedBox(width: widget.spacing),
+              Expanded(child: widget.title),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Paint above the control, including opaque button materials.
+class _MiniFocusOutline extends StatefulWidget {
+  const _MiniFocusOutline({
+    required this.child,
+    this.circular = false,
+    this.borderRadius = const BorderRadius.all(Radius.circular(6)),
+    this.padding = EdgeInsets.zero,
+  });
+  final Widget child;
+  final bool circular;
+  final BorderRadius borderRadius;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  State<_MiniFocusOutline> createState() => _MiniFocusOutlineState();
+}
+
+class _MiniFocusOutlineState extends State<_MiniFocusOutline> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    canRequestFocus: false,
+    skipTraversal: true,
+    onFocusChange: (focused) {
+      if (_focused != focused) setState(() => _focused = focused);
+    },
+    child: KeyboardFocusHighlight(
+      focused: _focused,
+      decoration: BoxDecoration(
+        shape: widget.circular ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: widget.circular ? null : widget.borderRadius,
+        border: Border.all(color: Colors.lightBlueAccent, width: 2),
+      ),
+      child: Padding(padding: widget.padding, child: widget.child),
+    ),
+  );
 }

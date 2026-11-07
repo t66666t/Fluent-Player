@@ -10,7 +10,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
 import 'package:video_player_app/widgets/ai_transcription_panel.dart';
-import 'package:video_player_app/widgets/stable_width_label.dart';
 import 'package:video_player_app/widgets/model_center_button.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
 import 'package:video_player_app/services/ai_subtitle_api_settings.dart';
@@ -45,10 +44,10 @@ void main() {
           ),
         ),
       );
-      final transcription = tester.widget<ElevatedButton>(
+      expect(
         find.byKey(const ValueKey('ai-transcription-action')),
+        findsNothing,
       );
-      expect(transcription.onPressed, isNull);
       expect(find.text('转录中 · 点击暂停'), findsOneWidget);
       await tester.tap(
         find.byKey(const ValueKey('ai-transcription-translate-action')),
@@ -77,7 +76,7 @@ void main() {
             if (const bool.fromEnvironment('AI_TASK_PREVIEWS')) {
               await tester.runAsync(() async {
                 for (final font in {
-                  'MiSans': 'assets/fonts/MiSans-Regular.otf',
+                  'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
                   'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
                 }.entries) {
                   await (FontLoader(
@@ -94,7 +93,7 @@ void main() {
               MaterialApp(
                 theme: ThemeData(
                   brightness: Brightness.dark,
-                  fontFamily: 'MiSans',
+                  fontFamily: 'Noto Sans SC',
                   useMaterial3: true,
                 ),
                 builder: (context, child) => MediaQuery(
@@ -319,12 +318,7 @@ void main() {
                 : 'ai-transcription-translate-action',
           ),
         );
-        await tester.scrollUntilVisible(
-          other,
-          80,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.tap(other, warnIfMissed: false);
+        expect(other, findsNothing);
         expect(manager.resumedId, isNull);
         await tester.ensureVisible(button);
         await tester.tap(button);
@@ -402,7 +396,10 @@ void main() {
           await tester.pump();
           expect(cancel, findsNothing);
           expect(find.text('开始语音转录'), findsOneWidget);
-          expect(find.text('转录并翻译'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('ai-transcription-translation-toggle')),
+            findsOneWidget,
+          );
           expect(manager.stopCalls, 0);
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());
@@ -424,7 +421,7 @@ void main() {
         addTearDown(tester.view.reset);
         await tester.runAsync(() async {
           for (final font in {
-            'MiSans': 'assets/fonts/MiSans-Regular.otf',
+            'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
             'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
           }.entries) {
             await (FontLoader(
@@ -438,7 +435,7 @@ void main() {
           MaterialApp(
             theme: ThemeData(
               brightness: Brightness.dark,
-              fontFamily: 'MiSans',
+              fontFamily: 'Noto Sans SC',
               useMaterial3: true,
             ),
             home: Scaffold(
@@ -621,7 +618,7 @@ void main() {
     },
   );
 
-  testWidgets('转录按钮用固定宽度标签，并覆盖全部状态文案', (tester) async {
+  testWidgets('转录按钮的图标和文字居中，并保留翻译入口', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(
       MaterialApp(
@@ -646,26 +643,94 @@ void main() {
       matching: find.byType(ElevatedButton),
     );
     expect(button, findsOneWidget);
-    final label = tester.widget<StableWidthLabel>(
-      find.descendant(of: button, matching: find.byType(StableWidthLabel)),
-    );
-    expect(
-      label.variants,
-      containsAll(<String>['开始语音转录', '加入队列', '已加入队列', '转录中...', '重新转录']),
-    );
+    _expectActionCentered(tester, '开始语音转录', button);
     expect(tester.takeException(), isNull);
-    expect(find.text('转录并翻译'), findsOneWidget);
-    expect(find.byTooltip('翻译设置'), findsOneWidget);
-    expect(find.byType(ModelCenterButton), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('translation-direction-summary')).hitTestable(),
+      find.byKey(const ValueKey('ai-transcription-translation-toggle')),
       findsOneWidget,
     );
-    expect(find.textContaining('智能互译：中→英 / 其他→中'), findsOneWidget);
-    expect(find.text('必应翻译'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ai-transcription-translation-settings')),
+      findsOneWidget,
+    );
+    expect(find.byType(ModelCenterButton), findsOneWidget);
+    expect(
+      find
+          .byKey(const ValueKey('ai-transcription-translation-settings'))
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(find.textContaining('智能互译'), findsOneWidget);
+    expect(find.textContaining('必应翻译'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('优化和翻译开关一起决定底部按钮名称，图标和文字保持居中', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChangeNotifierProvider<TranscriptionManager>.value(
+            value: TranscriptionManager(),
+            child: SizedBox(
+              width: 420,
+              height: 720,
+              child: AiTranscriptionPanel(
+                videoPath: 'fake/video.mp4',
+                onCompleted: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final plain = find.byKey(const ValueKey('ai-transcription-action'));
+    expect(find.text('开始语音转录'), findsOneWidget);
+    _expectActionCentered(tester, '开始语音转录', plain);
+
+    Future<void> toggle(String key) async {
+      final target = find.byKey(ValueKey(key));
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    await toggle('subtitle-optimization-toggle');
+    expect(find.text('转录并优化'), findsOneWidget);
+    _expectActionCentered(tester, '转录并优化', plain);
+
+    await toggle('ai-transcription-translation-toggle');
+    final translate = find.byKey(
+      const ValueKey('ai-transcription-translate-action'),
+    );
+    expect(find.text('转录、优化并翻译'), findsOneWidget);
+    _expectActionCentered(tester, '转录、优化并翻译', translate);
+
+    await toggle('subtitle-optimization-toggle');
+    expect(
+      find.descendant(of: translate, matching: find.text('转录并翻译')),
+      findsOneWidget,
+    );
+    _expectActionCentered(tester, '转录并翻译', translate);
+  });
+}
+
+void _expectActionCentered(WidgetTester tester, String label, Finder button) {
+  final buttonRect = tester.getRect(button);
+  final textRect = tester.getRect(
+    find.descendant(of: button, matching: find.text(label)),
+  );
+  final iconRect = tester.getRect(
+    find.descendant(of: button, matching: find.byType(Icon)).first,
+  );
+  expect(
+    ((iconRect.left + textRect.right) / 2 - buttonRect.center.dx).abs(),
+    lessThan(4),
+  );
+  expect((iconRect.center.dy - textRect.center.dy).abs(), lessThan(2));
 }
 
 class _StoppableManager extends TranscriptionManager {

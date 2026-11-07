@@ -1,3 +1,4 @@
+import '../utils/app_branding.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,8 +10,10 @@ import 'package:path/path.dart' as p;
 import '../services/library_service.dart';
 import '../services/storage_audit_models.dart';
 import '../services/storage_audit_service.dart';
+import '../services/storage_presentation.dart';
 import '../theme/app_tokens.dart';
 import '../utils/page_shortcut_keys.dart';
+import '../widgets/confirmation_dialog_shortcuts.dart';
 import '../widgets/media_library_page_shortcuts.dart';
 import '../widgets/operation_status.dart';
 import 'recycle_bin_screen.dart';
@@ -37,25 +40,6 @@ Color storageCategoryColor(StorageCategory category) => switch (category) {
   StorageCategory.other => const Color(0xFF747F8C),
 };
 Color _color(StorageCategory category) => storageCategoryColor(category);
-
-enum _SourceFilter { all, podcast, cloudDrive, other }
-
-bool _matchesSource(StorageFileEntry file, _SourceFilter filter) {
-  final podcast =
-      file.origin == StorageOrigin.podcast ||
-      file.sourceTags.contains(StorageOrigin.podcast);
-  final cloud =
-      file.origin == StorageOrigin.cloudDrive ||
-      file.sourceTags.contains(StorageOrigin.cloudDrive);
-  return switch (filter) {
-    _SourceFilter.all => true,
-    _SourceFilter.podcast => podcast,
-    _SourceFilter.cloudDrive => cloud,
-    // Shared files stay visible here even when a podcast or cloud tag also applies.
-    _SourceFilter.other =>
-      !podcast && !cloud || file.origin == StorageOrigin.shared,
-  };
-}
 
 class StorageManagementScreen extends StatefulWidget {
   const StorageManagementScreen({
@@ -87,7 +71,7 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
   String _errorTitle = '扫描未完成';
   Future<void> Function()? _retryError;
   StorageCategory? _errorCategory;
-  _SourceFilter _sourceFilter = _SourceFilter.all;
+  StorageSourceFilter _sourceFilter = StorageSourceFilter.all;
 
   @override
   void initState() {
@@ -171,27 +155,36 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
     if (needsConfirmation) {
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          title: Text(
-            '删除 ${plan.files.length} 个文件？',
-            style: const TextStyle(fontSize: 16),
+        builder: (context) => ConfirmationDialogShortcuts(
+          onCancel: () => Navigator.pop(context, false),
+          confirmKey: LogicalKeyboardKey.keyD,
+          onConfirm: () => Navigator.pop(context, true),
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            title: Text(
+              '删除 ${plan.files.length} 个文件？',
+              style: const TextStyle(fontSize: 16),
+            ),
+            content: Text(
+              '${formatStorageSize(plan.bytes)} · ${plan.files.map((file) => file.category.title).toSet().join('、')}\n\n${_deletionExplanation(action)}',
+            ),
+            actions: [
+              DesktopButtonClickRegion(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const ConfirmationShortcutLabel('取消', 'Esc'),
+                ),
+              ),
+              DesktopButtonClickRegion(
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const ConfirmationShortcutLabel('删除这些文件', 'Enter / D'),
+                ),
+              ),
+            ],
           ),
-          content: Text(_deletionExplanation(action)),
-          actions: [
-            DesktopButtonClickRegion(
-              child: TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('取消'),
-              ),
-            ),
-            DesktopButtonClickRegion(
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('删除这些文件'),
-              ),
-            ),
-          ],
         ),
       );
       if (confirmed != true || !mounted) return;
@@ -281,13 +274,13 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
     final snapshot = _snapshot;
     if (snapshot == null) return;
     final report = StringBuffer(
-      'Fluent Player 存储诊断\n扫描时间：${snapshot.scannedAt.toLocal()}\n',
+      '$kAppDisplayName 存储诊断\n扫描时间：${snapshot.scannedAt.toLocal()}\n',
     );
     report.writeln(
       '应用文件：${snapshot.appBytes} B (${formatStorageSize(snapshot.appBytes)} / ${formatStorageSize(snapshot.appBytes, binary: true)})',
     );
     report.writeln(
-      '外部引用：${snapshot.externalBytes} B\n可直接清理：${snapshot.clearableBytes} B',
+      '外部引用：${snapshot.externalBytes} B\n可清理缓存：${StorageView(snapshot, StorageSourceFilter.all).cacheBytes} B\n可删除文件（含需确认成果）：${snapshot.clearableBytes} B',
     );
     final system = snapshot.platformUsage;
     if (system != null) {
@@ -309,7 +302,11 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
     report.writeln('\n体积最大的 20 个应用文件：');
     for (final file in snapshot.files.where((f) => !f.external).take(20)) {
       report.writeln(
-        '${file.bytes} B | ${file.category.title} | ${file.path} | ${file.protection ?? '可清理'}',
+        '${file.bytes} B | ${file.category.title} | ${file.path} | ${file.protection ?? (storageDeletionPermitted(StorageCleanupAction.clearCache, file)
+                ? '可重建缓存'
+                : file.canDelete || file.explicitDelete
+                ? '需确认删除'
+                : '由对应功能管理')}',
       );
     }
     if (snapshot.warnings.isNotEmpty) {
@@ -329,12 +326,21 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
           onDelete: _delete,
           failure: () => _error,
           failureDetails: () => _errorDetails,
-          onManage: widget.library == null ? null : () => _manageCards(usage),
-          onSnapshot: () =>
-              _snapshot?.categories
-                  .firstWhere((c) => c.category == usage.category)
-                  .files ??
-              usage.files,
+          onManage:
+              widget.library == null ||
+                  (usage.category != StorageCategory.libraryMedia &&
+                      usage.category != StorageCategory.recycleBin)
+              ? null
+              : (files) =>
+                    _manageCards(StorageCategoryUsage(usage.category, files)),
+          onSnapshot: () => _snapshot == null
+              ? usage.files
+              : StorageView(_snapshot!, _sourceFilter).files
+                    .where(
+                      (file) =>
+                          !file.external && file.category == usage.category,
+                    )
+                    .toList(),
         ),
       ),
     );
@@ -358,28 +364,33 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
         .toSet()
         .toList();
     if (ids.isEmpty) {
-      _notice('请从下载页或对应功能的任务管理中删除；任务恢复数据受保护。', category: usage.category);
+      _notice('当前列表没有可管理的媒体库卡片。', category: usage.category);
       return;
     }
     final approved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('将 ${ids.length} 张卡片移入回收站？'),
-        content: const Text('原文件会随卡片保留在回收站。要释放空间，请在回收站永久删除；外部原文件仍留在设备上。'),
-        actions: [
-          DesktopButtonClickRegion(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
+      builder: (context) => ConfirmationDialogShortcuts(
+        onCancel: () => Navigator.pop(context, false),
+        confirmKey: LogicalKeyboardKey.keyR,
+        onConfirm: () => Navigator.pop(context, true),
+        child: AlertDialog(
+          title: Text('将 ${ids.length} 张卡片移入回收站？'),
+          content: const Text('原文件会随卡片保留在回收站。要释放空间，请在回收站永久删除；外部原文件仍留在设备上。'),
+          actions: [
+            DesktopButtonClickRegion(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const ConfirmationShortcutLabel('取消', 'Esc'),
+              ),
             ),
-          ),
-          DesktopButtonClickRegion(
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('移入回收站'),
+            DesktopButtonClickRegion(
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const ConfirmationShortcutLabel('移入回收站', 'Enter / R'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     if (approved != true || !mounted) return;
@@ -390,31 +401,7 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
-    final visible = snapshot == null
-        ? const <StorageFileEntry>[]
-        : snapshot.files
-              .where((file) => _matchesSource(file, _sourceFilter))
-              .toList();
-    final categories = snapshot == null
-        ? <StorageCategoryUsage>[]
-        : (StorageCategory.values
-              .map(
-                (category) => StorageCategoryUsage(
-                  category,
-                  visible
-                      .where(
-                        (file) => !file.external && file.category == category,
-                      )
-                      .toList(),
-                ),
-              )
-              .where((usage) => usage.files.isNotEmpty)
-              .toList()
-            ..sort((a, b) => b.bytes.compareTo(a.bytes)));
-    final visibleAppBytes = visible.fold<int>(
-      0,
-      (sum, file) => sum + (file.external ? 0 : file.bytes),
-    );
+    final view = snapshot == null ? null : StorageView(snapshot, _sourceFilter);
     return MediaLibraryPageShortcuts(
       bindings: {
         LogicalKeyboardKey.keyR: () {
@@ -493,7 +480,7 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (snapshot != null) ...[
+                  if (snapshot != null && view != null) ...[
                     if (widget.service.resourcesChanged?.call() == true &&
                         !_scanning)
                       Padding(
@@ -517,9 +504,16 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        for (final filter in _SourceFilter.values)
+                        for (final filter in storageSourceFilters.where(
+                          (filter) =>
+                              filter == _sourceFilter ||
+                              filter == StorageSourceFilter.all ||
+                              filter == StorageSourceFilter.local ||
+                              filter == StorageSourceFilter.podcast ||
+                              snapshot.files.any(filter.matches),
+                        ))
                           ChoiceChip(
-                            label: Text(_sourceLabel(filter)),
+                            label: Text(filter.title),
                             selected: _sourceFilter == filter,
                             onSelected: (_) =>
                                 setState(() => _sourceFilter = filter),
@@ -534,10 +528,13 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                     const SizedBox(height: 12),
                     _StorageSummary(
                       snapshot: snapshot,
-                      categories: categories,
-                      visibleBytes: _sourceFilter == _SourceFilter.all
-                          ? null
-                          : visibleAppBytes,
+                      view: view,
+                      source: _sourceFilter,
+                      enabled: !_scanning && !_deleting,
+                      onClearCache: () => _delete(
+                        view.cacheFiles,
+                        action: StorageCleanupAction.clearCache,
+                      ),
                     ),
                     if (snapshot.platformUsage case final system?) ...[
                       const SizedBox(height: 12),
@@ -551,6 +548,8 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                                 'Android 系统占用对照',
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
+                              if (_sourceFilter != StorageSourceFilter.all)
+                                const Text('以下系统统计始终对应整个应用。'),
                               const SizedBox(height: 10),
                               Text(
                                 '系统合计：${formatStorageSize(system.totalBytes)}',
@@ -591,39 +590,73 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                       style: TextStyle(color: AppTokens.text2),
                     ),
                     const SizedBox(height: 12),
-                    for (final usage in categories)
-                      _CategoryTile(
-                        usage: usage,
-                        total: _sourceFilter == _SourceFilter.all
-                            ? snapshot.appBytes
-                            : visibleAppBytes,
-                        enabled: !_scanning && !_deleting,
-                        onOpen: () => _openCategory(usage),
-                        onDelete: () => _delete(usage.files),
-                        feedback:
-                            _error != null && _errorCategory == usage.category
-                            ? OperationStatus(
-                                title: _error!,
-                                kind: OperationStatusKind.error,
-                                details: _errorDetails,
-                                actions: [
-                                  if (_retryError != null)
-                                    TextButton(
-                                      onPressed: _retryError,
-                                      child: const Text('重试'),
-                                    ),
-                                ],
-                              )
-                            : null,
+                    if (view.categories.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Text('此来源暂无应用文件。'),
                       ),
-                    if (snapshot.externalBytes > 0)
+                    for (final section in StorageSection.values)
+                      if (view.categories.any(
+                        (usage) => storageSection(usage.category) == section,
+                      )) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12, bottom: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                section.title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                section.description,
+                                style: const TextStyle(
+                                  color: AppTokens.text2,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        for (final usage in view.categories.where(
+                          (usage) => storageSection(usage.category) == section,
+                        ))
+                          _CategoryTile(
+                            usage: usage,
+                            total: view.bytes,
+                            enabled: !_scanning && !_deleting,
+                            onOpen: () => _openCategory(usage),
+                            onDelete: () => _delete(usage.files),
+                            feedback:
+                                _error != null &&
+                                    _errorCategory == usage.category
+                                ? OperationStatus(
+                                    title: _error!,
+                                    kind: OperationStatusKind.error,
+                                    details: _errorDetails,
+                                    actions: [
+                                      if (_retryError != null)
+                                        TextButton(
+                                          onPressed: _retryError,
+                                          child: const Text('重试'),
+                                        ),
+                                    ],
+                                  )
+                                : null,
+                          ),
+                      ],
+                    if (view.externalFiles.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 16),
                         child: ListTile(
                           tileColor: AppTokens.bgCard,
                           leading: const Icon(Icons.folder_open),
                           title: Text(
-                            '外部原文件 · ${formatStorageSize(snapshot.externalBytes)}',
+                            '外部原文件 · ${formatStorageSize(view.externalBytes)}',
                           ),
                           subtitle: const Text('仅引用，不计入上面的应用文件占用。'),
                           onTap: () => Navigator.push(
@@ -633,9 +666,7 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
                                 title: '外部原文件',
                                 description:
                                     '这些文件位于应用目录之外。应用只引用它们；请通过设备文件管理器删除。',
-                                files: snapshot.files
-                                    .where((f) => f.external)
-                                    .toList(),
+                                files: view.externalFiles,
                                 onDelete: _delete,
                                 deletionProgress: _deletionProgress,
                               ),
@@ -700,22 +731,19 @@ class _StorageManagementScreenState extends State<StorageManagementScreen> {
   }
 }
 
-String _sourceLabel(_SourceFilter filter) => switch (filter) {
-  _SourceFilter.all => '全部',
-  _SourceFilter.podcast => '播客',
-  _SourceFilter.cloudDrive => '网盘',
-  _SourceFilter.other => '其他来源 / 共享',
-};
-
 class _StorageSummary extends StatelessWidget {
   const _StorageSummary({
     required this.snapshot,
-    required this.categories,
-    this.visibleBytes,
+    required this.view,
+    required this.source,
+    required this.enabled,
+    required this.onClearCache,
   });
   final StorageSnapshot snapshot;
-  final List<StorageCategoryUsage> categories;
-  final int? visibleBytes;
+  final StorageView view;
+  final StorageSourceFilter source;
+  final bool enabled;
+  final VoidCallback onClearCache;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(20),
@@ -728,22 +756,44 @@ class _StorageSummary extends StatelessWidget {
         final text = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('已扫描应用文件', style: TextStyle(color: AppTokens.text2)),
+            Text(
+              source == StorageSourceFilter.all
+                  ? '已扫描应用文件'
+                  : '${source.title} · 应用文件',
+              style: const TextStyle(color: AppTokens.text2),
+            ),
             const SizedBox(height: 8),
             Text(
-              formatStorageSize(visibleBytes ?? snapshot.appBytes),
+              formatStorageSize(view.bytes),
               key: const ValueKey('storageTotal'),
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
             ),
             Text(
-              '${formatStorageSize(snapshot.appBytes, binary: true)} · ${snapshot.appFileCount} 个文件',
+              '${formatStorageSize(view.bytes, binary: true)} · ${view.fileCount} 个文件',
               style: const TextStyle(color: AppTokens.text2),
             ),
             const SizedBox(height: 16),
             Text(
-              '可直接清理 ${formatStorageSize(snapshot.clearableBytes)}',
+              '可清理缓存 ${formatStorageSize(view.cacheBytes)}',
+              key: const ValueKey('storageCacheTotal'),
               style: const TextStyle(color: Color(0xFF63C9BB), fontSize: 16),
             ),
+            if (view.confirmationBytes > 0)
+              Text(
+                '需确认删除 ${formatStorageSize(view.confirmationBytes)}',
+                style: const TextStyle(color: AppTokens.text2),
+              ),
+            if (view.cacheFiles.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              DesktopButtonClickRegion(
+                child: FilledButton.tonalIcon(
+                  key: const ValueKey('storageClearCache'),
+                  onPressed: enabled ? onClearCache : null,
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                  label: const Text('清理此范围缓存'),
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               '扫描于 ${snapshot.scannedAt.toLocal().toString().split('.').first}',
@@ -752,14 +802,29 @@ class _StorageSummary extends StatelessWidget {
           ],
         );
         final chart = Semantics(
-          label: '应用文件存储分布。各类别大小与占比见下方列表。',
+          label: '${source.title}的应用文件存储分布。各类别大小与占比见下方列表。',
           child: SizedBox(
             width: 180,
             height: 180,
             child: CustomPaint(
-              painter: _StorageChart(
-                categories,
-                visibleBytes ?? snapshot.appBytes,
+              painter: _StorageChart(view.categories, view.bytes),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${view.categories.length} 类',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Text(
+                      '用途分布',
+                      style: TextStyle(color: AppTokens.text2, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -770,7 +835,19 @@ class _StorageSummary extends StatelessWidget {
             children: [
               text,
               const SizedBox(height: 20),
-              Center(child: chart),
+              Semantics(
+                label: '${source.title}的应用文件存储分布。各类别大小与占比见下方列表。',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    height: 12,
+                    width: double.infinity,
+                    child: CustomPaint(
+                      painter: _StorageBar(view.categories, view.bytes),
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         }
@@ -783,6 +860,32 @@ class _StorageSummary extends StatelessWidget {
       },
     ),
   );
+}
+
+class _StorageBar extends CustomPainter {
+  _StorageBar(this.categories, this.total);
+  final List<StorageCategoryUsage> categories;
+  final int total;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = AppTokens.bgOverlay;
+    canvas.drawRect(Offset.zero & size, paint);
+    if (total <= 0) return;
+    var start = 0.0;
+    for (final category in categories) {
+      final width = size.width * category.bytes / total;
+      canvas.drawRect(
+        Rect.fromLTWH(start, 0, width, size.height),
+        paint..color = _color(category.category),
+      );
+      start += width;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StorageBar old) =>
+      old.total != total || old.categories != categories;
 }
 
 class _StorageChart extends CustomPainter {
@@ -901,7 +1004,7 @@ class _CategoryTile extends StatelessWidget {
                       child: TextButton(
                         onPressed: enabled ? onDelete : null,
                         child: Text(
-                          '清理 ${formatStorageSize(usage.clearableBytes)}',
+                          '${usage.cacheBytes == usage.clearableBytes ? '清理' : '删除'} ${formatStorageSize(usage.clearableBytes)}',
                         ),
                       ),
                     ),
@@ -924,7 +1027,7 @@ class _StorageDeletionIndicator extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder(
     valueListenable: progress,
     builder: (context, value, _) {
-      if (value == null) return const LinearProgressIndicator();
+      if (value == null) return const SizedBox.shrink();
       final finishing = value.completedFiles == value.totalFiles;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -968,7 +1071,7 @@ class _StorageDetailScreen extends StatefulWidget {
     StorageCleanupAction action,
   })
   onDelete;
-  final Future<void> Function()? onManage;
+  final Future<void> Function(List<StorageFileEntry> files)? onManage;
   final List<StorageFileEntry> Function()? onSnapshot;
   final String? Function()? failure, failureDetails;
   @override
@@ -976,6 +1079,7 @@ class _StorageDetailScreen extends StatefulWidget {
 }
 
 class _StorageDetailScreenState extends State<_StorageDetailScreen> {
+  final FocusNode _searchFocus = FocusNode(debugLabel: 'storage detail search');
   late List<StorageFileEntry> _all;
   late List<StorageFileEntry> _filtered;
   String _query = '';
@@ -1002,6 +1106,7 @@ class _StorageDetailScreenState extends State<_StorageDetailScreen> {
 
   @override
   void dispose() {
+    _searchFocus.dispose();
     _searchTimer?.cancel();
     _filterRevision++;
     super.dispose();
@@ -1070,228 +1175,273 @@ class _StorageDetailScreenState extends State<_StorageDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => MediaLibraryPageShortcuts(
+    bindings: {
+      LogicalKeyboardKey.keyS: _searchFocus.requestFocus,
+      LogicalKeyboardKey.slash: _searchFocus.requestFocus,
+    },
+    child: _buildDetail(context),
+  );
+
+  Widget _buildDetail(BuildContext context) => Scaffold(
     backgroundColor: AppTokens.bgBase,
     appBar: AppBar(title: Text(widget.title)),
     body: SafeArea(
       top: false,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_filterError != null || widget.failure?.call() != null)
-                  OperationStatus(
-                    title: _filterError ?? widget.failure!.call()!,
-                    kind: OperationStatusKind.error,
-                    details: _filterError != null
-                        ? _filterDetails
-                        : widget.failureDetails?.call(),
-                    actions: [
-                      if (_filterError != null)
-                        TextButton(
-                          onPressed: _busy ? null : () => _filter(_query),
-                          child: const Text('重试'),
-                        ),
-                    ],
-                  )
-                else
-                  Text(widget.description),
-                const SizedBox(height: 8),
-                Text(
-                  '${formatStorageSize(_bytes)} · ${_all.length} 个文件，按大小排列',
-                  style: const TextStyle(color: AppTokens.text2),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: [
-                    if (_all.any(
-                      (file) => storageDeletionPermitted(
-                        StorageCleanupAction.clearCache,
-                        file,
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_filterError != null || widget.failure?.call() != null)
+                    OperationStatus(
+                      title: _filterError ?? widget.failure!.call()!,
+                      kind: OperationStatusKind.error,
+                      details: _filterError != null
+                          ? _filterDetails
+                          : widget.failureDetails?.call(),
+                      actions: [
+                        if (_filterError != null)
+                          TextButton(
+                            onPressed: _busy ? null : () => _filter(_query),
+                            child: const Text('重试'),
+                          ),
+                      ],
+                    )
+                  else
+                    Text(widget.description),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${formatStorageSize(_bytes)} · ${_all.length} 个文件，按大小排列',
+                    style: const TextStyle(color: AppTokens.text2),
+                  ),
+                  if (_query.isNotEmpty)
+                    Text(
+                      '当前匹配 ${_filtered.length} 个文件 · ${formatStorageSize(_filtered.fold<int>(0, (sum, file) => sum + file.bytes))}，以下操作仅作用于匹配文件。',
+                      style: const TextStyle(
+                        color: AppTokens.text2,
+                        fontSize: 12,
                       ),
-                    ))
-                      DesktopButtonClickRegion(
-                        child: FilledButton.tonal(
-                          onPressed: _busy || _searching
-                              ? null
-                              : () => _action(
-                                  () => widget.onDelete(
-                                    _filtered,
-                                    action: StorageCleanupAction.clearCache,
+                    ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      if (_filtered.any(
+                        (file) => storageDeletionPermitted(
+                          StorageCleanupAction.clearCache,
+                          file,
+                        ),
+                      ))
+                        DesktopButtonClickRegion(
+                          child: FilledButton.tonal(
+                            onPressed: _busy || _searching
+                                ? null
+                                : () => _action(
+                                    () => widget.onDelete(
+                                      _filtered,
+                                      action: StorageCleanupAction.clearCache,
+                                    ),
                                   ),
-                                ),
-                          child: const Text('清理缓存'),
-                        ),
-                      ),
-                    if (_all.any(
-                      (file) => storageDeletionPermitted(
-                        StorageCleanupAction.deleteOffline,
-                        file,
-                      ),
-                    ))
-                      DesktopButtonClickRegion(
-                        child: FilledButton.tonal(
-                          onPressed: _busy || _searching
-                              ? null
-                              : () => _action(
-                                  () => widget.onDelete(
-                                    _filtered,
-                                    action: StorageCleanupAction.deleteOffline,
-                                  ),
-                                ),
-                          child: const Text('删除离线下载'),
-                        ),
-                      ),
-                    if (_all.any(
-                      (file) => storageDeletionPermitted(
-                        StorageCleanupAction.deleteSubtitle,
-                        file,
-                      ),
-                    ))
-                      DesktopButtonClickRegion(
-                        child: FilledButton.tonal(
-                          onPressed: _busy || _searching
-                              ? null
-                              : () => _action(
-                                  () => widget.onDelete(
-                                    _filtered,
-                                    action: StorageCleanupAction.deleteSubtitle,
-                                  ),
-                                ),
-                          child: const Text('删除已保存字幕'),
-                        ),
-                      ),
-                    if (_all.any(
-                      (file) => storageDeletionPermitted(
-                        StorageCleanupAction.abandonResume,
-                        file,
-                      ),
-                    ))
-                      DesktopButtonClickRegion(
-                        child: FilledButton.tonal(
-                          onPressed: _busy || _searching
-                              ? null
-                              : () => _action(
-                                  () => widget.onDelete(
-                                    _filtered,
-                                    action: StorageCleanupAction.abandonResume,
-                                  ),
-                                ),
-                          child: const Text('放弃续传数据'),
-                        ),
-                      ),
-                    if (_hasDeletable)
-                      DesktopButtonClickRegion(
-                        child: FilledButton.tonal(
-                          onPressed: _busy || _searching
-                              ? null
-                              : () => _action(() => widget.onDelete(_filtered)),
-                          child: const Text('清理当前列表可删除文件'),
-                        ),
-                      ),
-                    if (widget.onManage != null)
-                      DesktopButtonClickRegion(
-                        child: TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _action(widget.onManage!),
-                          child: Text(
-                            widget.title == StorageCategory.recycleBin.title
-                                ? '打开回收站管理'
-                                : '管理关联卡片 / 任务',
+                            child: const Text('清理缓存'),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  onChanged: _scheduleFilter,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: '搜索文件路径或关联卡片',
-                    border: OutlineInputBorder(),
+                      if (_filtered.any(
+                        (file) => storageDeletionPermitted(
+                          StorageCleanupAction.deleteOffline,
+                          file,
+                        ),
+                      ))
+                        DesktopButtonClickRegion(
+                          child: FilledButton.tonal(
+                            onPressed: _busy || _searching
+                                ? null
+                                : () => _action(
+                                    () => widget.onDelete(
+                                      _filtered,
+                                      action:
+                                          StorageCleanupAction.deleteOffline,
+                                    ),
+                                  ),
+                            child: const Text('删除离线下载'),
+                          ),
+                        ),
+                      if (_filtered.any(
+                        (file) => storageDeletionPermitted(
+                          StorageCleanupAction.deleteSubtitle,
+                          file,
+                        ),
+                      ))
+                        DesktopButtonClickRegion(
+                          child: FilledButton.tonal(
+                            onPressed: _busy || _searching
+                                ? null
+                                : () => _action(
+                                    () => widget.onDelete(
+                                      _filtered,
+                                      action:
+                                          StorageCleanupAction.deleteSubtitle,
+                                    ),
+                                  ),
+                            child: const Text('删除已保存字幕'),
+                          ),
+                        ),
+                      if (_filtered.any(
+                        (file) => storageDeletionPermitted(
+                          StorageCleanupAction.abandonResume,
+                          file,
+                        ),
+                      ))
+                        DesktopButtonClickRegion(
+                          child: FilledButton.tonal(
+                            onPressed: _busy || _searching
+                                ? null
+                                : () => _action(
+                                    () => widget.onDelete(
+                                      _filtered,
+                                      action:
+                                          StorageCleanupAction.abandonResume,
+                                    ),
+                                  ),
+                            child: const Text('放弃续传数据'),
+                          ),
+                        ),
+                      if (_hasDeletable &&
+                          _filtered.any((file) => file.canDelete))
+                        DesktopButtonClickRegion(
+                          child: FilledButton.tonal(
+                            onPressed: _busy || _searching
+                                ? null
+                                : () =>
+                                      _action(() => widget.onDelete(_filtered)),
+                            child: const Text('清理当前列表可删除文件'),
+                          ),
+                        ),
+                      if (widget.onManage != null)
+                        DesktopButtonClickRegion(
+                          child: TextButton(
+                            onPressed: _busy || _searching || _filtered.isEmpty
+                                ? null
+                                : () => _action(
+                                    () => widget.onManage!(_filtered),
+                                  ),
+                            child: Text(
+                              widget.title == StorageCategory.recycleBin.title
+                                  ? '打开回收站管理'
+                                  : '将关联卡片移入回收站',
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    focusNode: _searchFocus,
+                    onChanged: _scheduleFilter,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: '搜索文件路径或关联卡片',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           if (_busy)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _StorageDeletionIndicator(
-                progress: widget.deletionProgress,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _StorageDeletionIndicator(
+                  progress: widget.deletionProgress,
+                ),
               ),
             )
           else if (_searching)
-            const LinearProgressIndicator(),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _filtered.length,
-              itemBuilder: (_, index) {
-                final file = _filtered[index];
-                return ListTile(
-                  title: Text(
-                    '${p.basename(file.path)} · ${formatStorageSize(file.bytes)}',
-                  ),
-                  subtitle: Text(
-                    '${file.ownerTitles.isEmpty ? file.rootLabel : file.ownerTitles.join('、')}\n${file.protection ?? '可单独删除'}\n${file.path}',
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 5,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  isThreeLine: true,
-                  trailing:
-                      file.canDelete &&
-                          file.role != StorageAssetRole.mediaSegment &&
-                          file.role != StorageAssetRole.assembledMedia &&
-                          file.role != StorageAssetRole.resumePart
-                      ? DesktopButtonClickRegion(
-                          child: IconButton(
-                            tooltip: '删除此文件',
-                            onPressed: _busy || _searching
-                                ? null
-                                : () => _action(() => widget.onDelete([file])),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        )
-                      : const Icon(
-                          Icons.lock_outline,
+            const SliverToBoxAdapter(child: LinearProgressIndicator()),
+          SliverList.builder(
+            itemCount: _filtered.length,
+            itemBuilder: (_, index) {
+              final file = _filtered[index];
+              return ListTile(
+                title: Text(
+                  '${p.basename(file.path)} · ${formatStorageSize(file.bytes)}',
+                ),
+                subtitle: Text(
+                  '${file.ownerTitles.isEmpty ? file.rootLabel : file.ownerTitles.join('、')}\n${_fileCleanupLabel(file)}\n${file.path}',
+                  style: const TextStyle(fontSize: 12),
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                isThreeLine: true,
+                trailing:
+                    file.canDelete &&
+                        file.role != StorageAssetRole.mediaSegment &&
+                        file.role != StorageAssetRole.assembledMedia &&
+                        file.role != StorageAssetRole.resumePart
+                    ? DesktopButtonClickRegion(
+                        child: IconButton(
+                          tooltip: '删除此文件',
+                          onPressed: _busy || _searching
+                              ? null
+                              : () => _action(() => widget.onDelete([file])),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      )
+                    : Tooltip(
+                        message: _fileCleanupLabel(file),
+                        child: Icon(
+                          file.canDelete || storageNeedsConfirmation(file)
+                              ? Icons.info_outline
+                              : Icons.lock_outline,
                           size: 18,
                           color: AppTokens.text2,
                         ),
-                  onTap: () => showDialog<void>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: Text(p.basename(file.path)),
-                      content: SingleChildScrollView(
-                        child: SelectableText(
-                          '${file.bytes} 字节\n${formatStorageSize(file.bytes)} / ${formatStorageSize(file.bytes, binary: true)}\n\n${file.category.title}\n来源：${file.origin.title}${file.subtitleKind == null ? '' : '\n字幕：${file.subtitleKind}'}\n${file.detail ?? ''}\n${file.rootLabel}\n${file.path}\n\n关联：${file.ownerTitles.isEmpty ? '无卡片引用' : file.ownerTitles.join('、')}\n${file.protection ?? '可按对应操作清理'}',
+                      ),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text(p.basename(file.path)),
+                    content: SingleChildScrollView(
+                      child: SelectableText(
+                        '${file.bytes} 字节\n${formatStorageSize(file.bytes)} / ${formatStorageSize(file.bytes, binary: true)}\n\n${file.category.title}\n来源：${file.origin.title}${file.subtitleKind == null ? '' : '\n字幕：${file.subtitleKind}'}\n${file.detail ?? ''}\n${file.rootLabel}\n${file.path}\n\n关联：${file.ownerTitles.isEmpty ? '无卡片引用' : file.ownerTitles.join('、')}\n${_fileCleanupLabel(file)}',
+                      ),
+                    ),
+                    actions: [
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('关闭'),
                         ),
                       ),
-                      actions: [
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('关闭'),
-                          ),
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ],
       ),
     ),
   );
+}
+
+String _fileCleanupLabel(StorageFileEntry file) {
+  if (file.protection != null) return file.protection!;
+  if (storageDeletionPermitted(StorageCleanupAction.clearCache, file)) {
+    return '可重建缓存';
+  }
+  if (file.explicitDelete && storageNeedsConfirmation(file)) {
+    return '需通过上方对应操作确认删除';
+  }
+  if (file.canDelete) return '需确认删除，删除后无法恢复';
+  return file.cleanupPolicy == StorageCleanupPolicy.unknown
+      ? '用途待核实，保留文件'
+      : '由对应功能管理';
 }
 
 List<StorageFileEntry> _filterStorageEntries(

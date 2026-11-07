@@ -75,7 +75,7 @@ Finder get _tabScroller => find.descendant(
 void main() {
   for (final selected in [
     MediaLibraryRootEntry.folders,
-    MediaLibraryRootEntry.cloudDrive,
+    MediaLibraryRootEntryOrder.defaults.last,
   ]) {
     testWidgets(
       'long-press reorder preserves the viewport, selected=$selected',
@@ -93,8 +93,10 @@ void main() {
         final position = tester.state<ScrollableState>(_tabScroller).position;
         position.jumpTo(position.maxScrollExtent);
         await tester.pumpAndSettle();
-        final target = tester.getCenter(find.text('哔哩哔哩'));
-        final start = tester.getCenter(find.text('网盘'));
+        final moved = state.order.last;
+        final start = tester.getCenter(find.text(moved.label));
+        final viewport = tester.getRect(find.byType(MediaLibraryEntrySwitcher));
+        final target = Offset(viewport.left + 40, start.dy);
         final gesture = await tester.createGesture(
           kind: selected == MediaLibraryRootEntry.folders
               ? PointerDeviceKind.mouse
@@ -113,7 +115,7 @@ void main() {
         await gesture.up();
         await tester.pumpAndSettle();
 
-        expect(state.order.indexOf(MediaLibraryRootEntry.cloudDrive), 3);
+        expect(state.order.indexOf(moved), lessThan(state.order.length - 1));
         expect(state.selected, selected);
         expect(
           tester.state<ScrollableState>(_tabScroller).position,
@@ -152,21 +154,24 @@ void main() {
         // navigating to another page, just as the home page's callback does.
         tester
             .widget<ReorderableListView>(find.byType(ReorderableListView))
-            .onReorderItem!(5, 0);
+            .onReorderItem!(state.order.length - 1, 0);
         await tester.pumpAndSettle();
         expect(state.order.indexOf(state.selected), 2);
         expect(position.pixels, closeTo(parked, 0.01));
 
-        // Tapping a different destination resumes normal viewport following.
-        await tester.tap(find.text('最近添加'));
+        // Navigating to a different destination resumes viewport following.
+        final destination = state.order[1];
+        tester.widget<MediaLibraryEntrySwitcher>(
+          find.byType(MediaLibraryEntrySwitcher),
+        ).onSelected(destination);
         await tester.pumpAndSettle();
-        expect(state.selected, MediaLibraryRootEntry.recent);
+        expect(state.selected, destination);
         expect(position.pixels, lessThan(parked));
         state.highlight(1);
         await tester.pump();
         await tester.pump();
         final start = position.pixels;
-        expect(start, 0);
+        expect(start, lessThan(parked));
         state.highlight(1.5);
         await tester.pump();
         await tester.pump();

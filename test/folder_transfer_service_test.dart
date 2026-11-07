@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player_app/utils/app_branding.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -77,6 +78,62 @@ void main() {
       expect(incoming.transportOffer?['protocol'], 3);
       expect(f.a.tasks.single.completedBytes, incoming.totalBytes);
       expect(f.savedB?['targets'], containsValue(target));
+    }),
+  );
+
+  test(
+    'resuming an old package rebuilds it before sending',
+    () => run((f) async {
+      f.lanB.onControl = (peer, method, payload) {
+        if (method == 'folder.offer') {
+          return f.b.handleControl(peer, method, {
+            ...payload,
+            'directFiles': false,
+          });
+        }
+        return f.b.handleControl(peer, method, payload);
+      };
+      await f.a.sendFolder(f.sourceFolder, 'beta');
+      await f.until(() => f.b.tasks.length == 1);
+      final outgoing = f.a.tasks.single;
+      final directory = Directory(p.join(f.temp.path, 'alpha', outgoing.id));
+      await directory.create(recursive: true);
+      final stale = File(p.join(directory.path, 'outgoing.fluentpack'));
+      await stale.writeAsString('STALE-PODCAST-AUDIO-MUST-NOT-BE-SENT');
+      outgoing.syncDescriptor = {
+        'version': 1,
+        'group': {'edition': kApplicationId},
+      };
+      expect(outgoing.syncOptions['podcastReferenceOnlyVersion'], isNull);
+      await f.b.accept(f.b.tasks.single.id);
+      await f.until(
+        () =>
+            f.a.tasks.single.phase == FolderTransferPhase.completed &&
+            f.b.tasks.single.phase == FolderTransferPhase.completed,
+      );
+      expect(outgoing.syncOptions['podcastReferenceOnlyVersion'], 1);
+      expect(f.receivedRoots, hasLength(1));
+      expect(
+        await File(
+          f.library.mediaInFolderTree(f.receivedRoots.single).single.path,
+        ).readAsBytes(),
+        f.bytes,
+      );
+    }),
+  );
+
+  test(
+    'foreign edition folder descriptor cannot be imported',
+    () => run((f) async {
+      f.descriptorEdition = 'another.edition';
+      await f.a.sendFolder(f.sourceFolder, 'beta');
+      await f.until(() => f.b.tasks.length == 1);
+      final incoming = f.b.tasks.single;
+      await f.b.accept(incoming.id);
+      await f.until(() => incoming.phase == FolderTransferPhase.paused);
+      expect(incoming.error, contains('其他版本'));
+      expect(f.receivedRoots, isEmpty);
+      expect(f.adoptedRoots, isEmpty);
     }),
   );
 
@@ -742,6 +799,7 @@ class _Fixture {
   Completer<void>? linkGate;
   Completer<void>? adoptGate;
   bool failNextLink = false;
+  String descriptorEdition = kApplicationId;
   int? receiverAvailableBytes = 1024 * 1024 * 1024 * 1024;
 
   Future<void> start() async {
@@ -851,7 +909,12 @@ class _Fixture {
       expect(peer, 'beta');
       expect(fingerprints.keys, contains('source-media'));
       buildCount++;
-      return {'version': 1, 'source': root, 'groupId': 'test-sync-group'};
+      return {
+        'version': 1,
+        'source': root,
+        'groupId': 'test-sync-group',
+        'group': {'edition': descriptorEdition, 'id': 'test-sync-group'},
+      };
     },
     onImported: (peer, target, descriptor, mappings) async {
       expect(id, 'beta');

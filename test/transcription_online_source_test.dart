@@ -1,17 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:video_player_app/features/media_cache/media_cache_hooks.dart';
+import 'package:video_player_app/features/model_center/inference_resource_governor.dart';
+import 'package:video_player_app/features/model_center/model_transcription.dart';
+import 'package:video_player_app/features/model_center/asr_enhancement_options.dart';
+import 'package:video_player_app/features/model_center/inference_scheduler.dart';
+import 'package:video_player_app/features/model_center/local_subtitle_translator.dart';
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/features/model_center/model_center_service.dart';
 import 'package:video_player_app/features/podcasts/podcast_client.dart';
@@ -24,20 +27,54 @@ import 'package:video_player_app/features/podcasts/podcast_store.dart';
 import 'package:video_player_app/models/cloud_drive_source_ref.dart';
 import 'package:video_player_app/models/media_source_ref.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
-import 'package:video_player_app/models/subtitle_punctuation.dart';
 import 'package:video_player_app/models/transcription_status.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/ai_subtitle_api_settings.dart';
 import 'package:video_player_app/services/ai_subtitle_translator.dart';
-import 'package:video_player_app/services/gongyi_asr_service.dart';
 import 'package:video_player_app/services/library_service.dart';
-import 'package:video_player_app/services/media_materialization_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
 import 'package:video_player_app/services/subtitle_translation_service.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
+import 'package:video_player_app/services/transcription_probe_output.dart';
 import 'package:video_player_app/utils/ffmpeg_utils.dart';
-import 'package:video_player_app/widgets/ai_transcription_panel.dart';
+
+class _ProbeProcess implements Process {
+  _ProbeProcess() {
+    stdoutEvents = StreamController<List<int>>(
+      onCancel: () => stdoutCancelled = true,
+    );
+    stderrEvents = StreamController<List<int>>(
+      onCancel: () => stderrCancelled = true,
+    );
+  }
+  late final StreamController<List<int>> stdoutEvents, stderrEvents;
+  final exited = Completer<int>();
+  bool killed = false, stdoutCancelled = false, stderrCancelled = false;
+
+  @override
+  Stream<List<int>> get stdout => stdoutEvents.stream;
+  @override
+  Stream<List<int>> get stderr => stderrEvents.stream;
+  @override
+  Future<int> get exitCode => exited.future;
+  @override
+  int get pid => 17;
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed = true;
+    if (!exited.isCompleted) exited.complete(-1);
+    return true;
+  }
+
+  Future<void> close() async {
+    await stdoutEvents.close();
+    await stderrEvents.close();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _Paths extends PathProviderPlatform {
   _Paths(this.root);
@@ -50,28 +87,54 @@ class _Paths extends PathProviderPlatform {
   Future<String?> getTemporaryPath() async => root;
 }
 
-class _LegacyCenter extends ModelCenterService {
-  _LegacyCenter() {
+class _LocalCenter extends ModelCenterService {
+  _LocalCenter() {
     loaded = true;
   }
   @override
   Future<void> initialize() async {}
+  @override
+  Future<ModelJobSpec> captureTranscription() async =>
+      transcriptionConfiguration;
+  @override
+  ModelJobSpec get transcriptionConfiguration => const ModelJobSpec(
+    profile: ModelCenterService.communityDefaultProfile,
+    asrEnhancements: AsrEnhancementOptions.disabled,
+  );
 }
 
-class _Asr extends GongyiAsrService {
+class _Asr extends ModelTranscriptionRunner {
   int calls = 0;
   @override
-  Future<List<SubtitleItem>> transcribeAudio(
-    String audioPath, {
-    bool needWordTimestamp = false,
-    bool includeWordTimings = false,
-    Function(double progress, String status)? onProgress,
-    CancelToken? cancelToken,
-    GongyiAsrTaskCheckpoint? checkpoint,
-    Future<String> Function()? prepareAudio,
+  Future<List<SubtitleItem>> run({
+    required ModelJobSpec spec,
+    required String sourceIdentity,
+    String checkpointScope = '',
+    required Duration duration,
+    required PrepareModelAudio prepareAudio,
+    PrepareCloudAsrAudio? prepareCloudAudio,
+    Future<String> Function(
+      Duration,
+      Duration,
+      AsrAudioChannel,
+      void Function(double),
+    )?
+    prepareAudioChannel,
+    required void Function(ModelProcessingProgress) onProgress,
+    Future<void>? cancelSignal,
+    Future<void> Function(StableAsrBatch)? onStableBatch,
+    bool serializeConsumer = false,
+    int consumerModelBytes = 0,
+    int? consumerWorkingSetBytes,
+    int consumerBatchSize = 8,
+    int streamAssemblyVersion = 3,
+    Future<void> Function()? onSessionClose,
+    Future<void> Function()? onConsumerIdle,
+    bool Function()? consumerHasResidentModel,
+    InferenceResourceSession? resourceSession,
   }) async {
     calls++;
-    final input = prepareAudio == null ? audioPath : await prepareAudio();
+    final input = await prepareAudio(Duration.zero, duration, false, (_) {});
     final probed = await Process.run(await FFmpegUtils.ffprobePath, [
       '-v',
       'error',
@@ -84,7 +147,7 @@ class _Asr extends GongyiAsrService {
     final streams =
         (jsonDecode(probed.stdout as String) as Map)['streams'] as List;
     expect(streams.any((s) => s['codec_type'] == 'audio'), isTrue);
-    return [
+    final cues = [
       SubtitleItem(
         index: 1,
         startTime: Duration.zero,
@@ -92,37 +155,35 @@ class _Asr extends GongyiAsrService {
         text: 'An audible episode',
       ),
     ];
+    await onStableBatch?.call(StableAsrBatch(cues, duration, null));
+    return cues;
   }
 }
 
 class _Translation extends SubtitleTranslationService {
   int calls = 0;
   @override
-  Future<SubtitleTranslationResult> translateSubtitleFile({
-    required String inputPath,
-    String? sourceText,
-    SubtitlePunctuation outputPunctuation = SubtitlePunctuation.preserve,
+  Future<List<String>> translateCueBatch({
+    required List<SubtitleItem> items,
     required String sourceLanguage,
     required String targetLanguage,
     required SubtitleTranslateProvider provider,
     required void Function(double) onProgress,
     void Function(String?)? onActivity,
-    String? outputDirectory,
-    String? outputFilePrefix,
-    String? videoPath,
+    void Function(int, String)? onTranslated,
     AiSubtitleTranslationSettings? aiOptions,
     AiSubtitleApiSettings? aiEndpoint,
-    Future<void>? cancelSignal,
     ModelJobSpec? localSpecification,
+    ModelCenterService? modelCenter,
+    LocalTranslationSession? localSession,
+    InferenceReservation? reservation,
+    String precedingContext = '',
     String checkpointScope = '',
+    Future<void>? cancelSignal,
     SmartTranslationPolicy? smartPolicy,
   }) async {
     calls++;
-    final file = File(
-      p.join(outputDirectory!, '$outputFilePrefix.translated.srt'),
-    );
-    await file.writeAsString('1\n00:00:00,000 --> 00:00:00,800\n能听见的节目\n');
-    return SubtitleTranslationResult(outputPath: file.path, totalCount: 1);
+    return List.filled(items.length, '能听见的节目');
   }
 }
 
@@ -177,10 +238,10 @@ void main() {
     ModelCenterService? modelCenter,
   }) => TranscriptionManager(
     settings: settings,
-    asrService: asr,
+    modelRunner: asr,
     translationService: translation,
     mediaProbe: probe,
-    modelCenter: modelCenter,
+    modelCenter: modelCenter ?? _LocalCenter(),
   );
 
   setUp(() async {
@@ -195,7 +256,10 @@ void main() {
     PathProviderPlatform.instance = _Paths(root.path);
     await settings.init();
     settings.largeDataRootPath = root.path;
-    await library.init();
+    // This fixture exercises source/queue recovery, not delayed card artwork.
+    // Startup backfills can otherwise outlive the task and recreate thumbnails
+    // while Windows recursively removes the temporary data root.
+    await library.init(deferMaintenance: true);
     final payload = _wav();
     audio = await File(p.join(root.path, 'source.wav')).writeAsBytes(payload);
     requests = 0;
@@ -233,6 +297,7 @@ void main() {
         PodcastEpisode(
           id: id,
           channelId: channel.id,
+          sourceFeedUrl: channel.feedUrl,
           title: id,
           durationMs: 1000,
           media: [
@@ -284,6 +349,9 @@ void main() {
     await controller.close();
     await origin.close(force: true);
     store.close();
+    // Quiesce library work and drain its serialized writes before resetting the
+    // singleton or removing the directory that those writes still reference.
+    await library.prepareStorageMigration();
     library.resetLibraryForTesting();
     settings.resetForTest();
     PathProviderPlatform.instance = oldPaths;
@@ -315,6 +383,32 @@ void main() {
         ? const TranscriptTranslateChoice.automatic()
         : const TranscriptTranslateChoice.off(),
   );
+  Future<void> restoreUnresolvedTask(VideoItem item) async {
+    await manager.shutdown();
+    manager.dispose();
+    await File(
+      p.join(root.path, 'transcription_queue_cache.json'),
+    ).writeAsString(
+      jsonEncode({
+        'version': 2,
+        'queue': [
+          {
+            'videoPath': item.path,
+            'videoId': item.id,
+            'mediaKey': 'id:${item.id}',
+            'checkpointScope': 'legacy-unresolved',
+            'createdAt': 1,
+          },
+        ],
+        'completed': [],
+        'failed': [],
+        'active': null,
+      }),
+    );
+    manager = create();
+    await manager.initialize();
+  }
+
   void expectSuccess() {
     expect(
       manager.getQueueSnapshot().single.status,
@@ -325,29 +419,48 @@ void main() {
   }
 
   test(
-    'auto-advanced queue projection transcribes and translates without switching episodes',
+    'downloaded podcast files transcribe without reactivating remote media hooks',
     () async {
-      expect(library.getVideo(selected.id), isNull);
-      await start(selected, translate: true);
+      final local = VideoItem.fromJson(
+        selected.toJson()..['path'] = audio.path,
+      );
+      final provenance = local.sourceRef;
+      var materializations = 0;
+      PodcastPlaybackHooks
+          .materialize = (item, {isCancelled, cancelSignal, onProgress}) async {
+        materializations++;
+        throw StateError('Local files must not enter the podcast downloader');
+      };
+      await start(local);
       await finish();
       expectSuccess();
-      expect(translation.calls, 1);
-      expect(requests, 1);
-      expect(runtime.persistedEpisodeIds, [selected.id]);
-      expect(library.getVideo(next.id), isNull);
-      final saved = library.getVideo(selected.id)!;
-      expect(saved.subtitlePath, isNotNull);
-      expect(saved.secondarySubtitlePath, isNotNull);
-      expect(
-        await File(saved.secondarySubtitlePath!).readAsString(),
-        contains('能听见'),
-      );
+      expect(materializations, 0);
+      expect(requests, 0);
+      expect(local.sourceRef, same(provenance));
+      expect(await audio.exists(), isTrue);
     },
   );
 
   test(
-    'queued source is frozen when the player advances and mutates its item',
+    'RSS queue projections materialize before transcription and translation',
     () async {
+      await start(selected, translate: true);
+      await finish();
+      expectSuccess();
+      expect(translation.calls, 1);
+      expect(requests, greaterThan(0));
+      expect(controller.mediaStore.isComplete(
+        selected.sourceRef!.podcast!.episodeId,
+        selected.sourceRef!.podcast!.mediaUrl,
+      ), isTrue);
+    },
+  );
+
+  test(
+    'local queued source is frozen when the player mutates its historical-source item',
+    () async {
+      selected.path = audio.path;
+      next.path = (await audio.copy(p.join(root.path, 'next.wav'))).path;
       final path = selected.path, id = selected.id;
       await start(selected, run: false);
       selected
@@ -357,27 +470,15 @@ void main() {
       manager.startAllTasks();
       await finish();
       expectSuccess();
-      expect(
-        controller.mediaStore.isDownloaded(
-          id,
-          store.episode(id)!.media.first.url,
-        ),
-        isTrue,
-      );
-      expect(
-        controller.mediaStore.isDownloaded(
-          next.id,
-          store.episode(next.id)!.media.first.url,
-        ),
-        isFalse,
-      );
+      expect(requests, 0);
       expect(manager.getGeneratedSrtPathForVideo(path, videoId: id), isNotNull);
     },
   );
 
   test(
-    'source survives task persistence without a library row or catalog recovery hook',
+    'local source survives task persistence without a library row or catalog recovery hook',
     () async {
+      selected.path = audio.path;
       await start(selected, run: false, translate: true);
       await manager.shutdown();
       manager.dispose();
@@ -392,35 +493,58 @@ void main() {
     },
   );
 
-  test('legacy jobs recover their podcast source from the catalog', () async {
-    PodcastPlaybackHooks.restoreSource = runtime.restoreSource;
-    await start(selected, capture: false, run: false);
-    await manager.shutdown();
-    manager.dispose();
-    manager = create();
-    await manager.initialize();
-    manager.startAllTasks();
-    await finish();
-    expectSuccess();
-    expect(requests, 1);
-  });
+  test(
+    'legacy RSS jobs recover their matching source from the catalog',
+    () async {
+      var recovered = 0;
+      PodcastPlaybackHooks.restoreSource = (path, id) {
+        recovered++;
+        return runtime.restoreSource(path, id);
+      };
+      await restoreUnresolvedTask(selected);
+      manager.startAllTasks();
+      await finish();
+      expectSuccess();
+      expect(recovered, greaterThan(0));
+      expect(requests, greaterThan(0));
+    },
+  );
 
-  test('an incomplete podcast source is repaired from the catalog', () async {
+  test(
+    'an incomplete source recovers only its matching RSS catalog identity',
+    () async {
+      var recovered = 0;
+      PodcastPlaybackHooks.restoreSource = (path, id) {
+        recovered++;
+        return runtime.restoreSource(path, id);
+      };
+      selected.sourceRef = null;
+      await start(selected);
+      await finish();
+      expectSuccess();
+      expect(recovered, greaterThan(0));
+      expect(requests, greaterThan(0));
+    },
+  );
+
+  test('an unknown podcast identity is refused before media acquisition', () async {
     PodcastPlaybackHooks.restoreSource = runtime.restoreSource;
+    selected.path = 'podcast:unknown';
     selected.sourceRef = null;
-    await start(selected);
-    await finish();
-    expectSuccess();
-    expect(requests, 1);
+    await expectLater(start(selected), throwsUnsupportedError);
+    expect(requests, 0);
+    expect(asr.calls, 0);
+    expect(manager.getQueueSnapshot(), isEmpty);
   });
 
   test(
-    'a library-backed queued source survives removal of its library row',
+    'a local library-backed queued source survives removal of its library row',
     () async {
+      selected.path = audio.path;
       library.seedVideoForTesting(selected);
       await start(selected, capture: false, run: false);
       library.resetLibraryForTesting();
-      await library.init();
+      await library.init(deferMaintenance: true);
       expect(library.getVideo(selected.id), isNull);
       manager.startAllTasks();
       await finish();
@@ -429,32 +553,19 @@ void main() {
   );
 
   test(
-    'an old failed task can attach the current source and retry without switching',
+    'attaching the matching RSS source lets a legacy task retry',
     () async {
-      PodcastPlaybackHooks.restoreSource = null;
-      await start(selected, capture: false);
-      await finish();
-      expect(
-        manager.getQueueSnapshot().single.status,
-        TranscriptionStatus.error,
-      );
-      expect(
-        manager.getQueueSnapshot().single.statusMessage,
-        contains('来源尚未准备'),
-      );
-      expect(
-        manager.getQueueSnapshot().single.statusMessage,
-        isNot(contains('没有音轨')),
-      );
-      expect(asr.calls, 0);
+      await restoreUnresolvedTask(selected);
+      expect(manager.getQueueSnapshot().single.status, TranscriptionStatus.error);
       manager.updateSourceForVideo(
         selected.path,
         videoId: selected.id,
         sourceItem: selected,
       );
-      manager.retryVideo(selected.path, videoId: selected.id);
+      expect(manager.retryVideo(selected.path, videoId: selected.id), isTrue);
       await finish();
       expectSuccess();
+      expect(requests, greaterThan(0));
     },
   );
 
@@ -462,7 +573,7 @@ void main() {
     'a late callback cannot attach the next episode to an older job',
     () async {
       PodcastPlaybackHooks.restoreSource = null;
-      await start(selected, capture: false, run: false);
+      await restoreUnresolvedTask(selected);
       manager.updateSourceForVideo(
         selected.path,
         videoId: selected.id,
@@ -482,7 +593,7 @@ void main() {
   test(
     'reusing an item id cannot retarget a queued job to a different path',
     () async {
-      await start(selected, capture: false, run: false);
+      await restoreUnresolvedTask(selected);
       final replacement = VideoItem.fromJson(
         next.toJson()..['id'] = selected.id,
       );
@@ -502,29 +613,35 @@ void main() {
     },
   );
 
-  test('a source cleanup failure cannot stop the remaining transcription queue', () async {
-    final release = runtime.releaseMaterialized;
-    var released = 0;
-    PodcastPlaybackHooks.releaseMaterialized = (item) {
-      release(item);
-      released++;
-      throw StateError('test cleanup failure');
-    };
-    await start(selected, run: false);
-    await start(next, run: false);
-    manager.startAllTasks();
-    await finish();
-    expect(asr.calls, 2);
-    expect(released, 2);
-    expect(manager.getQueueSnapshot().map((task) => task.status), [
-      TranscriptionStatus.completed,
-      TranscriptionStatus.completed,
-    ]);
-  });
+  test(
+    'retired source cleanup hooks cannot intercept the local transcription queue',
+    () async {
+      selected.path = audio.path;
+      next.path = (await audio.copy(p.join(root.path, 'next.wav'))).path;
+      final release = runtime.releaseMaterialized;
+      var released = 0;
+      PodcastPlaybackHooks.releaseMaterialized = (item) {
+        release(item);
+        released++;
+        throw StateError('test cleanup failure');
+      };
+      await start(selected, run: false);
+      await start(next, run: false);
+      manager.startAllTasks();
+      await finish();
+      expect(asr.calls, 2);
+      expect(released, 0);
+      expect(requests, 0);
+      expect(manager.getQueueSnapshot().map((task) => task.status), [
+        TranscriptionStatus.completed,
+        TranscriptionStatus.completed,
+      ]);
+    },
+  );
 
   for (final cloud in [false, true]) {
     test(
-      'unregistered ${cloud ? 'cloud' : 'Bilibili'} media uses its captured source and releases its lease',
+      'unregistered ${cloud ? 'cloud' : 'Bilibili'} media is denied before acquiring a lease',
       () async {
         const ref = CloudDriveSourceRef(
           providerId: 'aliyun',
@@ -551,7 +668,7 @@ void main() {
             cid: cloud ? null : 456,
           ),
         );
-        var acquired = 0, released = 0;
+        var acquired = 0;
         MediaCacheHooks.acquireMaterial =
             (
               source,
@@ -561,43 +678,30 @@ void main() {
               codec,
               isolatedTrack = false,
             }) async {
-              expect(source.sourceRef?.kind, item.sourceRef?.kind);
               acquired++;
-              return MaterializedMediaLease(
-                videoId: source.id,
-                audioPath: audio.path,
-                videoPath: null,
-                completePath: null,
-                qualityId: null,
-                width: null,
-                height: null,
-                onRelease: () async {
-                  released++;
-                },
+              throw StateError(
+                'Forbidden online media must not reach materialization',
               );
             };
-        expect(library.getVideo(item.id), isNull);
-        await start(item);
-        await finish();
-        expectSuccess();
-        expect(acquired, 1);
-        expect(released, 1);
+        await expectLater(start(item), throwsUnsupportedError);
+        expect(acquired, 0);
+        expect(asr.calls, 0);
+        expect(manager.getQueueSnapshot(), isEmpty);
       },
     );
   }
 
   for (final translate in [false, true]) {
-    testWidgets(
-      'transcribing P1 keeps other playback parts out of the task queue '
-      '(translate=$translate)',
-      (tester) async {
-        VideoItem part(int page, {required bool transient}) => VideoItem(
+    test(
+      'Bilibili parts cannot enter a processing queue (translate=$translate)',
+      () async {
+        VideoItem part(int page) => VideoItem(
           id: 'bili-p$page',
           path: 'bilibili://stream/BV1xx411c7mD?cid=${1000 + page}',
-          title: 'Video · P$page Part $page',
+          title: 'Part $page',
           durationMs: 1000,
           lastUpdated: 0,
-          isTransient: transient,
+          isTransient: true,
           sourceRef: MediaSourceRef(
             value: 'BV1xx411c7mD',
             kind: MediaSourceKind.bilibiliStream,
@@ -606,104 +710,20 @@ void main() {
             page: page,
           ),
         );
-        final p1 = part(1, transient: false);
-        final otherParts = [part(2, transient: true), part(3, transient: true)];
-        final center = _LegacyCenter();
-        addTearDown(center.dispose);
-        await tester.runAsync(() async {
-          await manager.shutdown();
-          manager.dispose();
-          manager = create(modelCenter: center);
-          await manager.initialize();
-          await library.addSingleVideo(p1, reuseExistingItem: false);
-          await library.addTransientVideos(otherParts);
-        });
-        var acquired = 0, released = 0;
-        MediaCacheHooks.acquireMaterial =
-            (
-              source,
-              requirement, {
-              targetHeight,
-              qualityId,
-              codec,
-              isolatedTrack = false,
-            }) async {
-              expect(source.id, p1.id);
-              expect(source.sourceRef?.cid, 1001);
-              expect(source.sourceRef?.page, 1);
-              expect(requirement, MediaMaterializationRequirement.audioOnly);
-              acquired++;
-              return MaterializedMediaLease(
-                videoId: source.id,
-                audioPath: audio.path,
-                videoPath: null,
-                completePath: null,
-                qualityId: null,
-                width: null,
-                height: null,
-                onRelease: () async {
-                  released++;
-                },
-              );
-            };
-        final seenTaskIds = <String?>{};
-        void recordTasks() {
-          seenTaskIds.addAll(
-            manager.getQueueSnapshot().map((task) => task.videoId),
-          );
-        }
-
-        manager.addListener(recordTasks);
-        try {
-          await tester.pumpWidget(
-            MultiProvider(
-              providers: [
-                ChangeNotifierProvider<LibraryService>.value(value: library),
-                ChangeNotifierProvider<SettingsService>.value(value: settings),
-                ChangeNotifierProvider<TranscriptionManager>.value(
-                  value: manager,
-                ),
-              ],
-              child: MaterialApp(
-                home: Scaffold(
-                  body: AiTranscriptionPanel(
-                    videoPath: p1.path,
-                    videoId: p1.id,
-                    sourceItem: p1,
-                    onCompleted: (_) {},
-                  ),
-                ),
-              ),
-            ),
-          );
-          await tester.pump();
-          final action = find.byKey(
-            ValueKey(
-              translate
-                  ? 'ai-transcription-translate-action'
-                  : 'ai-transcription-action',
-            ),
-          );
-          await tester.ensureVisible(action);
-          await tester.runAsync(() async {
-            await tester.tap(action);
-            await finish();
-          });
-          await tester.pump();
-          expectSuccess();
-          expect(seenTaskIds, {p1.id});
-          expect(manager.getQueueSnapshot().single.videoId, p1.id);
-          expect(acquired, 1);
-          expect(released, 1);
-          expect(translation.calls, translate ? 1 : 0);
-          expect(library.bilibiliStreamItems.map((item) => item.id), [p1.id]);
-          expect(otherParts.every((item) => item.isTransient), isTrue);
-          expect(otherParts.every((item) => item.subtitlePath == null), isTrue);
-          expect(tester.takeException(), isNull);
-        } finally {
-          await tester.pumpWidget(const SizedBox.shrink());
-          manager.removeListener(recordTasks);
-        }
+        final p1 = part(1), otherParts = [part(2), part(3)];
+        await expectLater(
+          start(p1, translate: translate),
+          throwsUnsupportedError,
+        );
+        expect(manager.getQueueSnapshot(), isEmpty);
+        expect(
+          otherParts.every(
+            (item) => item.isTransient && item.subtitlePath == null,
+          ),
+          isTrue,
+        );
+        expect(asr.calls, 0);
+        expect(translation.calls, 0);
       },
     );
   }
@@ -815,7 +835,7 @@ void main() {
   });
 
   test(
-    'HTTP audio is decoded as a remote input rather than a missing local file',
+    'arbitrary HTTP audio is rejected before downloading processing input',
     () async {
       final path = 'http://127.0.0.1:${origin.port}/audio-without-extension';
       final item = VideoItem(
@@ -827,15 +847,15 @@ void main() {
         type: MediaType.audio,
         sourceRef: MediaSourceRef(value: path, kind: MediaSourceKind.url),
       );
-      await start(item);
-      await finish();
-      expectSuccess();
-      expect(requests, greaterThanOrEqualTo(1));
+      await expectLater(start(item), throwsUnsupportedError);
+      expect(requests, 0);
+      expect(asr.calls, 0);
+      expect(manager.getQueueSnapshot(), isEmpty);
     },
   );
 
   test(
-    'a failed probe still allows full decoding of an audible input',
+    'a failed probe requires duration before starting the local model',
     () async {
       await manager.shutdown();
       manager.dispose();
@@ -864,7 +884,97 @@ void main() {
         ),
       );
       await finish();
-      expectSuccess();
+      expect(
+        manager.getQueueSnapshot().single.status,
+        TranscriptionStatus.error,
+      );
+      expect(
+        manager.getQueueSnapshot().single.statusMessage,
+        contains('无法确定音频时长'),
+      );
+      expect(
+        manager.getQueueSnapshot().single.statusMessage,
+        isNot(contains('没有音轨')),
+      );
+      expect(asr.calls, 0);
+    },
+  );
+
+  test(
+    'probe output waits for trailing stdout and stderr after process exit',
+    () async {
+      final process = _ProbeProcess();
+      addTearDown(process.close);
+      final collected = collectTranscriptionProbeOutput(process);
+      var completed = false;
+      unawaited(collected.then((_) => completed = true));
+      process.stdoutEvents.add(utf8.encode('{"format":{"duration":"1"},'));
+      process.stderrEvents.add(utf8.encode('probe diagnostic'));
+      process.exited.complete(0);
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, isFalse);
+      process.stdoutEvents.add(
+        utf8.encode('"streams":[{"codec_type":"audio"}]}'),
+      );
+      process.stderrEvents.add(utf8.encode(' complete'));
+      await process.close();
+
+      final output = await collected;
+      expect(output.exitCode, 0);
+      final metadata = jsonDecode(output.stdout as String) as Map;
+      expect((metadata['format'] as Map)['duration'], '1');
+      expect((metadata['streams'] as List).single['codec_type'], 'audio');
+      expect(output.stderr, 'probe diagnostic complete');
+      expect(process.killed, isFalse);
+    },
+  );
+
+  test(
+    'a probe pipe retained after exit fails with a bounded drain timeout',
+    () async {
+      final process = _ProbeProcess();
+      addTearDown(process.close);
+      final collected = collectTranscriptionProbeOutput(
+        process,
+        drainTimeout: const Duration(milliseconds: 20),
+      );
+      final failed = expectLater(collected, throwsA(isA<TimeoutException>()));
+      process.stdoutEvents.add(utf8.encode('{"format":'));
+      process.exited.complete(0);
+      await failed;
+      expect(process.killed, isTrue);
+      expect(process.stdoutCancelled, isTrue);
+      expect(process.stderrCancelled, isTrue);
+    },
+  );
+
+  test(
+    'a probe output error before exit is caught and stops its process',
+    () async {
+      final process = _ProbeProcess();
+      addTearDown(process.close);
+      final collected = collectTranscriptionProbeOutput(process);
+      final failed = expectLater(collected, throwsStateError);
+      process.stdoutEvents.addError(StateError('probe pipe failed'));
+      await failed;
+      expect(process.killed, isTrue);
+      expect(process.stdoutCancelled, isTrue);
+      expect(process.stderrCancelled, isTrue);
+    },
+  );
+
+  test(
+    'external probe cancellation still drains output and preserves the exit code',
+    () async {
+      final process = _ProbeProcess();
+      addTearDown(process.close);
+      final collected = collectTranscriptionProbeOutput(process);
+      process.kill();
+      process.stderrEvents.add(utf8.encode('cancelled'));
+      await process.close();
+      final output = await collected;
+      expect(output.exitCode, -1);
+      expect(output.stderr, 'cancelled');
     },
   );
 }

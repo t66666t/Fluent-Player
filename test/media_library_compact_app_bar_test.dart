@@ -128,4 +128,35 @@ void main() {
     expect(find.text('媒体库设置'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('更多按钮可以窄于 Material 默认宽度', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          appBar: AppBar(
+            actions: [
+              MediaLibraryCompactMoreButton(
+                width: mediaLibraryHomePinnedActionWidth,
+                iconSize: mediaLibraryHomePinnedActionIconSize,
+                itemBuilder: (_) => [
+                  mediaLibraryCompactMenuItem(
+                    icon: Icons.tune,
+                    label: '调整卡片样式',
+                    onSelected: () {},
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(MediaLibraryCompactMoreButton)).width,
+      mediaLibraryHomePinnedActionWidth,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

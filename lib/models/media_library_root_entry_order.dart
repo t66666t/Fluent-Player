@@ -8,15 +8,12 @@ import 'media_library_root_entry.dart';
 class MediaLibraryRootEntryOrder {
   const MediaLibraryRootEntryOrder._();
 
-  /// Folders sit between the two activity lenses; Bilibili comes last, and
-  /// a saved order without it gets it appended by [normalize].
+  /// Local library and RSS podcast surfaces are mounted; other old IDs are ignored.
   static const List<MediaLibraryRootEntry> defaults = [
     MediaLibraryRootEntry.continueLearning,
     MediaLibraryRootEntry.folders,
-    MediaLibraryRootEntry.recent,
-    MediaLibraryRootEntry.bilibili,
     MediaLibraryRootEntry.podcasts,
-    MediaLibraryRootEntry.cloudDrive,
+    MediaLibraryRootEntry.recent,
   ];
 
   static List<MediaLibraryRootEntry> normalize(
@@ -25,22 +22,25 @@ class MediaLibraryRootEntryOrder {
     final seen = <MediaLibraryRootEntry>{};
     final out = <MediaLibraryRootEntry>[];
     for (final entry in raw) {
-      if (entry == null || !seen.add(entry)) continue;
+      if (entry == null || !entry.isAvailable || !seen.add(entry)) {
+        continue;
+      }
       out.add(entry);
     }
     for (final entry in defaults) {
-      if (seen.add(entry)) out.add(entry);
-    }
-    for (final entry in MediaLibraryRootEntry.values) {
       if (seen.add(entry)) out.add(entry);
     }
     return out;
   }
 
   static List<MediaLibraryRootEntry> parse(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return List<MediaLibraryRootEntry>.of(defaults);
+    if (raw == null || raw.trim().isEmpty) {
+      return List<MediaLibraryRootEntry>.of(defaults);
+    }
     return normalize(
-      raw.split(',').map((part) => MediaLibraryRootEntryX.tryParse(part.trim())),
+      raw
+          .split(',')
+          .map((part) => MediaLibraryRootEntryX.tryParse(part.trim())),
     );
   }
 

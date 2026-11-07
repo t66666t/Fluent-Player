@@ -3,9 +3,10 @@ import 'library_service.dart';
 import 'media_playback_service.dart';
 import 'playlist_manager.dart';
 import 'progress_tracker.dart';
+import 'community_media_input.dart';
 
-/// The local bookmark published before the home page's first frame. Source
-/// integrations may restore its queue/player later, provided it is still current.
+/// The local bookmark published before the home page's first frame. The native
+/// player can restore it later, provided it is still the current local session.
 class PlaybackRestorePreview {
   const PlaybackRestorePreview({
     required this.item,
@@ -52,7 +53,10 @@ Future<PlaybackRestorePreview?> restorePlaybackPreview({
   }
 
   final item = library.getVideo(snapshot!.currentItemId!);
-  if (item == null) return null;
+  if (item == null ||
+      !communityMediaIsPlayable(item.path, source: item.sourceRef)) {
+    return null;
+  }
   final positionMs =
       item.lastPositionMs > 0 && item.lastUpdated > snapshot.timestamp
       ? item.lastPositionMs

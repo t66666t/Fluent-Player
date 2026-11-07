@@ -14,7 +14,9 @@ fun resolveBuildPython(): String =
         ?: if (System.getProperty("os.name").lowercase().contains("windows")) "python" else "python3"
 
 val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
+val keystorePropertiesFile = rootProject.file("key.properties").let {
+    if (it.exists()) it else rootProject.file("../.artifacts/community-signing/key.properties")
+}
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
@@ -29,7 +31,7 @@ val requestsRelease = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
 if (requestsRelease && !keystorePropertiesFile.exists() && !allowDevelopmentSigning && !legacyProfileUpgrade) {
-    throw GradleException("正式 Release 需要 android/key.properties 和原发布签名密钥；开发编译请使用 debug。")
+    throw GradleException("社区版 Release 需要独立签名；请先运行 python tool/create_community_signing.py。")
 }
 
 kotlin {
@@ -47,6 +49,7 @@ android {
     sourceSets.getByName("main").assets.srcDir("../../build/generated/cohere_asr/assets")
     sourceSets.getByName("main").jniLibs.srcDir("../../build/generated/parakeet_ja/jniLibs")
     sourceSets.getByName("main").assets.srcDir("../../build/generated/parakeet_ja/assets")
+    // Internal Kotlin/JNI namespace; independent of the public installation ID.
     namespace = "com.example.video_player_app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
@@ -61,8 +64,8 @@ android {
 
 
     defaultConfig {
-        // Preserve this identifier for upgrades and existing user data.
-        applicationId = "com.example.video_player_app.community"
+        // Public community identity, separate from the full edition.
+        applicationId = "cn.teezy.fluentplayer.standard"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24

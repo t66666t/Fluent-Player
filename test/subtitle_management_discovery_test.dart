@@ -24,6 +24,7 @@ class _Discovery extends SubtitleDiscoveryService {
   Future<List<DiscoveredSubtitleFile>> scanVideoDirectory({
     required String videoPath,
     int? videoDurationMs,
+    SubtitleDiscoveryBatch? batch,
   }) {
     paths.add(videoPath);
     if (!started.isCompleted) started.complete();
@@ -105,6 +106,8 @@ void main() {
     bool probeEmbedded = false,
     String? probePath,
     String? videoId,
+    List<String> selectedPaths = const [],
+    Map<String, String>? localSubtitles,
   }) {
     return ChangeNotifierProvider<EmbeddedSubtitleService>.value(
       value: embedded,
@@ -116,7 +119,8 @@ void main() {
             showEmbeddedSubtitles: probeEmbedded,
             embeddedProbePath: probePath,
             discoveryService: discovery,
-            localSubtitles: {'saved.srt': saved.path},
+            localSubtitles: localSubtitles ?? {'saved.srt': saved.path},
+            initialSelectedPaths: selectedPaths,
             onSubtitleChanged: () {},
             onOpenAi: () {},
           ),
@@ -132,6 +136,116 @@ void main() {
     });
     await tester.pump();
   }
+
+  testWidgets('retained sheet discovers completed AI and translation files', (
+    tester,
+  ) async {
+    const videoPath = 'https://example.test/Movie.mp4';
+    await tester.runAsync(() async {
+      await tester.pumpWidget(sheet(videoPath));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    final state = tester.state(find.byType(SubtitleManagementSheet));
+    expect(find.text('transcript.srt'), findsNothing);
+
+    final transcript = p.join(root.path, 'transcript.srt');
+    final translation = p.join(root.path, 'translation.srt');
+    await tester.runAsync(() async {
+      await saved.copy(transcript);
+      await saved.copy(translation);
+      // Match returning from an AI subpage: same media, same sheet element,
+      // and new selected paths supplied by the player's completion listener.
+      await tester.pumpWidget(
+        sheet(videoPath, selectedPaths: [transcript, translation]),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(SubtitleManagementSheet)), same(state));
+    expect(find.text('transcript.srt'), findsOneWidget);
+    expect(find.text('translation.srt'), findsOneWidget);
+    expect(find.text('saved.srt'), findsOneWidget);
+    expect(embedded.paths, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retained sheet refreshes added local files without selection', (
+    tester,
+  ) async {
+    const videoPath = 'https://example.test/Movie.mp4';
+    await tester.runAsync(() async {
+      await tester.pumpWidget(sheet(videoPath));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    final generated = p.join(root.path, 'generated.srt');
+    await tester.runAsync(() async {
+      await saved.copy(generated);
+      await tester.pumpWidget(
+        sheet(
+          videoPath,
+          localSubtitles: {'saved.srt': saved.path, 'generated.srt': generated},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('generated.srt'), findsOneWidget);
+    expect(find.text('saved.srt'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('file refresh preserves a completed embedded probe', (
+    tester,
+  ) async {
+    final videoPath = p.join(root.path, 'Movie.mp4');
+    await startLocalScan(tester, videoPath);
+    await tester.runAsync(() async {
+      discovery.result.complete([]);
+      embedded.result.complete([]);
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pumpAndSettle();
+    final generated = p.join(root.path, 'generated.srt');
+    await tester.runAsync(() async {
+      await saved.copy(generated);
+      await tester.pumpWidget(
+        sheet(videoPath, probeEmbedded: true, selectedPaths: [generated]),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(embedded.paths, [videoPath]);
+    expect(find.text('generated.srt'), findsOneWidget);
+    expect(find.text('saved.srt'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('file refresh completes an outstanding embedded probe', (
+    tester,
+  ) async {
+    final videoPath = p.join(root.path, 'Movie.mp4');
+    await startLocalScan(tester, videoPath);
+    final generated = p.join(root.path, 'generated.srt');
+    await tester.runAsync(() async {
+      await saved.copy(generated);
+      await tester.pumpWidget(
+        sheet(videoPath, probeEmbedded: true, selectedPaths: [generated]),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      discovery.result.complete([]);
+      embedded.result.complete([]);
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('generated.srt'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('subtitle-discovery-status')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'saved rows stay above the footer while scans finish separately',

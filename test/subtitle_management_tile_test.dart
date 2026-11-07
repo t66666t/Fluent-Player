@@ -19,8 +19,8 @@ void main() {
         if (const bool.fromEnvironment('SUBTITLE_CARD_PREVIEWS')) {
           await tester.runAsync(() async {
             for (final font in {
-              'MiSans': 'assets/fonts/MiSans-Regular.otf',
-              'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Regular.otf',
+              'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
+              'Noto Sans CJK Fallback': 'assets/fonts/NotoSansCJKsc-Regular.otf',
               'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
             }.entries) {
               await (FontLoader(
@@ -39,8 +39,8 @@ void main() {
           MaterialApp(
             theme: ThemeData(
               brightness: Brightness.dark,
-              fontFamily: 'MiSans',
-              fontFamilyFallback: const ['Noto Sans SC'],
+              fontFamily: 'Noto Sans SC',
+              fontFamilyFallback: const ['Noto Sans CJK Fallback'],
               useMaterial3: true,
             ),
             home: Scaffold(

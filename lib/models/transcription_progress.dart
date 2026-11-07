@@ -1,5 +1,20 @@
 import 'transcription_status.dart';
 
+/// Completed correction batches, including restored checkpoints.
+class SubtitleOptimizationProgress {
+  const SubtitleOptimizationProgress({
+    required this.processed,
+    required this.total,
+    this.totalIsFinal = true,
+  });
+
+  final int processed, total;
+  final bool totalIsFinal;
+
+  double get fraction => total <= 0 ? 0 : (processed / total).clamp(0, 1);
+  String get label => '优化 $processed/$total 条${totalIsFinal ? '' : '（已识别）'}';
+}
+
 /// Audio coverage already committed to the generated subtitle file(s).
 class TranscriptionAudioProgress {
   const TranscriptionAudioProgress({
@@ -45,15 +60,21 @@ class TranscriptionAudioProgress {
 /// Overall work allocation, not an estimate of elapsed or remaining time.
 /// Recognition includes slice preparation, upload and result polling.
 class TranscriptionProgressPlan {
-  const TranscriptionProgressPlan({required this.translate});
+  const TranscriptionProgressPlan({
+    required this.translate,
+    this.optimize = false,
+  });
 
-  final bool translate;
+  final bool translate, optimize;
 
   double download(double fraction) => _range(0, 0.10, fraction);
   double preparation(double fraction) => _range(0.10, 0.15, fraction);
   double recognition(double fraction) =>
-      _range(0.15, translate ? 0.60 : 0.90, fraction);
-  double translation(double fraction) => _range(0.60, 0.90, fraction);
+      _range(0.15, optimize ? 0.55 : (translate ? 0.60 : 0.90), fraction);
+  double optimization(double fraction) =>
+      _range(0.55, translate ? 0.72 : 0.90, fraction);
+  double translation(double fraction) =>
+      _range(optimize ? 0.72 : 0.60, 0.90, fraction);
   double embedding(double fraction) => _range(0.90, 0.98, fraction);
 
   static double _range(double start, double end, double fraction) =>
@@ -102,6 +123,7 @@ class TranscriptionProgress {
       TranscriptionStatus.extracting => '准备音频',
       TranscriptionStatus.uploading => '上传音频',
       TranscriptionStatus.transcribing => '识别语音',
+      TranscriptionStatus.optimizing => '优化字幕',
       TranscriptionStatus.translating => '翻译字幕',
       TranscriptionStatus.embedding => '内嵌字幕',
       TranscriptionStatus.completed => '转录完成',
@@ -114,6 +136,7 @@ class TranscriptionProgress {
       status == TranscriptionStatus.transcribing &&
       (message.contains('等待识别结果') ||
           message.contains('等待转录结果') ||
+          message.startsWith('正在识别 · 已完成') ||
           message.contains('转录处理中') ||
           message.contains('查询结果时') ||
           message.contains('查询结果受到') ||

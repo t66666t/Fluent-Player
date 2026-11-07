@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'subtitle_font.dart';
 
 const double kSubtitleTextMetricReferenceFontSize = 39.7;
+const double kDefaultSubtitleFontSize = 30;
+const double kDefaultSecondarySubtitleFontSize = 25;
 
 /// 字幕文字样式 - 横竖屏共享
 /// 包含字体、颜色、描边、阴影等视觉样式属性
@@ -61,7 +63,7 @@ class SubtitleTextStyle {
     this.defaultFontFamily,
     this.defaultFontWeight = 400,
     this.languageFonts,
-    this.fontFamilyChinese = 'MiSans',
+    this.fontFamilyChinese = 'Noto Sans SC',
     this.fontFamilyEnglish = 'Comic Relief',
     this.textColor = Colors.white,
     this.backgroundColor = Colors.black,
@@ -156,12 +158,8 @@ class SubtitleTextStyle {
         return 'Courier New';
       case 'Cursive':
         return 'Comic Sans MS';
-      case 'MiSans':
-        return 'MiSans';
       case 'Noto Sans SC':
         return 'Noto Sans SC';
-      case 'Noto Serif CJK SC':
-        return 'Noto Serif CJK SC';
       case 'Swei Gothic CJK SC':
         return 'Swei Gothic CJK SC';
       case 'Brawler':
@@ -199,6 +197,7 @@ class SubtitleTextStyle {
     return TextStyle(
       fontSize: fontSize,
       fontFamily: family,
+      fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
       color: textColor,
       fontWeight: overrideFontWeight ?? weight,
       fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
@@ -372,8 +371,8 @@ class SubtitleLayoutStyle {
     this.adaptiveSizing = false,
     this.balancedScreenSizing = false,
     this.overallScale = 1.0,
-    this.fontSize = 39.0,
-    this.secondaryFontSize = 28.0,
+    this.fontSize = kDefaultSubtitleFontSize,
+    this.secondaryFontSize = kDefaultSecondarySubtitleFontSize,
     this.lineSpacing = 0.0,
     this.letterSpacing = 0.0,
   });

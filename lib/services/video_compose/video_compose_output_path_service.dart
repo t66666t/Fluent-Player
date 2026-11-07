@@ -5,6 +5,8 @@ import 'dart:io';
 class VideoComposeOutputPathService {
   const VideoComposeOutputPathService();
 
+  static int _lastFileStamp = 0;
+
   Future<void> ensureParentDirectory(String outputPath) async {
     final Directory dir = Directory(p.dirname(outputPath));
     if (!await dir.exists()) {
@@ -28,6 +30,8 @@ class VideoComposeOutputPathService {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     final String baseName = safeTitle.isEmpty ? 'video' : safeTitle;
-    return '${baseName}_compose_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    final now = DateTime.now().microsecondsSinceEpoch;
+    _lastFileStamp = now > _lastFileStamp ? now : _lastFileStamp + 1;
+    return '${baseName}_compose_$_lastFileStamp.mp4';
   }
 }

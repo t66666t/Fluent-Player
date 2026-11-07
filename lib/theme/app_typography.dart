@@ -8,22 +8,23 @@ abstract final class AppFontWeight {
   static const action = FontWeight.w600;
 }
 
-/// A deterministic, softer MiSans face for sustained reading. Unlike the
-/// legacy MiSans family, each weight here maps to exactly one bundled font.
+/// Reading and controls share the variable Noto face and its CJK fallback.
 const appReadingStyle = TextStyle(
   fontFamily: 'App Reading',
+  fontFamilyFallback: ['Noto Sans CJK Fallback'],
   fontWeight: AppFontWeight.reading,
 );
 
 /// Reading stays regular; navigation and actions have a stronger visual anchor.
 /// Keep the Material sizes/leading and the platform's existing font families.
 TextTheme appTextTheme({bool isIOS = false}) {
-  final family = isIOS ? 'CupertinoSystemText' : 'MiSans';
+  final family = isIOS ? 'CupertinoSystemText' : 'Noto Sans SC';
   final displayFamily = isIOS ? 'CupertinoSystemDisplay' : family;
   final base = ThemeData.dark(useMaterial3: true).textTheme.apply(
     bodyColor: Colors.white,
     displayColor: Colors.white,
     fontFamily: family,
+    fontFamilyFallback: const ['Noto Sans CJK Fallback'],
   );
   TextStyle? title(TextStyle? style) => style?.copyWith(
     fontFamily: displayFamily,

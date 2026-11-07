@@ -23,6 +23,27 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
   final _episodesScroll = PlaybackScrollController();
   final _identityScroll = PlaybackScrollController();
   final _entryWork = RouteTransitionWork();
+  final _navigationFocusGroup = Object();
+  final _toolbarFocusGroup = Object();
+  final _sidebarHeaderKey = GlobalKey();
+  double? _sidebarHeaderHeight;
+  bool _sidebarMeasurementScheduled = false;
+
+  void _scheduleSidebarMeasurement() {
+    if (_sidebarMeasurementScheduled) return;
+    _sidebarMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sidebarMeasurementScheduled = false;
+      if (!mounted) return;
+      final render = _sidebarHeaderKey.currentContext?.findRenderObject();
+      if (render is! RenderBox || !render.hasSize) return;
+      final height = render.size.height;
+      if (_sidebarHeaderHeight == null ||
+          (_sidebarHeaderHeight! - height).abs() > .5) {
+        setState(() => _sidebarHeaderHeight = height);
+      }
+    });
+  }
 
   static const _filters = {
     'all': '全部',
@@ -181,223 +202,261 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope<void>(
-    canPop: !_selecting,
-    onPopInvokedWithResult: (didPop, result) {
-      if (!didPop && _selecting) _endSelection();
-    },
-    child: PodcastPageShortcuts(
-      bindings: {
-        LogicalKeyboardKey.keyS: _showSearch,
-        LogicalKeyboardKey.keyP: () => _openSettings(context, widget.channelId),
-        LogicalKeyboardKey.keyB: _beginSelection,
-        LogicalKeyboardKey.keyA: () => setState(() {
-          if (_visibleIds.isNotEmpty &&
-              _visibleIds.every(_selection.contains)) {
-            _selection.deselectAll();
-          } else {
-            _selection.selectAll(_visibleIds);
-          }
-        }),
-        LogicalKeyboardKey.space: _togglePodcastSession,
-        LogicalKeyboardKey.keyR: _refreshChannel,
-      },
-      onSelectAll: () => setState(() => _selection.selectAll(_visibleIds)),
-      onEscape: () {
-        if (_selecting) {
-          _endSelection();
-          return true;
-        }
-        if (!_searching) return false;
-        setState(() => _searching = false);
-        return true;
-      },
-      child: Scaffold(
-        backgroundColor: AppTokens.bgBase,
-        body: PodcastGate(
-          builder: (runtime) {
-            final channel = runtime.store.channel(widget.channelId);
-            if (channel == null) {
-              return const PodcastEmpty(
-                title: '频道尚未载入',
-                message: '请检查订阅是否仍然存在，或重新导入频道。',
-              );
+  Widget build(BuildContext context) => MediaLibrarySpatialNavigation(
+    child: MediaLibraryKeyboardRegion(
+      surface: () => 'podcast-channel-${widget.channelId}',
+      orderedIds: () => _visibleIds,
+      selectionMode: () => _selecting,
+      selectedIds: () => _selection.ids.toSet(),
+      onSelectionChanged: (ids) => setState(() {
+        _selection.ids
+          ..clear()
+          ..addAll(ids);
+      }),
+      child: PopScope<void>(
+        canPop: !_selecting,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _selecting) _endSelection();
+        },
+        child: PodcastPageShortcuts(
+          bindings: {
+            LogicalKeyboardKey.keyS: _showSearch,
+            LogicalKeyboardKey.keyP: () =>
+                _openSettings(context, widget.channelId),
+            LogicalKeyboardKey.keyB: _beginSelection,
+            LogicalKeyboardKey.keyA: () => setState(() {
+              if (_visibleIds.isNotEmpty &&
+                  _visibleIds.every(_selection.contains)) {
+                _selection.deselectAll();
+              } else {
+                _selection.selectAll(_visibleIds);
+              }
+            }),
+            LogicalKeyboardKey.space: _togglePodcastSession,
+            LogicalKeyboardKey.keyR: _refreshChannel,
+          },
+          onSelectAll: () => setState(() => _selection.selectAll(_visibleIds)),
+          onEscape: () {
+            if (_selecting) {
+              _endSelection();
+              return true;
             }
-            final settings = runtime.store.effective(channel.id);
-            final downloads = runtime.controller.downloads
-                .where((t) => t.status == PodcastDownloadStatus.completed)
-                .map((t) => t.episodeId)
-                .toSet();
-            final sort = settings.text('sort');
-            _catalog.resolve(
-              store: runtime.store,
-              channelId: channel.id,
-              filter: _filter,
-              query: _query,
-              sort: sort,
-              hidePlayed: settings.flag('hidePlayed'),
-              downloaded: downloads,
-              countFilters: _filters.keys,
-            );
-            final counts = _catalog.counts;
-            final queryKey =
-                '$_filter|$_query|$sort|${settings.flag('hidePlayed')}|${settings.flag('groupSeasons')}';
-            final ids = _catalog.ids;
-            // Changing the query ends the selection. A plain refresh keeps ids
-            // that are still in the list and does not select the new episodes.
-            if (_queryKey != queryKey) {
-              _selection.clear();
-              _queryKey = queryKey;
-            } else if (_selecting) {
-              _selection.retain(ids);
-            }
-            if (!identical(_visibleIds, ids)) {
-              _visibleIndexes = {
-                for (var index = 0; index < ids.length; index++)
-                  ids[index]: index,
-              };
-              _visibleIds = ids;
-            }
-            _downloaded = downloads;
-            final episodes = _catalog.episodes;
-            final continuing = _catalog.continuing;
-            final start = continuing ?? episodes.firstOrNull;
-            final refreshing = runtime.controller.refreshing.contains(
-              channel.id,
-            );
-            return Stack(
-              children: [
-                PodcastBackdrop(
-                  imageUrl: channel.imageUrl,
-                  intensity: settings.number('tint'),
-                  child: MediaLibrarySafeArea(
-                    top: true,
-                    child: LayoutBuilder(
-                      builder: (context, bounds) {
-                        final padding = bounds.maxWidth < 600 ? 8.0 : 24.0;
-                        final split =
-                            bounds.maxWidth >= 1100 &&
-                            bounds.maxWidth / bounds.maxHeight >= 1.2;
-                        final episodeWidth =
-                            min(bounds.maxWidth, 1440.0) -
-                            padding * 2 -
-                            (split ? 240 : 0);
-                        final wideRows = episodeWidth - 24 >= 680;
-                        return Center(
-                          child: SizedBox(
-                            width: min(bounds.maxWidth, 1440.0),
-                            child: Column(
-                              children: [
-                                SizedBox(
-                                  height: 52,
-                                  child: _navigation(
-                                    runtime,
-                                    channel,
-                                    refreshing,
-                                    bounds.maxWidth,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: split
-                                      ? Padding(
-                                          padding: EdgeInsets.fromLTRB(
-                                            padding,
-                                            8,
-                                            padding,
-                                            0,
-                                          ),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              SizedBox(
-                                                key: const ValueKey(
-                                                  'podcast-channel-sidebar',
-                                                ),
-                                                width: 216,
-                                                child: PodcastScrollbar(
-                                                  controller: _identityScroll,
-                                                  child: SingleChildScrollView(
-                                                    controller: _identityScroll,
-                                                    child: _identity(
-                                                      runtime,
-                                                      channel,
-                                                      counts,
-                                                      start,
-                                                      episodes,
-                                                      sidebar: true,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 24),
-                                              Expanded(
-                                                child: Column(
-                                                  children: [
-                                                    _toolbar(
-                                                      runtime,
-                                                      channel,
-                                                      episodes,
-                                                      counts,
-                                                    ),
-                                                    const SizedBox(height: 8),
-                                                    Expanded(
-                                                      child: _episodeScroll(
-                                                        runtime,
-                                                        channel,
-                                                        episodes,
-                                                        horizontalPadding: 0,
-                                                        wideRows: wideRows,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      : _episodeScroll(
+            if (!_searching) return false;
+            setState(() => _searching = false);
+            return true;
+          },
+          child: Scaffold(
+            backgroundColor: AppTokens.bgBase,
+            body: PodcastGate(
+              builder: (runtime) {
+                final channel = runtime.store.channel(widget.channelId);
+                if (channel == null) {
+                  return const MediaLibrarySafeArea(
+                    child: PodcastEmpty(
+                      title: '频道尚未载入',
+                      message: '请检查订阅是否仍然存在，或重新导入频道。',
+                    ),
+                  );
+                }
+                final settings = runtime.store.effective(channel.id);
+                final downloads = runtime.controller.downloads
+                    .where((t) => t.status == PodcastDownloadStatus.completed)
+                    .map((t) => t.episodeId)
+                    .toSet();
+                final sort = settings.text('sort');
+                _catalog.resolve(
+                  store: runtime.store,
+                  channelId: channel.id,
+                  filter: _filter,
+                  query: _query,
+                  sort: sort,
+                  hidePlayed: settings.flag('hidePlayed'),
+                  downloaded: downloads,
+                  countFilters: _filters.keys,
+                );
+                final counts = _catalog.counts;
+                final queryKey =
+                    '$_filter|$_query|$sort|${settings.flag('hidePlayed')}|${settings.flag('groupSeasons')}';
+                final ids = _catalog.ids;
+                // Changing the query ends the selection. A plain refresh keeps ids
+                // that are still in the list and does not select the new episodes.
+                if (_queryKey != queryKey) {
+                  _selection.clear();
+                  _queryKey = queryKey;
+                } else if (_selecting) {
+                  _selection.retain(ids);
+                }
+                if (!identical(_visibleIds, ids)) {
+                  _visibleIndexes = {
+                    for (var index = 0; index < ids.length; index++)
+                      ids[index]: index,
+                  };
+                  _visibleIds = ids;
+                }
+                _downloaded = downloads;
+                final episodes = _catalog.episodes;
+                final continuing = _catalog.continuing;
+                final start = continuing ?? episodes.firstOrNull;
+                final refreshing = runtime.controller.refreshing.contains(
+                  channel.id,
+                );
+                return Stack(
+                  children: [
+                    PodcastBackdrop(
+                      imageUrl: channel.imageUrl,
+                      intensity: settings.number('tint'),
+                      child: MediaLibrarySafeArea(
+                        top: true,
+                        child: LayoutBuilder(
+                          builder: (context, bounds) {
+                            final padding = bounds.maxWidth < 600 ? 8.0 : 24.0;
+                            final split =
+                                bounds.maxWidth >= 1100 &&
+                                bounds.maxWidth / bounds.maxHeight >= 1.2;
+                            final contentWidth = min(bounds.maxWidth, 1440.0);
+                            final sidebarWidth = (contentWidth * .24).clamp(
+                              240.0,
+                              360.0,
+                            );
+                            final episodeWidth =
+                                contentWidth -
+                                padding * 2 -
+                                (split ? sidebarWidth + 24 : 0);
+                            final wideRows = episodeWidth - 24 >= 680;
+                            return Center(
+                              child: SizedBox(
+                                width: min(bounds.maxWidth, 1440.0),
+                                child: Column(
+                                  children: [
+                                    SizedBox(
+                                      height: 52,
+                                      child: MediaLibrarySpatialNavigationGroup(
+                                        group: _navigationFocusGroup,
+                                        child: _navigation(
                                           runtime,
                                           channel,
-                                          episodes,
-                                          horizontalPadding: padding,
-                                          wideRows: wideRows,
-                                          header: _identity(
-                                            runtime,
-                                            channel,
-                                            counts,
-                                            start,
-                                            episodes,
-                                          ),
-                                          toolbar: _toolbar(
-                                            runtime,
-                                            channel,
-                                            episodes,
-                                            counts,
-                                          ),
+                                          refreshing,
+                                          bounds.maxWidth,
                                         ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: split
+                                          ? Padding(
+                                              padding: EdgeInsets.fromLTRB(
+                                                padding,
+                                                8,
+                                                padding,
+                                                0,
+                                              ),
+                                              child: Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  SizedBox(
+                                                    key: const ValueKey(
+                                                      'podcast-channel-sidebar',
+                                                    ),
+                                                    width: sidebarWidth,
+                                                    child: LayoutBuilder(
+                                                      builder:
+                                                          (
+                                                            context,
+                                                            sidebarBounds,
+                                                          ) => PodcastScrollbar(
+                                                            controller:
+                                                                _identityScroll,
+                                                            child: SingleChildScrollView(
+                                                              controller:
+                                                                  _identityScroll,
+                                                              child: _identity(
+                                                                runtime,
+                                                                channel,
+                                                                counts,
+                                                                start,
+                                                                episodes,
+                                                                sidebar: true,
+                                                                sidebarHeight:
+                                                                    sidebarBounds
+                                                                        .maxHeight,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 24),
+                                                  Expanded(
+                                                    child: Column(
+                                                      children: [
+                                                        _toolbar(
+                                                          runtime,
+                                                          channel,
+                                                          episodes,
+                                                          counts,
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        Expanded(
+                                                          child: _episodeScroll(
+                                                            runtime,
+                                                            channel,
+                                                            episodes,
+                                                            horizontalPadding:
+                                                                0,
+                                                            wideRows: wideRows,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          : _episodeScroll(
+                                              runtime,
+                                              channel,
+                                              episodes,
+                                              horizontalPadding: padding,
+                                              wideRows: wideRows,
+                                              header: _identity(
+                                                runtime,
+                                                channel,
+                                                counts,
+                                                start,
+                                                episodes,
+                                              ),
+                                              toolbar: _toolbar(
+                                                runtime,
+                                                channel,
+                                                episodes,
+                                                counts,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: MediaLibrarySelectionBarTransition(
-                    child: _selecting && _selection.ids.isNotEmpty
-                        ? _selectionActions(runtime)
-                        : null,
-                  ),
-                ),
-              ],
-            );
-          },
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: MediaLibrarySelectionBarTransition(
+                        child: _selecting && _selection.ids.isNotEmpty
+                            ? _selectionActions(runtime)
+                            : null,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     ),
@@ -643,6 +702,7 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
     PodcastEpisode? start,
     List<PodcastEpisode> episodes, {
     bool sidebar = false,
+    double? sidebarHeight,
   }) {
     final title = runtime.channelTitle(channel);
     final continuing =
@@ -663,58 +723,87 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
         builder: (context, bounds) {
           final wide = bounds.maxWidth >= 680;
           if (sidebar) {
+            _scheduleSidebarMeasurement();
+            final availableHeight =
+                sidebarHeight != null && sidebarHeight.isFinite
+                ? max(0.0, sidebarHeight - (_sidebarHeaderHeight ?? 0) - 28)
+                : null;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                PodcastArtwork(url: channel.imageUrl, size: 112, radius: 16),
-                const SizedBox(height: 16),
-                _PodcastTitleHint(
-                  title: title,
-                  child: Text(
-                    title,
-                    maxLines: _expanded ? null : 3,
-                    overflow: _expanded
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: PodcastType.title.copyWith(
-                      fontSize: 22,
-                      height: 1.3,
-                      letterSpacing: -.3,
+                NotificationListener<SizeChangedLayoutNotification>(
+                  onNotification: (_) {
+                    _scheduleSidebarMeasurement();
+                    return false;
+                  },
+                  child: SizeChangedLayoutNotifier(
+                    child: Column(
+                      key: _sidebarHeaderKey,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        PodcastArtwork(
+                          url: channel.imageUrl,
+                          size: 112,
+                          radius: 16,
+                        ),
+                        const SizedBox(height: 16),
+                        _PodcastTitleHint(
+                          title: title,
+                          child: Text(
+                            title,
+                            maxLines: _expanded ? null : 3,
+                            overflow: _expanded
+                                ? TextOverflow.visible
+                                : TextOverflow.ellipsis,
+                            style: PodcastType.title.copyWith(
+                              fontSize: 22,
+                              height: 1.3,
+                              letterSpacing: -.3,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          channel.author.isEmpty ? '独立播客' : channel.author,
+                          style: PodcastType.meta.copyWith(
+                            fontSize: 12,
+                            height: 1.5,
+                            color: AppTokens.text2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${counts['all']} 集节目 · ${counts['unplayed']} 集未听 · ${counts['inProgress']} 集进行中',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.5,
+                            color: AppTokens.text3,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        DesktopButtonClickRegion(
+                          child: FilledButton.icon(
+                            onPressed: start == null ? null : play,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFD5DEEB),
+                              foregroundColor: const Color(0xFF202833),
+                              minimumSize: const Size(120, 44),
+                              shape: const StadiumBorder(),
+                              textStyle: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            ),
+                            icon: const Icon(
+                              Icons.play_arrow_rounded,
+                              size: 20,
+                            ),
+                            label: Text(playLabel),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  channel.author.isEmpty ? '独立播客' : channel.author,
-                  style: PodcastType.meta.copyWith(
-                    fontSize: 12,
-                    height: 1.5,
-                    color: AppTokens.text2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${counts['all']} 集节目 · ${counts['unplayed']} 集未听 · ${counts['inProgress']} 集进行中',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    height: 1.5,
-                    color: AppTokens.text3,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DesktopButtonClickRegion(
-                  child: FilledButton.icon(
-                    onPressed: start == null ? null : play,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFD5DEEB),
-                      foregroundColor: const Color(0xFF202833),
-                      minimumSize: const Size(120, 44),
-                      shape: const StadiumBorder(),
-                      textStyle: Theme.of(context).textTheme.labelLarge
-                          ?.copyWith(fontSize: 13, fontWeight: FontWeight.w500),
-                    ),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: Text(playLabel),
                   ),
                 ),
                 if (description.isNotEmpty) ...[
@@ -726,6 +815,8 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
                     onExpandedChanged: (value) =>
                         setState(() => _expanded = value),
                     semanticLabel: '频道简介',
+                    availableHeight: availableHeight,
+                    controlBelow: true,
                     style: const TextStyle(height: 1.6),
                   ),
                 ],
@@ -918,7 +1009,7 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
         ),
       ],
     );
-    return LayoutBuilder(
+    final toolbar = LayoutBuilder(
       builder: (context, bounds) {
         final inline = bounds.maxWidth >= 740 && !largeText;
         return SizedBox(
@@ -1027,6 +1118,10 @@ class _PodcastChannelPageState extends State<PodcastChannelPage> {
           ),
         );
       },
+    );
+    return MediaLibrarySpatialNavigationGroup(
+      group: _toolbarFocusGroup,
+      child: toolbar,
     );
   }
 

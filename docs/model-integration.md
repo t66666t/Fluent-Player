@@ -118,9 +118,28 @@ Windows x64 与 Android arm64 Release 均构建通过，发布包检查包含 CU
 
 ## 验证入口
 
+### 社区版共享 VAD 与按需准备
+
+`assets/models/asr_dependencies.json` 单独登记 `silero-vad-16k`，由 `loadModelCatalog()` 合并到同一模型清单。其文件大小、SHA-256 与原内置 Silero VAD 完全相同；不把权重提交到源码仓库，也不再从不存在的 `assets/models/asr/silero_vad.onnx` 读取。主模型中心下载组合包含该依赖，即使关闭可选增强也需要语音检测。已安装组合可以离线转录，也可通过原离线导入入口准备依赖。
+
+`captureTranscription()` 只冻结已登记且未下架的模型及设置，不再要求提前安装。执行时 `prepareAsrModels()` 通过原下载队列准备冻结的主模型、增强组件和 VAD，再进入推理资源调度；本地翻译使用相同的 `prepareModel()`。进度显示模型名称、下载状态、百分比和字节数。暂停/失败结束当前等待，重试沿用原模型身份和下载断点。取消转录立即停止等待，应用级共享下载继续保留，仍可在模型中心暂停；不会取消其他任务正在使用的下载。
+
+旧社区版已经释放到自己数据目录的 VAD 在首次使用时按固定大小和哈希检查并导入，保留原文件，不读取完整版目录。下载后的 VAD 与主模型一样受使用租约保护。任务 JSON、已有模型清单和兼容性基线不变。
+
+回归入口包括 `test/local_asr_preparation_test.dart`。可复现的真实 CPU 推理检查：
+
+```text
+python tool/download_model_smoke_assets.py --output .artifacts/local-asr-repair --ids sensevoice-small-int8 dolphin-base-int8
+flutter test --no-pub --dart-define=LOCAL_ASR_MODEL_ROOT=.artifacts/local-asr-repair test/local_asr_native_smoke_test.dart
+```
+
+该 Windows 检查会把已准备的文件流送入生产下载队列，再执行真实 VAD/ASR、重复识别、取消与进程内服务重建后的检查点恢复。Android 真机入口是 `integration_test/local_asr_transcription_test.dart`，使用 `LOCAL_ASR_FIXTURE_BASE` 指定维护者提供的同版本权重服务器；用独立 profile 包执行，测试目录与用户数据分离。它不证明所有模型、GPU 后端或其他系统的推理均已通过。
+
 ### 模型下载策略
 
-模型中心最多同时下载 3 个模型，每个大文件最多 4 路 HTTP Range 请求。分段上限为 8 MiB，小文件按剩余大小缩小分段；按顺序写入后立即补充请求，最多预取 4 段。磁盘仍只保存连续 `.part` 前缀，沿用原来的 URL / ETag 续传信息；没有 Range 或强 ETag 的来源回退单流。暂停单个模型不影响其他模型，退出时等待全部传输关闭并保存原队列状态。
+模型中心最多同时下载 3 个模型，每个大文件最多 8 路 HTTP Range 请求。分段上限为 2 MiB，小文件按剩余大小缩小分段；请求完成即补位，不必等待前面的慢分段写入，最多同时保留 16 段（32 MiB，与原 4 × 8 MiB 相同的内容预算）。磁盘仍只保存连续 `.part` 前缀，沿用原来的 URL / ETag 续传信息；没有 Range 或强 ETag 的来源回退单流。暂停单个模型不影响其他模型，退出时等待全部传输关闭并保存原队列状态。
+
+2026-11-04：每个分段独立按 5 秒窗口监测速度；连续两个窗口低于已观测分段速度的 20%（阈值最低 16 KiB/s、最高 1 MiB/s）时，保留该段已收到的内容，用原来源、原网络策略的新连接续传剩余范围，继续核对强 ETag、Content-Range 和长度。其余健康连接保持运行。每段最多重连 2 次；若稳定慢速仍有数据，最后一次允许继续，避免无限重连。无数据超时、临时连接错误或正文截断也在预算内续传；文件身份不一致立即拒绝。断点格式、模型 ID、权重及任务快照不变。
 
 自动选源在用户开始下载时采样，最大 4 MiB / 8 秒；足够大的样本按正文持续吞吐排序，避免将低连接延迟误判为大文件速度。低速必须连续两个 20 秒窗口才触发切源，相对低速阈值封顶 256 KiB/s，避免多模型共享带宽后误切源；无数据超时仍及时处理。切源使用已经测得的备用顺序，不再每次中断下载重测全部来源。手动选源、手动测速和网络变化后的缓存隔离保留。
 
@@ -156,4 +175,6 @@ python tool/verify_model_integration.py --native --model-root .artifacts/model-c
 
 Qwen3 FP16 和日韩共享增强的固定版本、接入、许可与验证状态见 [Qwen 接入记录](qwen-asr-integration.md)。
 
-Qwen 的 CPU 流水线与英文字幕后续优化见 [CPU 与英文时间精校](qwen-asr-cpu-optimization.md)。新任务统一通过 `currentAsrTextProcessingVersion` 冻结处理版本及依赖；v2 英文优先使用已准备的原英文 CTC，对齐失败仍保留原始时间。模型选择页、增强准备和任务快照须使用同一版本；旧任务按冻结版本解析。
+Qwen 的 CPU 流水线与英文字幕后续优化见 [CPU 与英文时间精校](qwen-asr-cpu-optimization.md)。新任务统一通过 `currentAsrTextProcessingVersion` 冻结处理版本及依赖；v2 起英文优先使用已准备的原英文 CTC，对齐失败仍保留原始时间。v3 只改变显示分句：有词时间时按阅读速度和语言断点切开，没有词时间且超过约 7 秒或两行时，用已有音频里的能量停顿或音节权重估计子句时间，不写入词级时间。v3 不新增模型依赖，识别指纹不变，旧任务仍按冻结的 1 或 2 解析。模型选择页、增强准备和任务快照须使用同一版本。
+
+手机自动加速在没有 14 天内、线程数匹配、且判定 GPU 更快的记录时直接使用 CPU，不初始化 GPU 驱动。GPU 失败写入同一套 14 天记录，重新测速成功或清除记录后可以再用；这不是永久黑名单。桌面自动模式仍会主动尝试 GPU。同一任务里的线程数有滞变，播放或短暂发热不会因此整份重载大模型。

@@ -33,12 +33,12 @@ void main() {
           DesktopMediaManagementShortcutAction.toggleActionButtons,
         ),
         (
-          LogicalKeyboardKey.keyJ,
-          DesktopMediaManagementShortcutAction.openDouyinDownload,
+          LogicalKeyboardKey.keyM,
+          DesktopMediaManagementShortcutAction.openBatchImport,
         ),
         (
-          LogicalKeyboardKey.keyW,
-          DesktopMediaManagementShortcutAction.openWebMedia,
+          LogicalKeyboardKey.keyC,
+          DesktopMediaManagementShortcutAction.openBatchSubtitle,
         ),
       ]) {
         expect(DesktopMediaManagementShortcuts.matchAction(key), action);
@@ -49,6 +49,34 @@ void main() {
               platform,
             ),
             supportsHardwareKeyboardShortcutsOn(platform),
+          );
+        }
+      }
+    },
+  );
+
+  test(
+    'retired online shortcut identities remain readable but unavailable',
+    () {
+      for (final action in [
+        DesktopMediaManagementShortcutAction.openBilibiliDownload,
+        DesktopMediaManagementShortcutAction.openYtDlpDownload,
+        DesktopMediaManagementShortcutAction.openDouyinDownload,
+        DesktopMediaManagementShortcutAction.openWebMedia,
+      ]) {
+        expect(
+          DesktopMediaManagementShortcuts.matchAction(
+            DesktopMediaManagementShortcuts.defaults[action]!,
+          ),
+          action,
+        );
+        for (final platform in TargetPlatform.values) {
+          expect(
+            DesktopMediaManagementShortcuts.isAvailableOnPlatform(
+              action,
+              platform,
+            ),
+            isFalse,
           );
         }
       }
@@ -71,6 +99,24 @@ void main() {
           'action': 0,
         })?.logicalKey,
         key,
+      );
+    }
+  });
+
+  test('external AI shortcut uses a free key on desktop platforms only', () {
+    const action = DesktopMediaManagementShortcutAction.openExternalAi;
+    expect(
+      DesktopMediaManagementShortcuts.matchAction(LogicalKeyboardKey.keyQ),
+      action,
+    );
+    for (final platform in TargetPlatform.values) {
+      expect(
+        DesktopMediaManagementShortcuts.isAvailableOnPlatform(action, platform),
+        [
+          TargetPlatform.windows,
+          TargetPlatform.macOS,
+          TargetPlatform.linux,
+        ].contains(platform),
       );
     }
   });
@@ -238,6 +284,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('键盘快捷键'), findsOneWidget);
     expect(find.textContaining('展开 / 收起操作按钮'), findsOneWidget);
+    expect(find.textContaining('批量导入'), findsOneWidget);
+    expect(find.text('1～3'), findsOneWidget);
+    for (final removed in ['B站', 'B 站', 'YouTube', '抖音', '网站', '播客', '缓存管理']) {
+      expect(find.textContaining(removed), findsNothing);
+    }
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();

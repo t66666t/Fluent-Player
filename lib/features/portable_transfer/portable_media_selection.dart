@@ -1,4 +1,4 @@
-import '../../models/media_source_ref.dart';
+import '../../services/community_media_input.dart';
 import '../../models/video_collection.dart';
 import '../../models/video_item.dart';
 import '../../services/library_service.dart';
@@ -46,9 +46,7 @@ class PortableTreeIndex {
             parentId: parentId,
             childIds: const <String>[],
             thumbnailPath: video.thumbnailPath,
-            isOnline:
-                video.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
-                video.path.startsWith('bilibili://stream/'),
+            isOnline: !communityMediaIsLocal(video.path),
             fileName: video.path,
             mediaTypeAudio: video.type == MediaType.audio,
           );
@@ -291,7 +289,9 @@ class PortableMediaSelection {
         final folder = tree.node(current);
         if (folder == null || !folder.isFolder) break;
         // current sits strictly above the LCA, so it would be an empty shell.
-        if (lca != null && current != lca && tree.isDescendantOf(lca, current)) {
+        if (lca != null &&
+            current != lca &&
+            tree.isDescendantOf(lca, current)) {
           break;
         }
         collectionIds.add(current);
@@ -427,4 +427,19 @@ class PortableExportInclusion {
   int get mediaCount => videoIds.length;
   int get folderCount => collectionIds.length;
   bool get isEmpty => collectionIds.isEmpty && videoIds.isEmpty;
+
+  /// Include ancestors to reach a selected nested podcast without emitting
+  /// unselected siblings or extra folder shells.
+  Set<String> traversalIds(PortableTreeIndex tree) {
+    final result = <String>{...collectionIds, ...videoIds};
+    for (final id in List<String>.of(result)) {
+      var parentId = tree.node(id)?.parentId;
+      final seen = <String>{id};
+      while (parentId != null && seen.add(parentId)) {
+        result.add(parentId);
+        parentId = tree.node(parentId)?.parentId;
+      }
+    }
+    return result;
+  }
 }

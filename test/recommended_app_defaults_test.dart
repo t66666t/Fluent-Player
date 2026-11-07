@@ -218,7 +218,10 @@ void main() {
         expect(settings.bilibiliDanmakuUseLockedSpeedAsBaseline, true);
         expect(settings.bilibiliDanmakuAutoUpdate, true);
         expect(prefs.getBool('bilibili_download_danmaku'), true);
-        expect(settings.skipPortraitPlayer, !device.phone);
+        expect(
+          settings.skipPortraitPlayer,
+          !device.mobile || device.size.width > device.size.height,
+        );
         expect(settings.pausePlaybackWhenAppBackgrounded, device.mobile);
         expect(settings.autoPauseOnExit, device.mobile);
         expect(settings.copyImportedMediaToPrivateStorage, device.mobile);

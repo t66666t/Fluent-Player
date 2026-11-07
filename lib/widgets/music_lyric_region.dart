@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../controllers/music_lyric_selection_controller.dart';
 import '../models/music_lyric_display_mode.dart';
+import '../models/music_lyric_font.dart';
 import '../models/music_lyric_typography.dart';
+import '../models/subtitle_style.dart';
 import '../models/subtitle_model.dart';
 import '../services/music_lyric_content_resolver.dart';
 import 'music_lyric_selection_pane.dart';
@@ -36,6 +38,8 @@ class MusicLyricRegion extends StatefulWidget {
   final bool isPlaying;
   final double lyricFontSizeScale;
   final double lyricSpacingScale;
+  final double lyricSecondaryRatio;
+  final SubtitleTextStyle lyricTextStyle;
   final bool wordByWordEnabled;
   final bool lyricBlurEnabled;
   final double anchorFraction;
@@ -68,6 +72,8 @@ class MusicLyricRegion extends StatefulWidget {
     this.isPlaying = true,
     this.lyricFontSizeScale = 1.0,
     this.lyricSpacingScale = MusicLyricTypography.defaultSpacingScale,
+    this.lyricSecondaryRatio = MusicLyricTypography.defaultSecondaryRatio,
+    this.lyricTextStyle = MusicLyricFont.defaultStyle,
     this.wordByWordEnabled = true,
     this.lyricBlurEnabled = true,
     this.anchorFraction = 0.30,
@@ -304,6 +310,8 @@ class MusicLyricRegionState extends State<MusicLyricRegion> {
             isPlaying: widget.isPlaying,
             lyricFontSizeScale: widget.lyricFontSizeScale,
             lyricSpacingScale: widget.lyricSpacingScale,
+            lyricSecondaryRatio: widget.lyricSecondaryRatio,
+            lyricTextStyle: widget.lyricTextStyle,
             wordByWordEnabled: widget.wordByWordEnabled,
             lyricBlurEnabled: widget.lyricBlurEnabled,
             splitSubtitleByLine: widget.splitSubtitleByLine,

@@ -15,7 +15,7 @@ void main() {
     (tester) async {
       await tester.runAsync(() async {
         await (FontLoader(kDanmakuDefaultFontFamily)
-              ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Bold.otf')))
+              ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
             .load();
       });
       late Directory directory;
@@ -164,7 +164,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   ) async {
     await tester.runAsync(() async {
       await (FontLoader(kDanmakuDefaultFontFamily)
-            ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Bold.otf')))
+            ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
           .load();
     });
     late Directory directory;

@@ -1,7 +1,9 @@
 import '../../widgets/card_context_menu.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../widgets/anchored_menu_layout.dart';
+import '../../widgets/media_library_anchor_menu.dart';
 import '../../theme/app_tokens.dart';
 import 'podcast_typography.dart';
 import 'package:video_player_app/widgets/capsule_selector.dart';
@@ -101,6 +103,15 @@ class PodcastMenuButton extends StatelessWidget {
   Widget build(BuildContext context) => Builder(
     builder: (anchor) {
       Future<void> open() async {
+        final keyboard = HardwareKeyboard.instance;
+        final fromKeyboard =
+            keyboard.isLogicalKeyPressed(LogicalKeyboardKey.enter) ||
+            keyboard.isLogicalKeyPressed(LogicalKeyboardKey.numpadEnter) ||
+            keyboard.isLogicalKeyPressed(LogicalKeyboardKey.space) ||
+            keyboard.isLogicalKeyPressed(LogicalKeyboardKey.contextMenu) ||
+            (keyboard.isShiftPressed &&
+                keyboard.isLogicalKeyPressed(LogicalKeyboardKey.f10));
+        final previousFocus = FocusManager.instance.primaryFocus;
         final value = await showPodcastMenu(
           anchor,
           title: title,
@@ -109,6 +120,13 @@ class PodcastMenuButton extends StatelessWidget {
           compact: compact,
           cardLayout: fillSlot,
         );
+        if (anchor.mounted &&
+            fromKeyboard &&
+            previousFocus?.context?.mounted == true &&
+            previousFocus!.canRequestFocus &&
+            ModalRoute.of(anchor)?.isCurrent != false) {
+          previousFocus.requestFocus();
+        }
         if (anchor.mounted && value != null) onSelected(value);
       }
 
@@ -128,50 +146,53 @@ class PodcastMenuButton extends StatelessWidget {
           ),
         );
       }
-      return label == null
-          ? PodcastIconButton(
-              tooltip: tooltip,
-              extent: dense ? 40 : null,
-              onPressed: open,
-              icon: Icon(icon, size: 21, color: iconColor ?? AppTokens.text2),
-            )
-          : Tooltip(
-              message: tooltip,
-              child: DesktopButtonClickRegion(
-                child: TextButton(
-                  onPressed: open,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTokens.text1,
-                    backgroundColor: Colors.transparent,
-                    minimumSize: dense ? const Size(0, 36) : null,
-                    tapTargetSize: dense
-                        ? MaterialTapTargetSize.shrinkWrap
-                        : null,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: dense ? 6 : 12,
-                      vertical: dense ? 6 : 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(icon, size: 17, color: AppTokens.text2),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          label!,
-                          overflow: TextOverflow.ellipsis,
-                          style: PodcastType.label.copyWith(fontSize: 12),
-                        ),
+      return CardContextMenuTarget(
+        onOpen: open,
+        child: label == null
+            ? PodcastIconButton(
+                tooltip: tooltip,
+                extent: dense ? 40 : null,
+                onPressed: open,
+                icon: Icon(icon, size: 21, color: iconColor ?? AppTokens.text2),
+              )
+            : Tooltip(
+                message: tooltip,
+                child: DesktopButtonClickRegion(
+                  child: TextButton(
+                    onPressed: open,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTokens.text1,
+                      backgroundColor: Colors.transparent,
+                      minimumSize: dense ? const Size(0, 36) : null,
+                      tapTargetSize: dense
+                          ? MaterialTapTargetSize.shrinkWrap
+                          : null,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: dense ? 6 : 12,
+                        vertical: dense ? 6 : 10,
                       ),
-                    ],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 17, color: AppTokens.text2),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            label!,
+                            overflow: TextOverflow.ellipsis,
+                            style: PodcastType.label.copyWith(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            );
+      );
     },
   );
 }
@@ -338,6 +359,7 @@ Future<String?> _showCompactPodcastMenu(
             return AnchoredMenuLayout(
               position: anchor,
               width: width,
+              focusContainer: false,
               child: SizedBox(
                 height: height,
                 child: Material(
@@ -397,7 +419,7 @@ Future<String?> _showCompactPodcastMenu(
                           padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
                           child: Wrap(
                             children: [
-                              for (final action in actions)
+                              for (final (index, action) in actions.indexed)
                                 SizedBox(
                                   width: (width - 12) / columns,
                                   height: extent,
@@ -405,41 +427,54 @@ Future<String?> _showCompactPodcastMenu(
                                     message: action.description ?? action.label,
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(9),
+                                      focusColor: Colors.transparent,
+                                      autofocus: index == 0,
                                       onTap: () => Navigator.of(
                                         dialog,
                                       ).pop(action.value),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              action.icon,
-                                              size: 16,
-                                              color: action.destructive
-                                                  ? AppTokens.danger
-                                                  : AppTokens.text2,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                action.label,
-                                                style: style.copyWith(
-                                                  color: action.destructive
-                                                      ? AppTokens.danger
-                                                      : AppTokens.text1,
+                                      child: Builder(
+                                        builder: (context) =>
+                                            MediaLibraryMenuItemFocus(
+                                              focused: Focus.of(
+                                                context,
+                                              ).hasFocus,
+                                              radius: 9,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      action.icon,
+                                                      size: 16,
+                                                      color: action.destructive
+                                                          ? AppTokens.danger
+                                                          : AppTokens.text2,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        action.label,
+                                                        style: style.copyWith(
+                                                          color:
+                                                              action.destructive
+                                                              ? AppTokens.danger
+                                                              : AppTokens.text1,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (action.selected)
+                                                      const Icon(
+                                                        Icons.check_rounded,
+                                                        size: 14,
+                                                        color: AppTokens.accent,
+                                                      ),
+                                                  ],
                                                 ),
                                               ),
                                             ),
-                                            if (action.selected)
-                                              const Icon(
-                                                Icons.check_rounded,
-                                                size: 14,
-                                                color: AppTokens.accent,
-                                              ),
-                                          ],
-                                        ),
                                       ),
                                     ),
                                   ),

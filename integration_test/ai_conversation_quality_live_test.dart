@@ -93,7 +93,7 @@ void main() {
         idleTimeout: const Duration(seconds: 45),
       );
       final output = File(
-        r'D:\1spbfq\video_player_app\.artifacts\ai-chat\context-design-live-results.json',
+        r'.\.artifacts\ai-chat\context-design-live-results.json',
       );
       final cases = <Map<String, dynamic>>[];
       // Reuse completed measurements when continuing an interrupted evaluation.
@@ -166,7 +166,7 @@ void main() {
       }
       final original = SubtitleParser.parseSrt(
         await File(
-          r'D:\1spbfq\video_player_app\build\windows\x64\runner\Release\Downloads\ai.srt',
+          r'.\build\windows\x64\runner\Release\Downloads\ai.srt',
         ).readAsString(),
       );
       final sample = [
@@ -189,7 +189,7 @@ void main() {
         ],
       );
       final root = Directory(
-        r'D:\1spbfq\video_player_app\.artifacts\ai-chat\quality-test-conversations',
+        r'.\.artifacts\ai-chat\quality-test-conversations',
       );
       final store = AiConversationStore(root: root);
       final controller = AiChatController(
@@ -286,13 +286,13 @@ void main() {
       final root = previousRoot.isNotEmpty
           ? Directory(previousRoot)
           : await Directory(
-              r'D:\1spbfq\video_player_app\.artifacts\ai-chat',
+              r'.\.artifacts\ai-chat',
             ).createTemp('pipeline-native-');
       final transport = _RecordingTransport();
       final engine = AiTranscriptPreparation(transport: transport, root: root);
       const question = '用三个短要点概括这节课，不展开完整推导。';
       final diagnostics = File(
-        r'D:\1spbfq\video_player_app\.artifacts\ai-chat\transcript-pipeline-live-progress.json',
+        r'.\.artifacts\ai-chat\transcript-pipeline-live-progress.json',
       );
       Future<AiPreparedTranscript> prepare(AiTranscriptPreparation current) =>
           current.prepare(
@@ -344,7 +344,7 @@ void main() {
         finish = delta.finishReason ?? finish;
       }
       await File(
-        r'D:\1spbfq\video_player_app\.artifacts\ai-chat\transcript-pipeline-live-result.json',
+        r'.\.artifacts\ai-chat\transcript-pipeline-live-result.json',
       ).writeAsString(
         const JsonEncoder.withIndent('  ').convert({
           'model': settings.model,
@@ -435,7 +435,7 @@ void main() {
       );
       final store = AiConversationStore(
         root: Directory(
-          r'D:\1spbfq\video_player_app\.artifacts\ai-chat\playback-test-conversations',
+          r'.\.artifacts\ai-chat\playback-test-conversations',
         ),
       );
       final controller = AiChatController(
@@ -462,7 +462,7 @@ void main() {
             .where((cue) => !request.contextText.contains(cue.text.trim()))
             .length;
         await File(
-          r'D:\1spbfq\video_player_app\.artifacts\ai-chat\playback-background-live-result.json',
+          r'.\.artifacts\ai-chat\playback-background-live-result.json',
         ).writeAsString(
           const JsonEncoder.withIndent('  ').convert({
             'model': settings.model,

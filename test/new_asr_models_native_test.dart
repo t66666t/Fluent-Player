@@ -16,6 +16,8 @@ import 'package:video_player_app/features/model_center/model_center_service.dart
 import 'package:video_player_app/features/model_center/model_device_info.dart';
 import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
+import 'support/prepared_local_models.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 const _ids = ['whisper-large-v3-turbo-int8', 'firered-asr2-ctc-int8'];
 const _root = String.fromEnvironment(
@@ -27,7 +29,7 @@ const _enabled = bool.fromEnvironment('NEW_ASR_NATIVE');
 const _gpu = bool.fromEnvironment('NEW_ASR_GPU');
 const _workerPath = 'native/asr/prebuilt/windows-x64/asr_worker.exe';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center({required super.storage});
   @override
   Future<void> initialize() async {}
@@ -122,7 +124,7 @@ void main() {
         Future<void> start(LocalAsrWorker recognizer) => recognizer.start(
           engine: model.engine,
           directory: p.absolute(_root, id),
-          vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'en',
           threads: 4,
           runtimeDirectory: directory.path,
@@ -195,7 +197,7 @@ void main() {
             await recognizer.start(
               engine: model.engine,
               directory: p.absolute(_root, model.id),
-              vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+              vadPath: asrProbeVadPath(),
               language: language,
               threads: 4,
               retainModels: true,

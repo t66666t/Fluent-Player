@@ -13,7 +13,7 @@ void main() {
           ..addFont(rootBundle.load('assets/fonts/Inter-ExtraBold.otf')))
         .load();
     await (FontLoader('Noto Sans SC')
-          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Medium.otf')))
+          ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
         .load();
   });
 

@@ -17,6 +17,7 @@ import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/models/subtitle_stream.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/subtitle_sidebar.dart';
+import 'package:video_player_app/widgets/ui_refresh_rate_scope.dart';
 
 // Deliberately separate from the UI isolate, as native model inference is.
 // Every created isolate is killed by this test; no external process is touched.
@@ -136,6 +137,7 @@ void main() {
 
         await tester.pumpWidget(
           MaterialApp(
+            builder: (context, child) => UiRefreshRateScope(child: child!),
             home: Scaffold(
               body: Center(
                 child: SizedBox(
@@ -239,6 +241,7 @@ void main() {
         var translations = secondary.snapshot;
         await tester.pumpWidget(
           MaterialApp(
+            builder: (context, child) => UiRefreshRateScope(child: child!),
             theme: ThemeData(fontFamily: 'MiSans'),
             home: Scaffold(
               body: Center(

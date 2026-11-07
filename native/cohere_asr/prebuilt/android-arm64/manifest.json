@@ -33,7 +33,7 @@
     }
   },
   "files": {
-    "libfluent_cohere_asr.so": "ce4505817c78031086df3b6b19377a67ceb158f5752ab147b7ca1e1194a9d065",
+    "libfluent_cohere_asr.so": "1f554c0212870155fb9a9530d7bf1f75d95e9d2f16afbaa10820670dc390ce42",
     "licenses/transcribe/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
     "licenses/transcribe/bindings/python/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",
     "licenses/transcribe/bindings/python-native-cu12/LICENSE": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6",

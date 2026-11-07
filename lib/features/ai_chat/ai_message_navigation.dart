@@ -4,6 +4,7 @@ import '../../services/settings_service.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -73,6 +74,8 @@ class _NodeGroup {
 }
 
 class _AiMessageViewportState extends State<AiMessageViewport> {
+  // Keep the reserved content gutter and the rail's hit target in sync.
+  static const _railWidth = 28.0;
   // Share one visual axis even when the thumb widens on hover or drag.
   static const _railInset = 12.0;
   final _items = ItemScrollController();
@@ -538,7 +541,7 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
     if (cached != null && identical(cached.$1, message)) return cached.$2;
     final columns = math.max(
       8.0,
-      math.min(840, _size.width - 56) / (7 * _textScale),
+      (_size.width - 12 - _railWidth) / (7 * _textScale),
     );
     final text = message.content;
     final lines = text
@@ -899,7 +902,7 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
       top: 0,
       bottom: 0,
       right: 0,
-      width: 44,
+      width: _railWidth,
       child: Focus(
         focusNode: _railFocus,
         onKeyEvent: _key,
@@ -920,129 +923,163 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
               _hideLater();
             }
           },
-          child: GestureDetector(
-            key: const ValueKey('ai-message-navigation'),
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (details) {
-              _railFocus.requestFocus();
-              final group = _nearest(details.localPosition.dy);
-              if (group == null) {
-                _dragGrab = height / 2;
-                _seek(details.localPosition.dy);
-                _dragFraction = null;
-              } else if (group.messages.length == 1) {
-                _go(group.messages.single);
-              } else {
-                _show(group, pinned: true);
-              }
+          child: RawGestureDetector(
+            gestures: {
+              _NodePreviewLongPressRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    _NodePreviewLongPressRecognizer
+                  >(_NodePreviewLongPressRecognizer.new, (recognizer) {
+                    recognizer.gestureSettings =
+                        MediaQuery.maybeGestureSettingsOf(context);
+                    recognizer.isNodeAt = (position) =>
+                        _nearest(position.dy) != null;
+                    recognizer.onLongPressStart = (details) {
+                      final group = _nearest(details.localPosition.dy);
+                      if (group != null) _show(group, pinned: true);
+                    };
+                    recognizer.onLongPressMoveUpdate = (details) {
+                      final group = _nearest(details.localPosition.dy);
+                      if (group != null) _show(group, pinned: true);
+                    };
+                  }),
+              VerticalDragGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    VerticalDragGestureRecognizer
+                  >(VerticalDragGestureRecognizer.new, (recognizer) {
+                    recognizer.gestureSettings =
+                        MediaQuery.maybeGestureSettingsOf(context);
+                    recognizer.multitouchDragStrategy = ScrollConfiguration.of(
+                      context,
+                    ).getMultitouchDragStrategy(context);
+                    // Losing tap/hold recognition on a horizontal move must not
+                    // let the remaining drag recognizer win without a drag.
+                    recognizer.onlyAcceptDragOnThreshold = true;
+                    recognizer.onStart = (details) {
+                      _startUserScroll();
+                      _dismiss();
+                      _railFocus.requestFocus();
+                      final y = details.localPosition.dy;
+                      _dragGrab = y >= top - 12 && y <= top + height + 12
+                          ? (y - top).clamp(0, height)
+                          : height / 2;
+                      setState(() => _dragging = true);
+                      _seek(y);
+                    };
+                    recognizer.onUpdate = (details) {
+                      _seek(details.localPosition.dy);
+                      setState(() {});
+                    };
+                    recognizer.onEnd = (_) => setState(() {
+                      _dragging = false;
+                      _finishUserScroll();
+                      _dragFraction = null;
+                      _geometry();
+                    });
+                    recognizer.onCancel = () => setState(() {
+                      _dragging = false;
+                      _finishUserScroll();
+                      _dragFraction = null;
+                      _geometry();
+                    });
+                  }),
             },
-            onLongPressStart: (details) {
-              final group = _nearest(details.localPosition.dy);
-              if (group != null) _show(group, pinned: true);
-            },
-            onLongPressMoveUpdate: (details) {
-              final group = _nearest(details.localPosition.dy);
-              if (group != null) _show(group, pinned: true);
-            },
-            onVerticalDragStart: (details) {
-              _startUserScroll();
-              _dismiss();
-              _railFocus.requestFocus();
-              final y = details.localPosition.dy;
-              _dragGrab = y >= top - 12 && y <= top + height + 12
-                  ? (y - top).clamp(0, height)
-                  : height / 2;
-              setState(() => _dragging = true);
-              _seek(y);
-            },
-            onVerticalDragUpdate: (details) {
-              _seek(details.localPosition.dy);
-              setState(() {});
-            },
-            onVerticalDragEnd: (_) => setState(() {
-              _dragging = false;
-              _finishUserScroll();
-              _dragFraction = null;
-              _geometry();
-            }),
-            onVerticalDragCancel: () => setState(() {
-              _dragging = false;
-              _finishUserScroll();
-              _dragFraction = null;
-              _geometry();
-            }),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 8,
-                  bottom: 8,
-                  right: _railInset - 1,
-                  width: 2,
-                  child: ColoredBox(
-                    color: colors.onSurface.withValues(alpha: .10),
-                  ),
-                ),
-                if (_awayFromBottom ||
-                    _window.$1 > .001 ||
-                    _window.$2 - _window.$1 < .995)
+            child: GestureDetector(
+              key: const ValueKey('ai-message-navigation'),
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                final bounds = Offset.zero & Size(_railWidth, _size.height);
+                if (!bounds.contains(details.localPosition)) return;
+                _railFocus.requestFocus();
+                final group = _nearest(details.localPosition.dy);
+                if (group == null) {
+                  _dragGrab = height / 2;
+                  _seek(details.localPosition.dy);
+                  _dragFraction = null;
+                } else if (group.messages.length == 1) {
+                  _go(group.messages.single);
+                } else {
+                  _show(group, pinned: true);
+                }
+              },
+              child: Stack(
+                children: [
                   Positioned(
-                    top: top,
-                    right: _railInset - thumbWidth / 2,
-                    width: thumbWidth,
-                    height: height,
-                    child: Container(
-                      key: const ValueKey('ai-navigation-thumb'),
-                      decoration: BoxDecoration(
-                        color: colors.onSurface.withValues(
-                          alpha: _dragging || _hovering ? .36 : .26,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                    top: 8,
+                    bottom: 8,
+                    right: _railInset - 1,
+                    width: 2,
+                    child: ColoredBox(
+                      color: colors.onSurface.withValues(alpha: .10),
                     ),
                   ),
-                for (final group in _groups)
-                  Positioned(
-                    top: group.y - 22,
-                    right: 0,
-                    width: 44,
-                    height: 44,
-                    child: Semantics(
-                      button: true,
-                      label: group.messages.length == 1
-                          ? '${_question(group.messages.single)}，${_date(group.messages.single)}'
-                          : '${group.messages.length} 个提问，展开选择',
-                      onTap: () => group.messages.length == 1
-                          ? _go(group.messages.single)
-                          : _show(group, pinned: true),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: _railInset - 4),
-                          child: Container(
-                            key: ValueKey('ai-node-${group.messages.first.id}'),
-                            width: 8,
-                            height: group.messages.length > 1 ? 15 : 8,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                              color: colors.onSurface.withValues(
-                                alpha: group.messages.any((m) => m.id == active)
-                                    ? 1.0
-                                    : .52,
+                  if (_awayFromBottom ||
+                      _window.$1 > .001 ||
+                      _window.$2 - _window.$1 < .995)
+                    Positioned(
+                      top: top,
+                      right: _railInset - thumbWidth / 2,
+                      width: thumbWidth,
+                      height: height,
+                      child: Container(
+                        key: const ValueKey('ai-navigation-thumb'),
+                        decoration: BoxDecoration(
+                          color: colors.onSurface.withValues(
+                            alpha: _dragging || _hovering ? .36 : .26,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  for (final group in _groups)
+                    Positioned(
+                      top: group.y - 22,
+                      right: 0,
+                      width: _railWidth,
+                      height: 44,
+                      child: Semantics(
+                        button: true,
+                        label: group.messages.length == 1
+                            ? '${_question(group.messages.single)}，${_date(group.messages.single)}'
+                            : '${group.messages.length} 个提问，展开选择',
+                        onTap: () => group.messages.length == 1
+                            ? _go(group.messages.single)
+                            : _show(group, pinned: true),
+                        onLongPress: () => _show(group, pinned: true),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              right: _railInset - 4,
+                            ),
+                            child: Container(
+                              key: ValueKey(
+                                'ai-node-${group.messages.first.id}',
                               ),
-                              border: group.messages.length > 1
-                                  ? Border.all(
-                                      color: colors.onSurface.withValues(
-                                        alpha: .28,
-                                      ),
-                                    )
-                                  : null,
+                              width: 8,
+                              height: group.messages.length > 1 ? 15 : 8,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: colors.onSurface.withValues(
+                                  alpha:
+                                      group.messages.any((m) => m.id == active)
+                                      ? 1.0
+                                      : .52,
+                                ),
+                                border: group.messages.length > 1
+                                    ? Border.all(
+                                        color: colors.onSurface.withValues(
+                                          alpha: .28,
+                                        ),
+                                      )
+                                    : null,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1131,9 +1168,12 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
                           ),
                     // Reserve the rail's entire hit target so it cannot intercept
                     // text selection or taps on a reasoning card's right padding.
-                    padding: typography.dense
-                        ? const EdgeInsets.fromLTRB(8, 6, 44, 0)
-                        : const EdgeInsets.fromLTRB(12, 10, 44, 0),
+                    padding: EdgeInsets.fromLTRB(
+                      typography.horizontalInset,
+                      typography.dense ? 6 : 10,
+                      _railWidth,
+                      0,
+                    ),
                     itemBuilder: (context, index) {
                       if (index == _messages.length) {
                         return const SizedBox(height: 12);
@@ -1163,16 +1203,11 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
                             });
                           }
                         },
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 840),
-                            child: RepaintBoundary(
-                              child: _builtMessages.putIfAbsent(message.id, () {
-                                _builtSources[message.id] = message;
-                                return widget.itemBuilder(context, message);
-                              }),
-                            ),
-                          ),
+                        child: RepaintBoundary(
+                          child: _builtMessages.putIfAbsent(message.id, () {
+                            _builtSources[message.id] = message;
+                            return widget.itemBuilder(context, message);
+                          }),
                         ),
                       );
                     },
@@ -1210,6 +1245,26 @@ class _AiMessageViewportState extends State<AiMessageViewport> {
     _positions.itemPositions.removeListener(_positionsChanged);
     if (widget.controller._view == this) widget.controller._view = null;
     super.dispose();
+  }
+}
+
+/// Use the normal long-press arena/slop rules, with a shorter preview deadline.
+/// Empty track presses stay available to the tap and drag recognizers.
+class _NodePreviewLongPressRecognizer extends LongPressGestureRecognizer {
+  _NodePreviewLongPressRecognizer()
+    : super(duration: const Duration(milliseconds: 280));
+
+  bool Function(Offset) isNodeAt = (_) => false;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    if (!super.isPointerAllowed(event)) return false;
+    // A second contact must not turn a multi-touch gesture into a preview.
+    if (state != GestureRecognizerState.ready) {
+      resolve(GestureDisposition.rejected);
+      return false;
+    }
+    return isNodeAt(event.localPosition);
   }
 }
 

@@ -11,7 +11,10 @@ import '../controllers/music_lyric_pointer_transaction.dart';
 import '../controllers/music_lyric_selection_controller.dart';
 import '../debug/music_lyric_frame_probe.dart';
 import '../models/music_lyric_display_mode.dart';
+import '../models/music_lyric_font.dart';
 import '../models/music_lyric_typography.dart';
+import '../models/subtitle_style.dart';
+import '../services/subtitle_font_service.dart';
 import '../models/subtitle_model.dart';
 import '../services/music_lyric_content_resolver.dart';
 import '../services/app_haptics.dart';
@@ -162,6 +165,12 @@ class MusicLyricView extends StatefulWidget {
   /// 相对于字号的歌词留白倍率，同时调整歌词组及原文/翻译间距。
   final double lyricSpacingScale;
 
+  /// 副字幕相对当前默认配对的倍率。1 就是原先的主副大小。
+  final double lyricSecondaryRatio;
+
+  /// Music-player faces only. Defaults reproduce the built-in lyric pairing.
+  final SubtitleTextStyle lyricTextStyle;
+
   /// 词级时间轴是否逐词点亮。关闭后整行一起显示，行级跟随不变。
   final bool wordByWordEnabled;
 
@@ -221,6 +230,8 @@ class MusicLyricView extends StatefulWidget {
     this.isPlaying = true,
     this.lyricFontSizeScale = 1.0,
     this.lyricSpacingScale = MusicLyricTypography.defaultSpacingScale,
+    this.lyricSecondaryRatio = MusicLyricTypography.defaultSecondaryRatio,
+    this.lyricTextStyle = MusicLyricFont.defaultStyle,
     this.wordByWordEnabled = true,
     this.lyricBlurEnabled = true,
     this.splitSubtitleByLine = false,
@@ -413,13 +424,6 @@ class MusicLyricViewState extends State<MusicLyricView>
 
   // ========== 字体规范（参考竖屏设计文档）==========
 
-  /// Latin lyrics use the bundled Inter family (SIL OFL 1.1).
-  static const String _fontFamilyEng = 'Inter';
-
-  /// Chinese lyrics use Noto Sans CJK (SIL OFL 1.1).
-  /// The UI's MiSans family has its own Xiaomi license; see font notices.
-  static const String _fontFamilyZh = 'Noto Sans SC';
-
   /// 检测文本是否包含中文字符（CJK 统一表意文字 U+4E00~U+9FFF）
   /// 用于自动判断原文/翻译应该用哪个字体显示
   static bool _isChineseText(String text) {
@@ -448,6 +452,8 @@ class MusicLyricViewState extends State<MusicLyricView>
     // 监听 positionListenable 以更新歌词高亮
     widget.positionListenable?.addListener(_onPositionChanged);
     widget.positionController?.addListener(_onExplicitLocateRequested);
+    SubtitleFontService.instance.addListener(_onLyricFontsChanged);
+    _prepareLyricFonts();
     _currentPosition = widget.positionListenable?.value ?? Duration.zero;
     _activeIndex = _findActiveIndex(_currentPosition);
     _followIndex = _scrollTargetForActiveIndex(_activeIndex);
@@ -649,9 +655,26 @@ class MusicLyricViewState extends State<MusicLyricView>
     return _preciseWindowLines = precise;
   }
 
+  void _onLyricFontsChanged() {
+    if (mounted && !_disposed) setState(() {});
+  }
+
+  void _prepareLyricFonts() {
+    final style = widget.lyricTextStyle;
+    unawaited(
+      SubtitleFontService.instance.prepareFamilies([
+        style.defaultFont.family,
+        ...style.resolvedLanguageFonts.values.map((font) => font.family),
+      ]),
+    );
+  }
+
   @override
   void didUpdateWidget(covariant MusicLyricView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.lyricTextStyle != widget.lyricTextStyle) {
+      _prepareLyricFonts();
+    }
 
     // 检查 subtitles 是否真正变化（不仅比较引用，还比较内容）
     // 避免调节字号等操作时，因引用变化导致误重置用户滚动状态
@@ -1676,6 +1699,7 @@ class MusicLyricViewState extends State<MusicLyricView>
     _pressedFeedbackTimer?.cancel();
     widget.positionListenable?.removeListener(_onPositionChanged);
     widget.positionController?.removeListener(_onExplicitLocateRequested);
+    SubtitleFontService.instance.removeListener(_onLyricFontsChanged);
     _itemPositionsListener.itemPositions.removeListener(_onVisibleRowsChanged);
     _windowsScrollController.dispose();
     _contentOpacity.dispose();
@@ -1773,6 +1797,7 @@ class MusicLyricViewState extends State<MusicLyricView>
     textScaler: MediaQuery.textScalerOf(context),
     fontSizeScale: widget.lyricFontSizeScale,
     spacingScale: widget.lyricSpacingScale,
+    secondaryRatio: widget.lyricSecondaryRatio,
   );
 
   Widget _build(BuildContext context) {
@@ -2145,44 +2170,52 @@ class MusicLyricViewState extends State<MusicLyricView>
     );
   }
 
+  TextStyle _face(String text, TextStyle base) =>
+      MusicLyricFont.face(text, base, widget.lyricTextStyle);
+
   TextStyle _mainStyle(SubtitleItem sub, String text, double size) {
     final chinese = _isChineseText(text);
-    return TextStyle(
-      fontFamily: chinese ? _fontFamilyZh : _fontFamilyEng,
-      fontSize: sub.isBackgroundLyric ? size * 0.7 : size,
-      fontWeight: chinese ? FontWeight.w600 : FontWeight.w800,
-      color: Colors.white,
-      height: 1.3,
-      letterSpacing: -0.5,
-      leadingDistribution: chinese ? TextLeadingDistribution.even : null,
+    return _face(
+      text,
+      TextStyle(
+        fontSize: sub.isBackgroundLyric ? size * 0.7 : size,
+        color: Colors.white,
+        height: 1.3,
+        letterSpacing: -0.5,
+        leadingDistribution: chinese ? TextLeadingDistribution.even : null,
+      ),
     );
   }
 
-  TextStyle _backgroundStyle(String mainText, double size) => TextStyle(
-    fontFamily: _isChineseText(mainText) ? _fontFamilyZh : _fontFamilyEng,
-    fontSize: size * 0.7,
-    fontWeight: FontWeight.w600,
-    color: Colors.white.withValues(alpha: 0.7),
-    height: 1.3,
+  TextStyle _backgroundStyle(String mainText, double size) => _face(
+    mainText,
+    TextStyle(
+      fontSize: size * 0.7,
+      color: Colors.white.withValues(alpha: 0.7),
+      height: 1.3,
+    ),
   );
 
   TextStyle _translationStyle(String text, double size, bool highlight) {
     final chinese = _isChineseText(text);
-    return TextStyle(
-      fontFamily: _fontFamilyZh,
-      fontSize: size,
-      fontWeight: chinese ? FontWeight.w600 : FontWeight.w800,
-      color: Colors.white.withValues(alpha: highlight ? 0.70 : 0.50),
-      height: 1.5,
-      leadingDistribution: chinese ? TextLeadingDistribution.even : null,
+    return _face(
+      text,
+      TextStyle(
+        fontSize: size,
+        color: Colors.white.withValues(alpha: highlight ? 0.70 : 0.50),
+        height: 1.5,
+        leadingDistribution: chinese ? TextLeadingDistribution.even : null,
+      ),
     );
   }
 
-  TextStyle _romanizationStyle(double size) => TextStyle(
-    fontFamily: _fontFamilyEng,
-    fontSize: size,
-    color: Colors.white.withValues(alpha: 0.55),
-    height: 1.5,
+  TextStyle _romanizationStyle(String text, double size) => _face(
+    text,
+    TextStyle(
+      fontSize: size,
+      color: Colors.white.withValues(alpha: 0.55),
+      height: 1.5,
+    ),
   );
 
   double Function(String, TextStyle) _textHeightMeasurer(double width) {
@@ -2225,7 +2258,7 @@ class MusicLyricViewState extends State<MusicLyricView>
     for (final background in content.background) {
       extent +=
           engZhGap +
-          height(background.text, _backgroundStyle(mainText, engFontSize));
+          height(background.text, _backgroundStyle(background.text, engFontSize));
     }
     if (content.translation.isNotEmpty) {
       extent +=
@@ -2238,7 +2271,10 @@ class MusicLyricViewState extends State<MusicLyricView>
     if (content.romanization.isNotEmpty) {
       extent +=
           engZhGap +
-          height(content.romanization, _romanizationStyle(zhFontSize));
+          height(
+            content.romanization,
+            _romanizationStyle(content.romanization, zhFontSize),
+          );
     }
     return extent;
   }
@@ -2303,6 +2339,8 @@ class MusicLyricViewState extends State<MusicLyricView>
       defaults.style,
       heightBehavior,
       locale,
+      widget.lyricTextStyle,
+      widget.lyricSecondaryRatio,
     );
     final sameLayout = key == _windowsMetricsKey;
     if (sameLayout && _windowsRowExtents.length == _listEntries.length) return;
@@ -2515,6 +2553,11 @@ class MusicLyricViewState extends State<MusicLyricView>
                   reduceMotion: MediaQuery.disableAnimationsOf(context),
                   textAlign: duetRight ? TextAlign.right : TextAlign.left,
                   style: _mainStyle(sub, mainText, engFontSize),
+                  fontRuns: MusicLyricFont.runs(
+                    mainText,
+                    _mainStyle(sub, mainText, engFontSize),
+                    widget.lyricTextStyle,
+                  ),
                 ),
               ),
               for (final background in visual.background)
@@ -2529,7 +2572,12 @@ class MusicLyricViewState extends State<MusicLyricView>
                     suppressWordHighlight: suppressWordHighlight,
                     reduceMotion: MediaQuery.disableAnimationsOf(context),
                     textAlign: duetRight ? TextAlign.right : TextAlign.left,
-                    style: _backgroundStyle(mainText, engFontSize),
+                    style: _backgroundStyle(background.text, engFontSize),
+                    fontRuns: MusicLyricFont.runs(
+                      background.text,
+                      _backgroundStyle(background.text, engFontSize),
+                      widget.lyricTextStyle,
+                    ),
                   ),
                 ),
 
@@ -2553,6 +2601,11 @@ class MusicLyricViewState extends State<MusicLyricView>
                         zhFontSize,
                         highlight,
                       ),
+                      fontRuns: MusicLyricFont.runs(
+                        translatedText,
+                        _translationStyle(translatedText, zhFontSize, highlight),
+                        widget.lyricTextStyle,
+                      ),
                     ),
                   ),
                 ),
@@ -2567,7 +2620,12 @@ class MusicLyricViewState extends State<MusicLyricView>
                     dimUnplayed: isActive,
                     suppressWordHighlight: suppressWordHighlight,
                     reduceMotion: MediaQuery.disableAnimationsOf(context),
-                    style: _romanizationStyle(zhFontSize),
+                    style: _romanizationStyle(content.romanization, zhFontSize),
+                    fontRuns: MusicLyricFont.runs(
+                      content.romanization,
+                      _romanizationStyle(content.romanization, zhFontSize),
+                      widget.lyricTextStyle,
+                    ),
                   ),
                 ),
             ],

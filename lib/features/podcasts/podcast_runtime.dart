@@ -1392,19 +1392,20 @@ class PodcastRuntime extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, Future<void>> _preparingLearning = {};
   final Map<String, PodcastOfficialTranscript> officialTranscript = {};
 
-  Future<void> retryOfficialTranscript(PodcastEpisode episode) {
+  Future<void> retryOfficialTranscript(PodcastEpisode episode) async {
     officialTranscript[episode.id] = PodcastOfficialTranscript.loading;
     notifyListeners();
     return prepareLearning(episode);
   }
 
-  Future<void> prepareLearning(PodcastEpisode episode) =>
-      _preparingLearning.putIfAbsent(
-        episode.id,
-        () => _prepareLearning(
-          episode,
-        ).whenComplete(() => _preparingLearning.remove(episode.id)),
-      );
+  Future<void> prepareLearning(PodcastEpisode episode) async {
+    return _preparingLearning.putIfAbsent(
+      episode.id,
+      () => _prepareLearning(
+        episode,
+      ).whenComplete(() => _preparingLearning.remove(episode.id)),
+    );
+  }
 
   Future<void> _prepareLearning(PodcastEpisode episode) async {
     final item = adapterFor(episode.id);

@@ -161,6 +161,7 @@ void main() {
 
     expect(footer, findsOneWidget);
     expect(start, findsOneWidget);
+    expect(tester.getSize(start).height, greaterThanOrEqualTo(44));
     expect(progress, findsOneWidget);
     expect(tester.getRect(start).bottom, lessThanOrEqualTo(320));
     expect(tester.getRect(footer).height, lessThan(120));

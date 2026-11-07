@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/services/experimental_layout.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/system_media_session_service.dart';
-import 'package:video_player_app/widgets/categorized_settings_page.dart';
+import 'package:video_player_app/widgets/media_library_settings_page.dart';
 import 'package:video_player_app/widgets/media_library_settings_sheet.dart';
 import 'package:video_player_app/widgets/operation_status.dart';
 import 'package:video_player_app/widgets/system_media_notification_setting.dart';
@@ -62,35 +62,31 @@ void main() {
 
   for (final size in [
     const Size(320, 568),
+    const Size(768, 1024),
     const Size(844, 390),
     const Size(1440, 900),
   ]) {
-    testWidgets(
-      'flat settings search actual entries at $size with large text',
-      (tester) async {
-        tester.view.physicalSize = size;
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.reset);
-        await settingsHost(tester, scale: 2);
-        expect(find.byType(CategorizedSettingsPage), findsOneWidget);
-        expect(ExperimentalLayout.instance.value, isFalse);
-        await tester.enterText(
-          find.byKey(const ValueKey('settings-search')),
-          '播放记录',
-        );
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('clearPlaybackHistory')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const ValueKey('copyImportedMediaToPrivateStorage')),
-          findsNothing,
-        );
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox());
-      },
-    );
+    testWidgets('flat settings remain reachable at $size with large text', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await settingsHost(tester, scale: 2);
+      expect(find.byType(MediaLibrarySettingsPage), findsOneWidget);
+      expect(ExperimentalLayout.instance.value, isFalse);
+      expect(find.byType(TextField), findsNothing);
+      final history = find.byKey(const ValueKey('clearPlaybackHistory'));
+      await tester.ensureVisible(history);
+      await tester.pumpAndSettle();
+      expect(history.hitTestable(), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('copyImportedMediaToPrivateStorage')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
 
   testWidgets(
@@ -215,6 +211,8 @@ void main() {
       });
       for (final sample in <String, Size>{
         'settings-phone': const Size(390, 844),
+        'settings-tablet-portrait': const Size(768, 1024),
+        'settings-tablet-landscape': const Size(1280, 800),
         'settings-landscape': const Size(844, 390),
         'settings-desktop': const Size(1440, 900),
       }.entries) {

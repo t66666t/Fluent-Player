@@ -13,13 +13,25 @@ class AppWakelockCoordinator {
   static const String ocrProcessingReason = 'ocr_subtitle_processing';
 
   static final Set<String> _activeReasons = <String>{};
+  // Playback activity is independent of requests to keep the display awake.
+  // Separate owners prevent a preview or retiring decoder clearing another
+  // player's protection blocker. This never acquires a wake lock itself.
+  static final Set<Object> _protectionBlockers = <Object>{};
 
   /// Readers are sampled by the protection view, never on every progress event.
   static final Map<String, String Function()> _details = {};
   static final ValueNotifier<int> changes = ValueNotifier(0);
   static bool get canProtect =>
       _activeReasons.isNotEmpty &&
+      _protectionBlockers.isEmpty &&
       !_activeReasons.contains(mediaPlaybackReason);
+
+  static void setProtectionBlocked(Object owner, bool blocked) {
+    final changed = blocked
+        ? _protectionBlockers.add(owner)
+        : _protectionBlockers.remove(owner);
+    if (changed) changes.value++;
+  }
 
   static List<String> protectionDetails() => [
     for (final reason in _activeReasons)

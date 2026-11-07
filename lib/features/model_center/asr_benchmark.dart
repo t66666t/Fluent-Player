@@ -53,6 +53,11 @@ Future<void> benchmarkLocalAsr({
     asrAccelerationModels: {if (pack != null) pack.id: pack.identity},
   );
   try {
+    final vad = await center.prepareAsrVad(
+      cancelSignal: cancelSignal,
+      onProgress: onProgress,
+    );
+    check();
     await InferenceScheduler.instance.run(
       () => center.usingAsrModels(spec, (primary, directory, extras) async {
         check();
@@ -74,7 +79,6 @@ Future<void> benchmarkLocalAsr({
         final root = await center.storage.featureDirectory('model_jobs');
         final temporary = await root.createTemp('asr-benchmark-');
         final wave = File(p.join(temporary.path, 'speech.wav'));
-        final vad = File(p.join(temporary.path, 'vad.onnx'));
         final worker = LocalAsrWorker();
         worker.configureResources(
           InferenceResourceSession.current!,
@@ -94,19 +98,10 @@ Future<void> benchmarkLocalAsr({
               language: language,
             ),
           );
-          final silence = await rootBundle.load(
-            'assets/models/asr/silero_vad.onnx',
-          );
           await wave.writeAsBytes(
             source.buffer.asUint8List(
               source.offsetInBytes,
               source.lengthInBytes,
-            ),
-          );
-          await vad.writeAsBytes(
-            silence.buffer.asUint8List(
-              silence.offsetInBytes,
-              silence.lengthInBytes,
             ),
           );
           if (model.engine == 'qwen3-asr') {
@@ -330,6 +325,18 @@ Future<void> _benchmarkQwen(
           'backend': gpu,
           'reason': profile.summary,
           'profile': profile.toJson(),
+          if (!profile.failed)
+            'clearProfileSignature': qwenAvailabilitySignature(
+              {
+                'accelerationEnvironment':
+                    await AsrAcceleratorTransport.environment(),
+                'identity': model.identity,
+                'language': language,
+                'hotwords': hotwords,
+                'runtimeStamp': QwenAsrRuntime.desktopRuntimeStamp(),
+              },
+              component: 'qwen_asr',
+            ),
         });
         progress(profile.summary);
       },

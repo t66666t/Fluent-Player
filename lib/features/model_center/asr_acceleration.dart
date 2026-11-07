@@ -110,7 +110,26 @@ class AsrPerformanceProfile {
 /// Known failures must be checked before opening a GPU process. Unlike device
 /// timing keys, this key can be computed even if startup/capability probing dies.
 /// App/runtime or installed-weight changes invalidate it without hashing models.
+///
+/// v2 omits the CPU thread count. Playback and thermal limits change that count
+/// often; a known-bad GPU must stay skipped until the user retests or the
+/// record expires. v1 records are still honored by [asrAvailabilityMatches].
 String asrAvailabilitySignature(Map<String, dynamic> configuration) =>
+    jsonEncode({
+      'scope': 'asr-availability-v2',
+      'os': Platform.operatingSystemVersion,
+      'abi': Abi.current().toString(),
+      'dart': Platform.version,
+      'environment': configuration['accelerationEnvironment'],
+      'model': configuration['identity'],
+      'weights': configuration['gpuIdentity'],
+      'language': configuration['language'],
+      'decoding': configuration['decoding'],
+      'audioConfiguration': configuration['audioConfiguration'],
+    });
+
+/// Records written before thread count was removed from the availability key.
+String asrAvailabilitySignatureV1(Map<String, dynamic> configuration) =>
     jsonEncode({
       'scope': 'asr-availability-v1',
       'os': Platform.operatingSystemVersion,
@@ -124,6 +143,60 @@ String asrAvailabilitySignature(Map<String, dynamic> configuration) =>
       'decoding': configuration['decoding'],
       'audioConfiguration': configuration['audioConfiguration'],
     });
+
+bool asrAvailabilityMatches(
+  AsrPerformanceProfile profile,
+  Map<String, dynamic> configuration,
+  DateTime now,
+) =>
+    profile.matches(asrAvailabilitySignature(configuration), now) ||
+    profile.matches(asrAvailabilitySignatureV1(configuration), now);
+
+/// Qwen GPU faults are independent of the CPU thread pool. [component]
+/// separates the recognizer from the shared aligner so one failure does not
+/// blacklist the other.
+String qwenAvailabilitySignature(
+  Map<String, dynamic> configuration, {
+  required String component,
+}) => jsonEncode({
+  'scope': 'qwen-availability-v1',
+  'os': Platform.operatingSystemVersion,
+  'abi': Abi.current().toString(),
+  'environment': configuration['accelerationEnvironment'],
+  'model': configuration['identity'],
+  'language': configuration['language'],
+  'hotwords': configuration['hotwords'] ?? configuration['decoding'],
+  'component': component,
+  if (configuration['runtimeStamp'] != null)
+    'runtime': configuration['runtimeStamp'],
+});
+
+/// A stored timing can approve GPU before any driver is opened. The thread
+/// count is read from the signature: a playback budget change is not evidence
+/// that the same device is still faster.
+bool freshGpuWin(
+  AsrPerformanceProfile profile, {
+  required Set<String> weights,
+  required int threads,
+  required double seconds,
+  required DateTime now,
+}) {
+  if (profile.failed ||
+      profile.gpuMs <= 0 ||
+      !weights.contains(profile.weights)) {
+    return false;
+  }
+  if (!profile.matches(profile.signature, now) || !profile.useGpu(seconds)) {
+    return false;
+  }
+  try {
+    final decoded = jsonDecode(profile.signature);
+    if (decoded is! Map || decoded['threads'] != threads) return false;
+  } catch (_) {
+    return false;
+  }
+  return true;
+}
 
 String asrPerformanceSignature({
   required Map<String, dynamic> configuration,

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -267,22 +269,70 @@ void main() {
         ),
       );
       await storage.initialize();
-      final center = ModelCenterService(storage: storage);
+      // Migration verifies catalog/file identity and receipts, not inference.
+      // Use small matching files so source-only checkouts need no OCR weights.
+      final fixtures = <String, List<int>>{
+        'ch_PP-OCRv4_det_mobile.onnx': utf8.encode(
+          'migration detector fixture',
+        ),
+        'ch_PP-OCRv4_rec_mobile.onnx': utf8.encode(
+          'migration recognizer fixture',
+        ),
+        'ppocr_keys_v1.txt': utf8.encode('字\n符\n'),
+      };
+      final manifest =
+          jsonDecode(
+                await rootBundle.loadString('assets/models/ocr_catalog.json'),
+              )
+              as Map;
+      final legacy =
+          Map<String, dynamic>.from(
+              (manifest['components'] as List).firstWhere(
+                    (entry) => entry['id'] == 'ocr-legacy-chinese',
+                  )
+                  as Map,
+            )
+            ..['revision'] = 'migration-fixture-v1'
+            ..['files'] = [
+              for (final entry in fixtures.entries)
+                {
+                  'name': entry.key,
+                  'bytes': entry.value.length,
+                  'sha256': sha256.convert(entry.value).toString(),
+                  'sources': <String, String>{},
+                },
+            ];
+      final catalog = [
+        for (final model in await loadModelCatalog())
+          if (model.id == 'ocr-legacy-chinese')
+            ModelArtifact.fromJson(legacy)
+          else
+            model,
+      ];
+      final center = ModelCenterService(
+        storage: storage,
+        catalogLoader: () async => catalog,
+      );
       final manager = OcrModelManager(rootOverride: root, center: center);
       try {
         final directory = await manager.modelDirectory();
         await directory.create(recursive: true);
-        for (final name in [
-          'ch_PP-OCRv4_det_mobile.onnx',
-          'ch_PP-OCRv4_rec_mobile.onnx',
-          'ppocr_keys_v1.txt',
-        ]) {
+        for (final entry in fixtures.entries) {
           await File(
-            'assets/models/ocr/$name',
-          ).copy(p.join(directory.path, name));
+            p.join(directory.path, entry.key),
+          ).writeAsBytes(entry.value);
         }
         await manager.initialize();
         expect(await manager.isInstalled(OcrSubtitleLanguage.chinese), isTrue);
+        final migrated = await center.modelDirectory(
+          center.artifact('ocr-legacy-chinese')!,
+        );
+        for (final entry in fixtures.entries) {
+          expect(
+            await File(p.join(migrated.path, entry.key)).readAsBytes(),
+            entry.value,
+          );
+        }
         final track = await manager.freeze(
           const OcrSubtitleTrack(
             number: 1,

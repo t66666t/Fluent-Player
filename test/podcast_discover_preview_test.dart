@@ -113,8 +113,11 @@ void main() {
       '1:00',
     );
     final trialLabel = tester.widget<Text>(find.text('试听这一集'));
-    expect(trialLabel.style?.fontWeight, FontWeight.w600);
-    expect(trialLabel.style?.fontFamily, 'MiSans');
+    final trialStyle = DefaultTextStyle.of(
+      tester.element(find.text('试听这一集')),
+    ).style.merge(trialLabel.style);
+    expect(trialStyle.fontWeight, FontWeight.w600);
+    expect(trialStyle.fontFamily, 'Noto Sans SC');
 
     await tester.tap(find.text('试听节点'));
     await tester.pump();

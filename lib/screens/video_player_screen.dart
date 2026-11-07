@@ -23,11 +23,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as p;
 import '../services/embedded_subtitle_service.dart';
 import '../services/bilibili/bilibili_video_shot_backfill.dart';
 import '../services/media_playback_service.dart';
+import '../services/native_playback_control_session.dart';
 import '../features/cloud_drive/models/cloud_drive_models.dart';
 import '../features/cloud_drive/presentation/cloud_drive_screen.dart';
 import '../features/cloud_drive/services/cloud_drive_runtime.dart';
@@ -38,7 +38,6 @@ import '../services/playback_behavior_policy.dart';
 import '../services/playback_exit_guard.dart';
 import '../utils/route_transition_work.dart';
 import '../services/player_panel_history.dart';
-import '../services/system_media_session_service.dart';
 import '../services/subtitle_timeline_resolver.dart';
 import '../services/subtitle_word_timing_store.dart';
 import '../models/subtitle_model.dart';
@@ -631,10 +630,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   /// The Bilibili video playing, or null for any other media.
-  BilibiliPlayerVideo? get _bilibiliVideo =>
-      bilibiliPlayerVideoOf(_currentItem);
+  BilibiliPlayerVideo? get _bilibiliVideo => null;
 
-  bool get _isBilibiliVideo => _bilibiliVideo != null;
+  bool get _isBilibiliVideo => false;
 
   /// Desktops and tablets share one resizable reading sidebar. Phones keep
   /// their compact Bilibili overlay over the video.
@@ -959,6 +957,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   bool get _canUseVideoTransformGestures {
     return _initialized &&
+        (_settingsService ?? SettingsService()).enableVideoTransformGestures &&
         !_isAudio &&
         !_isLocked &&
         !_isLongPressing &&
@@ -1010,8 +1009,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     musicCoverOwnsSurface: _musicCoverHidesVideoSurface,
   );
 
-  bool get _isCurrentBilibiliOnlineStream =>
-      _currentItem?.sourceRef?.kind == MediaSourceKind.bilibiliStream;
+  bool get _isCurrentBilibiliOnlineStream => false;
 
   /// Poster over an empty texture until the first decoded frame (or a
   /// background→foreground track re-enable) arrives. Instantly removed once
@@ -2037,9 +2035,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
     _routeWork.schedule('platform-prompts', () {
       if (!mounted) return;
-      if (Platform.isAndroid) {
-        unawaited(_requestNotificationPermissionForMediaSession());
-      }
       if (Platform.isLinux) {
         unawaited(LinuxAudioDevice.maybeShowNoAudioDeviceHint());
       }
@@ -2108,41 +2103,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
   }
 
-  Future<void> _requestNotificationPermissionForMediaSession() async {
-    final status = await Permission.notification.status;
-    debugPrint(
-      'VideoPlayerScreen: notification permission status=$status for media session',
-    );
-    if (status.isGranted || status.isLimited || status.isProvisional) {
-      if (MediaPlaybackService().currentItem != null) {
-        await SystemMediaSessionService.instance.refreshNow(
-          ensureNotificationVisible: true,
-        );
-      }
-      return;
-    }
-    if (status.isDenied) {
-      final result = await Permission.notification.request();
-      debugPrint(
-        'VideoPlayerScreen: notification permission request result=$result',
-      );
-      if (result.isGranted || result.isLimited || result.isProvisional) {
-        await SystemMediaSessionService.instance.refreshNow(
-          ensureNotificationVisible: true,
-        );
-      }
-      return;
-    }
-    if (status.isPermanentlyDenied) {
-      debugPrint(
-        'VideoPlayerScreen: notification permission permanently denied, Android media notification may be suppressed',
-      );
-    }
-  }
 
   void _onSettingsChanged() {
     final settings = _settingsService;
     if (settings == null) return;
+
+    if (!settings.enableVideoTransformGestures &&
+        (_videoUserScale != 1.0 ||
+            _videoUserRotation != 0.0 ||
+            _videoUserOffsetNormalized != Offset.zero ||
+            _isVideoTransformGestureActive ||
+            _activeVideoTransformPointers.isNotEmpty ||
+            _videoTransformAnimationController.isAnimating)) {
+      _activeVideoTransformPointers.clear();
+      _isVideoTransformGestureActive = false;
+      _resetVideoUserTransform(animated: false);
+    }
 
     // 「跳过竖屏播放页」需独立于字幕缓存比对，在字幕无关的设置变更中
     // 也能即时响应（off→on 边沿触发一次）。
@@ -4661,7 +4637,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         listen: false,
       );
       if (playbackService.controller == _controller) {
-        playbackService.seekTo(clamped, source: source);
+        unawaited(
+          NativePlaybackControlSession.seekOwned(
+            service: playbackService,
+            expectedController: _controller,
+            position: clamped,
+            source: source,
+          ),
+        );
       } else {
         _controller.seekTo(clamped);
       }
@@ -7694,6 +7677,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           onEnableSeekPreviewChanged: (value) =>
               settings.saveEnableSeekPreview(value),
           enableHapticFeedback: settings.enableHapticFeedback,
+          enableVideoTransformGestures: settings.enableVideoTransformGestures,
+          onEnableVideoTransformGesturesChanged: (value) =>
+              settings.saveEnableVideoTransformGestures(value),
           onEnableHapticFeedbackChanged: (value) =>
               settings.saveEnableHapticFeedback(value),
           isLeftHandedMode: settings.isLeftHandedMode,

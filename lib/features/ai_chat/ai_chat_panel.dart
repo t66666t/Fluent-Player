@@ -14,11 +14,14 @@ import '../../models/subtitle_model.dart';
 import '../../models/video_item.dart';
 import '../../services/settings_service.dart';
 import '../../services/app_haptics.dart';
+import '../../services/media_playback_service.dart';
 import '../../widgets/bilibili_subtitle_tracks_section.dart';
 import 'ai_chat_controller.dart';
 import 'ai_chat_copy.dart';
 import 'ai_chat_draft_binding.dart';
 import 'ai_chat_models.dart';
+import 'ai_conversation_export.dart';
+import 'ai_conversation_export_dialog.dart';
 import 'ai_chat_reading_state.dart';
 import 'ai_chat_session.dart';
 import 'ai_chat_settings.dart';
@@ -33,6 +36,7 @@ import 'ai_scroll_to_latest_button.dart';
 import 'ai_capsule_menu.dart';
 import 'ai_chat_toolbar.dart';
 import 'ai_chat_typography.dart';
+import 'ai_floating_video.dart';
 import 'ai_usage_widgets.dart';
 import 'ai_compaction_dialog.dart';
 import 'ai_quick_prompts.dart';
@@ -47,7 +51,8 @@ import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 bool debugAiChatDesktopAutofocus = true;
 
 /// Optional fullscreen view of the conversation. The playback panel and its
-/// controller remain mounted underneath, so generation and playback continue.
+/// controller remain mounted underneath. The playback host decides whether a
+/// covered video must pause; timestamp navigation uses its explicit callback.
 Future<void> showAiChatPage(
   BuildContext context, {
   required VideoItem videoItem,
@@ -64,6 +69,7 @@ Future<void> showAiChatPage(
   AiMessageBookmark? initialBookmark,
   bool followOutput = true,
   void Function(AiMessageBookmark?, bool)? onReadingPosition,
+  bool allowRemoteSubtitleSources = false,
 }) => showDialog<void>(
   context: context,
   useSafeArea: false,
@@ -85,6 +91,7 @@ Future<void> showAiChatPage(
       initialBookmark: initialBookmark,
       followOutput: followOutput,
       onReadingPosition: onReadingPosition,
+      allowRemoteSubtitleSources: allowRemoteSubtitleSources,
       isFullscreen: true,
       onExitFullscreen: () {
         unawaited(AppHaptics.lightTap(SettingsService()));
@@ -146,6 +153,7 @@ class AiChatPanel extends StatefulWidget {
     this.initialBookmark,
     this.followOutput = true,
     this.onReadingPosition,
+    this.allowRemoteSubtitleSources = false,
   });
 
   final VideoItem videoItem;
@@ -177,6 +185,7 @@ class AiChatPanel extends StatefulWidget {
   final AiMessageBookmark? initialBookmark;
   final bool followOutput;
   final void Function(AiMessageBookmark?, bool)? onReadingPosition;
+  final bool allowRemoteSubtitleSources;
 
   @override
   State<AiChatPanel> createState() => _AiChatPanelState();
@@ -223,6 +232,13 @@ class _AiChatPanelState extends State<AiChatPanel> {
   ThemeData? _baseTheme;
   ThemeData? _chatTheme;
 
+  /// The fullscreen conversation can keep the picture visible. The surface is
+  /// borrowed from the playback page below, never duplicated.
+  final AiFloatingVideoState _floatingVideo = AiFloatingVideoState.instance;
+  final GlobalKey<AiFloatingVideoLayerState> _floatingVideoKey =
+      GlobalKey<AiFloatingVideoLayerState>();
+  MediaPlaybackService? _playbackService;
+
   void _updateUi(VoidCallback update) {
     _cachedContent = null;
     setState(update);
@@ -236,13 +252,18 @@ class _AiChatPanelState extends State<AiChatPanel> {
     unawaited(_quickPrompts.load());
     AiChatReadingSettings.instance.addListener(_readingSettingsChanged);
     unawaited(AiChatReadingSettings.instance.load());
+    // Read the floating-player preference before the first frame so the header
+    // button never flashes a state the user already turned off.
+    if (widget.isFullscreen) unawaited(_floatingVideo.load());
     _followOutput = widget.followOutput;
     _usesSession = widget.controller == null;
     if (_usesSession) {
       // The panel is a view. Closing it must not cancel the reply.
       final session = (widget.sessions ?? AiChatSessions.instance).retain(
         video: widget.videoItem,
-        createLoader: AiVideoContextLoader.new,
+        createLoader: () => AiVideoContextLoader(
+          allowRemoteSubtitleSources: widget.allowRemoteSubtitleSources,
+        ),
       );
       _controller = session.controller;
       _input = widget.inputController ?? session.input;
@@ -375,6 +396,7 @@ class _AiChatPanelState extends State<AiChatPanel> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _playbackService = _resolvePlaybackService(context);
     final current = ModalRoute.of(context)?.isCurrent ?? true;
     if (_routeCurrent == current) return;
     if (!current) {
@@ -385,6 +407,63 @@ class _AiChatPanelState extends State<AiChatPanel> {
     if (current && widget.isVisible && !_fullscreenOpen) {
       _resumeReadingPosition();
     }
+  }
+
+  MediaPlaybackService _resolvePlaybackService(BuildContext context) {
+    try {
+      return Provider.of<MediaPlaybackService>(context, listen: false);
+    } catch (_) {
+      return MediaPlaybackService();
+    }
+  }
+
+  /// The floating player only exists in the fullscreen conversation, and only
+  /// while there is a real picture to lend it. Hiding the command otherwise
+  /// keeps the header honest instead of offering a dead toggle.
+  Widget? _floatingVideoCommand() {
+    if (!widget.isFullscreen) return null;
+    final service = _playbackService;
+    if (service == null) return null;
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, _) {
+        if (!canFloatPlayback(service)) return const SizedBox.shrink();
+        return ListenableBuilder(
+          listenable: _floatingVideo,
+          builder: (context, _) => AiFloatingVideoButton(
+            enabled: _floatingVideo.enabled,
+            onPressed: _toggleFloatingVideo,
+          ),
+        );
+      },
+    );
+  }
+
+  void _toggleFloatingVideo() {
+    unawaited(AppHaptics.lightTap(SettingsService()));
+    unawaited(_floatingVideo.setEnabled(!_floatingVideo.enabled));
+  }
+
+  /// Mounts the card only while the preference is on *and* the session still
+  /// has a picture. Both change independently of the cached panel content.
+  Widget _floatingVideoLayer() {
+    final service = _playbackService;
+    if (service == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _floatingVideo,
+      builder: (context, _) {
+        if (!_floatingVideo.enabled) return const SizedBox.shrink();
+        return ListenableBuilder(
+          listenable: service,
+          builder: (context, _) => canFloatPlayback(service)
+              ? AiFloatingVideoLayer(
+                  key: _floatingVideoKey,
+                  state: _floatingVideo,
+                )
+              : const SizedBox.shrink(),
+        );
+      },
+    );
   }
 
   /// Desktop keyboards should land in the composer. Phones keep the keyboard
@@ -496,9 +575,13 @@ class _AiChatPanelState extends State<AiChatPanel> {
     final host = this;
     _controller.bindContext((loader) {
       loader.bindPlaybackSources(
-        bilibiliTracks: bilibiliSubtitleTracksFor(context, widget.videoItem),
+        bilibiliTracks: widget.allowRemoteSubtitleSources
+            ? bilibiliSubtitleTracksFor(context, widget.videoItem)
+            : null,
         ytDlpTasks: () {
-          if (!host.mounted) return const <YtDlpTaskRecord>[];
+          if (!host.mounted || !widget.allowRemoteSubtitleSources) {
+            return const <YtDlpTaskRecord>[];
+          }
           try {
             return host.context.read<YtDlpDownloadService>().tasks;
           } catch (_) {
@@ -803,6 +886,7 @@ class _AiChatPanelState extends State<AiChatPanel> {
         quickPromptStore: _quickPrompts,
         initialBookmark: bookmark,
         followOutput: following,
+        allowRemoteSubtitleSources: widget.allowRemoteSubtitleSources,
       );
     } finally {
       _fullscreenOpen = false;
@@ -816,6 +900,20 @@ class _AiChatPanelState extends State<AiChatPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final panel = _buildPanel(context);
+    if (!widget.isFullscreen) return panel;
+    // Hand the texture back as the route pops rather than at the end of the
+    // transition, otherwise the playback page stays black for ~250 ms.
+    return PopScope<Object?>(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) _floatingVideoKey.currentState?.releaseForExit();
+      },
+      child: panel,
+    );
+  }
+
+  Widget _buildPanel(BuildContext context) {
     final baseTheme = Theme.of(context);
     if (_baseTheme != baseTheme) {
       _baseTheme = baseTheme;
@@ -895,6 +993,7 @@ class _AiChatPanelState extends State<AiChatPanel> {
                             sourcesLabel: _media.sources,
                             isFullscreen: widget.isFullscreen,
                             fullscreenReturnLabel: widget.fullscreenReturnLabel,
+                            leadingCommand: _floatingVideoCommand(),
                             onBack: widget.onBack ?? widget.onBackToSubtitles,
                             backLabel: widget.onBack != null ? '返回' : '返回字幕',
                             onClose: widget.onClose,
@@ -1049,6 +1148,8 @@ class _AiChatPanelState extends State<AiChatPanel> {
                                   )
                                 : const SizedBox.shrink(),
                           ),
+                          if (widget.isFullscreen)
+                            Positioned.fill(child: _floatingVideoLayer()),
                         ],
                       ),
                     ),
@@ -1138,6 +1239,16 @@ class _AiChatPanelState extends State<AiChatPanel> {
           ),
         if (history) const AiCapsuleChoice(value: 'history', label: '对话历史'),
         if (settings) const AiCapsuleChoice(value: 'settings', label: 'AI 设置'),
+        AiCapsuleChoice(
+          value: 'copyConversation',
+          label: '复制完整对话',
+          enabled: active?.messages.isNotEmpty == true,
+        ),
+        AiCapsuleChoice(
+          value: 'exportConversation',
+          label: '导出完整对话…',
+          enabled: active?.messages.isNotEmpty == true,
+        ),
         const AiCapsuleChoice(value: 'prompts', label: '管理提示词'),
         const AiCapsuleChoice(value: 'reading', label: '阅读设置 · 字体大小'),
         AiCapsuleChoice(
@@ -1182,6 +1293,24 @@ class _AiChatPanelState extends State<AiChatPanel> {
           unawaited(_newConversation());
         case 'history':
           unawaited(_history(context));
+        case 'copyConversation':
+          final record = _controller.active;
+          if (record != null) {
+            unawaited(
+              _copy(
+                AiConversationExport(
+                  video: widget.videoItem,
+                  conversations: [record],
+                  videoContext: _controller.videoContext,
+                ).render(),
+              ),
+            );
+          }
+        case 'exportConversation':
+          final record = _controller.active;
+          if (record != null) {
+            unawaited(_exportConversation(context, record.id));
+          }
         case 'compact':
         case 'summary':
           unawaited(showAiCompactionDialog(context, _controller));
@@ -1217,6 +1346,15 @@ class _AiChatPanelState extends State<AiChatPanel> {
       }
     },
   );
+
+  Future<void> _exportConversation(BuildContext context, String id) =>
+      showAiConversationExportDialog(
+        context,
+        video: widget.videoItem,
+        conversations: _controller.conversations,
+        conversationId: id,
+        videoContext: _controller.videoContext,
+      );
 
   Widget _icon(String label, IconData icon, VoidCallback? onPressed) =>
       DesktopButtonClickRegion(
@@ -1292,7 +1430,9 @@ class _AiChatPanelState extends State<AiChatPanel> {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(
+            maxWidth: AiChatTextMetrics.measure,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1361,6 +1501,7 @@ class _AiChatPanelState extends State<AiChatPanel> {
                           }
                         : null,
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(switch (entry.id) {
                           'summary' => Icons.notes_outlined,
@@ -1371,11 +1512,21 @@ class _AiChatPanelState extends State<AiChatPanel> {
                         }, size: 18),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            entry.nameFor(_media),
-                            style: typography.bodyStyle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          // Noto CJK sits slightly low in its line box. Even
+                          // leading plus a 1px lift keeps the ink on the same
+                          // visual center as the side icons.
+                          child: Transform.translate(
+                            offset: const Offset(0, -1),
+                            child: Text(
+                              entry.nameFor(_media),
+                              style: typography.bodyStyle.copyWith(
+                                height: 1,
+                                leadingDistribution:
+                                    TextLeadingDistribution.even,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                         const Icon(Icons.chevron_right, size: 16),
@@ -1459,9 +1610,17 @@ class _AiChatPanelState extends State<AiChatPanel> {
     );
     return Padding(
       padding: EdgeInsets.only(bottom: typography.dense ? 10 : 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      // Wide panels center one readable measure instead of stretching prose
+      // across the full width; narrow panels are unaffected.
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: AiChatTextMetrics.measure,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           Row(
             children: [
               Icon(
@@ -1619,7 +1778,9 @@ class _AiChatPanelState extends State<AiChatPanel> {
             ),
           if (user && !inlineActions) Wrap(children: actions),
           if (!user) _answerFooter(message, actions),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1962,6 +2123,10 @@ class _AiChatPanelState extends State<AiChatPanel> {
                                       label: '复制为 Markdown',
                                     ),
                                     AiCapsuleChoice(
+                                      value: 'saveExport',
+                                      label: '导出完整对话…',
+                                    ),
+                                    AiCapsuleChoice(
                                       value: 'delete',
                                       label: '删除',
                                       danger: true,
@@ -1978,9 +2143,19 @@ class _AiChatPanelState extends State<AiChatPanel> {
                                     }
                                     if (action == 'export') {
                                       await _copy(
-                                        _controller.exportMarkdown(
-                                          conversationId: row.id,
-                                        ),
+                                        AiConversationExport(
+                                          video: widget.videoItem,
+                                          conversations: [row],
+                                          videoContext:
+                                              _controller.videoContext,
+                                        ).render(),
+                                      );
+                                    }
+                                    if (action == 'saveExport' &&
+                                        context.mounted) {
+                                      await _exportConversation(
+                                        context,
+                                        row.id,
                                       );
                                     }
                                     if (action == 'delete') {
@@ -2115,6 +2290,15 @@ class _AiChatPanelState extends State<AiChatPanel> {
 
   Future<void> _settings(BuildContext context) async {
     _inputFocus.unfocus();
+    try {
+      await _controller.refreshApiConnections();
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text('共享接口未能读取，请检查安全存储后重试。')));
+    }
+    if (!context.mounted) return;
     await showDialog<AiChatSettings>(
       context: context,
       requestFocus: false,

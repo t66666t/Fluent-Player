@@ -1,3 +1,4 @@
+import '../../theme/app_settings_theme.dart';
 import 'dart:async';
 import '../../widgets/transcription_queue_actions.dart';
 
@@ -165,7 +166,10 @@ class _MediaCacheScreenState extends State<MediaCacheScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => MediaLibraryPageShortcuts(
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) => MediaLibraryPageShortcuts(
     onSelectAll: _selectAll,
     bindings: {
       LogicalKeyboardKey.keyS: () {
@@ -201,15 +205,13 @@ class _MediaCacheScreenState extends State<MediaCacheScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: MediaQuery.sizeOf(context).width < 600
-          ? ListenableBuilder(
-              listenable: widget.service,
-              builder: (_, _) =>
-                  widget.service.ready && widget.service.loadError == null
-                  ? MediaLibrarySafeArea(child: _toolbar())
-                  : const SizedBox.shrink(),
-            )
-          : null,
+      bottomNavigationBar: ListenableBuilder(
+        listenable: widget.service,
+        builder: (_, _) =>
+            widget.service.ready && widget.service.loadError == null
+            ? MediaLibrarySafeArea(child: _toolbar())
+            : const SizedBox.shrink(),
+      ),
       body: _bodySafeArea(
         child: FutureBuilder<void>(
           future: _loading,
@@ -419,8 +421,6 @@ class _MediaCacheScreenState extends State<MediaCacheScreen> {
                             ),
                           ),
                         ),
-                        if (MediaQuery.sizeOf(context).width >= 600)
-                          SliverToBoxAdapter(child: _toolbar()),
                         const SliverToBoxAdapter(child: Divider(height: 1)),
                         if (_completed ? cached.isEmpty : tasks.isEmpty)
                           SliverFillRemaining(
@@ -467,9 +467,7 @@ class _MediaCacheScreenState extends State<MediaCacheScreen> {
   );
 
   Widget _bodySafeArea({required Widget child}) =>
-      MediaQuery.sizeOf(context).width < 600
-      ? SafeArea(top: false, bottom: false, child: child)
-      : MediaLibrarySafeArea(child: child);
+      SafeArea(top: false, bottom: false, child: child);
 
   Widget _toolbar() {
     final visible = _completed

@@ -59,7 +59,7 @@ void main() {
 
   for (final responseKind in ['http412', 'http429', 'api412', 'api429']) {
     test(
-      '$responseKind has one bounded retry cycle and resumes the same task',
+      '$responseKind stops immediately and resumes the saved task after cooldown',
       () async {
         final unexplained = responseKind == 'http412';
         respond = (options, handler) {
@@ -80,6 +80,7 @@ void main() {
         final outerWaits = <Duration>[];
         final messages = <String>[];
         final service = GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryDelay: (delay) async => waits.add(delay),
         );
@@ -114,29 +115,20 @@ void main() {
                 ),
           ),
         );
-        expect(queries, List.filled(unexplained ? 2 : 5, 'submitted-task'));
+        expect(queries, ['submitted-task']);
         expect(outerWaits, isEmpty);
+        expect(waits, isEmpty);
         expect(
-          waits.fold<Duration>(Duration.zero, (sum, d) => sum + d),
-          Duration(seconds: unexplained ? 3 : 195),
-        );
-        expect(
-          messages.any((m) => m.contains('${unexplained ? 3 : 15} 秒后继续查询')),
-          isTrue,
-        );
-        expect(
-          messages.any((m) => m.contains('${unexplained ? 2 : 14} 秒后继续查询')),
-          isTrue,
+          checkpoint.queryNotBefore!.difference(DateTime.now()),
+          greaterThan(const Duration(seconds: 59)),
         );
         if (unexplained) {
           expect(messages.any((m) => m.contains('访问限制')), isFalse);
-          expect(messages.any((m) => m.contains('HTTP 412')), isTrue);
           expect(checkpoint.lastQueryFailure?['httpStatus'], 412);
         }
         expect(checkpoint.taskId, 'submitted-task');
 
-        // The service can resume a retained checkpoint without uploading.
-        // Explicit failed-job retries invalidate this ID in the queue manager.
+        // Queue retries resume this checkpoint after its retained cooldown.
         respond = (options, handler) => resolve(options, handler, success());
         final resumed = await service.transcribeAudio(
           audio.path,
@@ -144,6 +136,10 @@ void main() {
         );
         expect(resumed.single.text, '完成');
         expect(queries.last, 'submitted-task');
+        expect(
+          waits.fold(Duration.zero, (total, d) => total + d),
+          greaterThan(const Duration(seconds: 59)),
+        );
       },
     );
   }
@@ -162,7 +158,9 @@ void main() {
       };
       final result =
           await GongyiAsrService(
+            minimumResultQueryInterval: Duration.zero,
             dio: dio,
+            maxPollRiskWaits: 1,
             resultQueryDelay: (delay) async => waits.add(delay),
           ).transcribeAudio(
             audio.path,
@@ -171,13 +169,13 @@ void main() {
           );
       expect(result.single.text, '完成');
       expect(queries, hasLength(2));
-      expect(waits, hasLength(15));
+      expect(waits, [const Duration(seconds: 60)]);
       expect(messages.any((m) => m.contains('不会重新上传')), isTrue);
     },
   );
 
   test(
-    'queue and recognition states keep fast polling and honest progress',
+    'queue and recognition use paced polling without per-second progress messages',
     () async {
       final messages = <String>[];
       final waits = <Duration>[];
@@ -186,11 +184,12 @@ void main() {
         handler,
         queries.length < 3
             ? {
-                'data': {'state': queries.length},
+                'data': {'state': queries.length == 1 ? 0 : 1},
               }
             : success(),
       );
       await GongyiAsrService(
+        minimumResultQueryInterval: Duration.zero,
         dio: dio,
         resultQueryDelay: (delay) async => waits.add(delay),
       ).transcribeAudio(
@@ -199,10 +198,11 @@ void main() {
         onProgress: (_, message) => messages.add(message),
       );
       expect(queries, hasLength(3));
-      expect(waits, hasLength(4));
-      for (final state in ['服务器正在排队', '服务器正在识别']) {
+      expect(waits, hasLength(2));
+      expect(waits, [const Duration(seconds: 10), const Duration(seconds: 3)]);
+      for (final state in ['服务器正在排队', '等待识别结果']) {
         final message = messages.firstWhere((m) => m.contains(state));
-        expect(message, contains('已等待'));
+        expect(message, isNot(contains('已等待')));
         expect(
           TranscriptionProgress.isWaiting(
             TranscriptionStatus.transcribing,
@@ -246,6 +246,7 @@ void main() {
         };
         final outerWaits = <Duration>[];
         final service = GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryDelay: (_) async {},
         );
@@ -264,7 +265,7 @@ void main() {
             ),
           ),
         );
-        expect(queries, hasLength(7));
+        expect(queries, hasLength(4));
         expect(outerWaits, isEmpty);
         expect(checkpoint.taskId, 'submitted-task');
       },
@@ -281,6 +282,7 @@ void main() {
       };
       await expectLater(
         GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryTimeout: const Duration(milliseconds: 50),
         ).transcribeAudio(audio.path, checkpoint: checkpoint),
@@ -305,6 +307,7 @@ void main() {
           resolve(options, handler, {'code': -412, 'message': '请求校验失败'});
       await expectLater(
         GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryDelay: (_) async {},
         ).transcribeAudio(audio.path, checkpoint: checkpoint),
@@ -322,7 +325,7 @@ void main() {
               ),
         ),
       );
-      expect(queries, hasLength(2));
+      expect(queries, hasLength(1));
       expect(checkpoint.lastQueryFailure?['httpStatus'], 200);
       expect(checkpoint.lastQueryFailure?['apiCode'], -412);
       expect(checkpoint.taskId, 'submitted-task');
@@ -344,7 +347,7 @@ void main() {
             statusCode: apiResponse ? 200 : 429,
             data: {'code': 429, 'message': 'Too Many Requests'},
             headers: Headers.fromMap({
-              'retry-after': ['40'],
+              'retry-after': ['90'],
             }),
           );
           if (apiResponse) {
@@ -360,12 +363,14 @@ void main() {
           }
         };
         await GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
+          maxPollRiskWaits: 1,
           resultQueryDelay: (delay) async => waits.add(delay),
         ).transcribeAudio(audio.path, checkpoint: checkpoint);
         expect(
           waits.fold(Duration.zero, (total, delay) => total + delay),
-          const Duration(seconds: 40),
+          const Duration(seconds: 90),
         );
         expect(queries, hasLength(2));
       },
@@ -390,6 +395,7 @@ void main() {
       );
       await expectLater(
         GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryTimeout: const Duration(milliseconds: 50),
         ).transcribeAudio(audio.path, checkpoint: checkpoint),
@@ -401,6 +407,21 @@ void main() {
       );
       expect(queries, hasLength(1));
       expect(checkpoint.taskId, 'submitted-task');
+      final restored = GongyiAsrTaskCheckpoint.fromJson(checkpoint.toJson());
+      expect(
+        restored.queryNotBefore!.difference(DateTime.now()),
+        greaterThan(const Duration(minutes: 9)),
+      );
+      respond = (options, handler) => resolve(options, handler, success());
+      await expectLater(
+        GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
+          dio: dio,
+          resultQueryTimeout: const Duration(milliseconds: 50),
+        ).transcribeAudio(audio.path, checkpoint: restored),
+        throwsA(isA<GongyiAsrException>()),
+      );
+      expect(queries, hasLength(1));
     },
   );
 
@@ -410,16 +431,42 @@ void main() {
       respond = (options, handler) {
         expect(options.headers['Cache-Control'], 'no-cache');
         expect(options.headers['Accept'], contains('application/json'));
+        expect(
+          options.headers['User-Agent'],
+          'Bilibili/1.0.0 (https://www.bilibili.com)',
+        );
         expect(options.method, 'GET');
         expect(options.queryParameters, {
-          'model_id': '8',
+          'model_id': 7,
           'task_id': 'submitted-task',
         });
         resolve(options, handler, success());
       };
       await GongyiAsrService(
+        minimumResultQueryInterval: Duration.zero,
         dio: dio,
       ).transcribeAudio(audio.path, checkpoint: checkpoint);
+    },
+  );
+
+  test(
+    'saved tasks use the current result protocol without recreating the task',
+    () async {
+      checkpoint = GongyiAsrTaskCheckpoint.fromJson({
+        'taskId': 'submitted-task',
+      });
+      respond = (options, handler) {
+        expect(options.queryParameters, {
+          'model_id': 7,
+          'task_id': 'submitted-task',
+        });
+        resolve(options, handler, success());
+      };
+      await GongyiAsrService(
+        minimumResultQueryInterval: Duration.zero,
+        dio: dio,
+      ).transcribeAudio(audio.path, checkpoint: checkpoint);
+      expect(queries, ['submitted-task']);
     },
   );
 
@@ -431,6 +478,7 @@ void main() {
       });
       await expectLater(
         GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
           resultQueryTimeout: const Duration(milliseconds: 50),
         ).transcribeAudio(audio.path, checkpoint: checkpoint),
@@ -448,18 +496,22 @@ void main() {
   );
 
   test(
-    'cancelling a restriction countdown stops immediately and can resume',
+    'cancelling an explicitly enabled restriction wait stops and can resume',
     () async {
       final cancellation = CancelToken();
       respond = (options, handler) =>
           resolve(options, handler, {'code': 429, 'message': '访问频繁'});
       await expectLater(
-        GongyiAsrService(dio: dio).transcribeAudio(
+        GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
+          dio: dio,
+          maxPollRiskWaits: 1,
+        ).transcribeAudio(
           audio.path,
           checkpoint: checkpoint,
           cancelToken: cancellation,
           onProgress: (_, message) {
-            if (message.contains('15 秒后继续查询')) cancellation.cancel('pause');
+            if (message.contains('等待后重查')) cancellation.cancel('pause');
           },
         ),
         throwsA(
@@ -471,7 +523,9 @@ void main() {
       respond = (options, handler) => resolve(options, handler, success());
       expect(
         (await GongyiAsrService(
+          minimumResultQueryInterval: Duration.zero,
           dio: dio,
+          resultQueryDelay: (_) async {},
         ).transcribeAudio(audio.path, checkpoint: checkpoint)).single.text,
         '完成',
       );

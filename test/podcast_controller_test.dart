@@ -76,6 +76,41 @@ void main() {
       'http://127.0.0.1:${server.port}/rss',
     )).feed,
   );
+  test('legacy RSS rows require a full refresh before remote use', () async {
+    final channel = await subscribe();
+    final episode = store.episodes(channel.id).single;
+    final legacy = episode.toJson()..remove('sourceFeedUrl');
+    store.write('episode', episode.id, legacy, channel: channel.id);
+    controller.updateState(episode.id, (state) => state.positionMs = 4567);
+    // The stored ETag matches the server. A conditional request would return
+    // 304 and could not establish whether this row came from an RSS enclosure.
+    channel.etag = '"v1"';
+    store.write('channel', channel.id, channel.toJson());
+    await controller.refreshChannel(channel.id);
+    expect(store.episode(episode.id)!.sourceFeedUrl, channel.feedUrl);
+    expect(controller.state(episode.id).positionMs, 4567);
+    expect(store.episodes(channel.id).length, 1);
+  });
+  test(
+    'published history confirms legacy enclosures without resetting progress',
+    () async {
+      final channel = await subscribe();
+      final episode = store.episodes(channel.id).single;
+      final legacy = episode.toJson()..remove('sourceFeedUrl');
+      store.write('episode', episode.id, legacy, channel: channel.id);
+      controller.updateState(episode.id, (state) => state.positionMs = 8765);
+      channel.nextPage = '${channel.feedUrl}?page=2';
+      store.write('channel', channel.id, channel.toJson());
+      await controller.refreshChannel(channel.id, history: true);
+      expect(
+        store.episode(episode.id)!.sourceFeedUrl,
+        '${channel.feedUrl}?page=2',
+      );
+      expect(store.episode(episode.id)!.discoveredMs, episode.discoveredMs);
+      expect(controller.state(episode.id).positionMs, 8765);
+      expect(store.channel(channel.id)!.feedUrl, channel.feedUrl);
+    },
+  );
   test(
     'first subscription establishes a baseline, later refresh creates only new notices',
     () async {
@@ -101,10 +136,17 @@ void main() {
       final first = await subscribe();
       final episode = store.episodes(first.id).single;
       controller.updateState(episode.id, (s) => s.positionMs = 1234);
+      store.write(
+        'episode',
+        episode.id,
+        episode.toJson()..remove('sourceFeedUrl'),
+        channel: first.id,
+      );
       final second = await subscribe();
       expect(first.id, second.id);
       expect(controller.channels.length, 1);
       expect(controller.state(episode.id).positionMs, 1234);
+      expect(store.episode(episode.id)!.sourceFeedUrl, first.feedUrl);
     },
   );
   test(
@@ -245,6 +287,7 @@ void main() {
     () async {
       final channel = await subscribe();
       final episode = PodcastEpisode(
+        sourceFeedUrl: 'https://publisher.test/rss',
         id: 'mobile',
         channelId: channel.id,
         title: 'Mobile download',
@@ -275,6 +318,7 @@ void main() {
     final channel = await subscribe();
     store.setSetting(null, 'downloadLimitMb', 128);
     final episode = PodcastEpisode(
+      sourceFeedUrl: 'https://publisher.test/rss',
       id: 'large',
       channelId: channel.id,
       title: '视频',
@@ -307,6 +351,7 @@ void main() {
       final channel = await subscribe();
       for (var index = 0; index < 8; index++) {
         final episode = PodcastEpisode(
+          sourceFeedUrl: 'https://publisher.test/rss',
           id: 'bulk-$index',
           channelId: channel.id,
           title: '节目 $index',

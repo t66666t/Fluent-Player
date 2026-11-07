@@ -95,7 +95,6 @@ class _BilibiliVideoLinkActionsState extends State<BilibiliVideoLinkActions> {
   Future<void> _open(BilibiliVideoLinks links) async {
     if (_opening) return;
     final generation = _generation;
-    final mobile = bilibiliVideoOpensInApp;
     setState(() {
       _opening = true;
       _feedback = null;
@@ -111,7 +110,7 @@ class _BilibiliVideoLinkActionsState extends State<BilibiliVideoLinkActions> {
         case BilibiliVideoOpenResult.cancelled:
           break;
         case BilibiliVideoOpenResult.browser:
-          if (mobile) _report('未能唤起哔哩哔哩，已用浏览器打开');
+          break;
         case BilibiliVideoOpenResult.failed:
           _report('无法打开视频，请复制链接后手动打开', error: true);
       }
@@ -122,7 +121,6 @@ class _BilibiliVideoLinkActionsState extends State<BilibiliVideoLinkActions> {
   Widget build(BuildContext context) {
     final links = BilibiliVideoLinks.tryParse(widget.bvid, page: widget.page);
     if (links == null) return const SizedBox.shrink();
-    final mobile = bilibiliVideoOpensInApp;
     return Wrap(
       key: const ValueKey('bilibili-panel-video-links'),
       spacing: 4,
@@ -174,9 +172,9 @@ class _BilibiliVideoLinkActionsState extends State<BilibiliVideoLinkActions> {
           DesktopButtonClickRegion(
             child: IconButton(
               key: const ValueKey('bilibili-panel-open-externally'),
-              tooltip: mobile ? '用哔哩哔哩打开' : '用浏览器打开',
+              tooltip: '在应用内打开官方播放器',
               onPressed: _opening ? null : () => _open(links),
-              icon: Icon(mobile ? Icons.open_in_new : Icons.public),
+              icon: const Icon(Icons.play_circle_outline),
               iconSize: 18,
               color: AppTokens.text2,
             ),

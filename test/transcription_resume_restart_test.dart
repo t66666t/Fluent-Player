@@ -20,11 +20,14 @@ import 'package:video_player_app/models/subtitle_stream.dart';
 import 'package:video_player_app/models/subtitle_punctuation.dart';
 import 'package:video_player_app/models/subtitle_output_path_strategy.dart';
 import 'package:video_player_app/models/transcription_status.dart';
+import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/ai_subtitle_api_settings.dart';
 import 'package:video_player_app/services/ai_subtitle_translator.dart';
 import 'package:video_player_app/services/bing_subtitle_translator.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/library_service.dart';
+import 'package:video_player_app/services/media_playback_service.dart';
+import 'package:video_player_app/services/subtitle_optimization.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
 import 'package:video_player_app/services/subtitle_translation_service.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
@@ -81,6 +84,7 @@ class _Runner extends ModelTranscriptionRunner {
   final assemblyVersions = <int>[];
   String speech = 'Hello, world.';
   String ending = '.';
+  List<SubtitleItem>? stableCues;
   bool hold = true;
   bool holdAfterBatch = false;
   bool prepareCloudInput = false, forceCloudTranscode = false;
@@ -134,7 +138,7 @@ class _Runner extends ModelTranscriptionRunner {
       await cancellationRelease?.future;
       throw cancellationFailure;
     }
-    final cues = [
+    final cues = stableCues ?? [
       SubtitleItem(
         index: 1,
         startTime: Duration.zero,
@@ -345,6 +349,127 @@ void main() {
     provider: SubtitleTranslateProvider.bing,
     aiOptions: AiSubtitleTranslationSettings.defaults,
   );
+
+  for (final translate in [false, true]) {
+    test(
+      'transcription publishes optimized batches to playback; translate=$translate',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          AiSubtitleApiSettings.preferencesKey,
+          jsonEncode(
+            const AiSubtitleApiSettings(
+              baseUrl: 'https://example.test',
+              model: 'corrector',
+            ).toJson(),
+          ),
+        );
+        await const SubtitleOptimizationSettings(enabled: true).save();
+        final releaseSecond = Completer<void>();
+        await manager.shutdown();
+        manager.dispose();
+        manager = TranscriptionManager(
+          settings: settings,
+          modelCenter: center,
+          modelRunner: runner,
+          translationService: translation,
+          resolveOptimizationEndpoint: (snapshot) async => snapshot,
+          subtitleOptimizer: SubtitleOptimizer(
+            client: AiSubtitleTranslator(
+              complete: (_, messages) async {
+                final body = jsonDecode(
+                  messages.firstWhere((m) => m['role'] == 'user')['content']!,
+                ) as Map;
+                final source = body['字幕'] as Map;
+                if ((source.values.first as String).contains('第21条')) {
+                  await releaseSecond.future;
+                }
+                return jsonEncode({
+                  '修改': {
+                    for (final entry in source.entries)
+                      entry.key: (entry.value as String).replaceAll(
+                        '设制',
+                        '设置',
+                      ),
+                  },
+                });
+              },
+            ),
+          ),
+        );
+        await manager.initialize();
+        runner.hold = false;
+        runner.stableCues = [
+          for (var i = 1; i <= 40; i++)
+            SubtitleItem(
+              index: i,
+              startTime: Duration(seconds: i),
+              endTime: Duration(seconds: i + 1),
+              text: '第$i条，打开设制页面。',
+            ),
+        ];
+        translation.hold = false;
+        final item = VideoItem(
+          id: 'media',
+          path: audio,
+          title: 'Transcription',
+          durationMs: 60000,
+          lastUpdated: 0,
+        );
+        library.seedVideoForTesting(item);
+        final playback = MediaPlaybackService.forTesting()
+          ..debugSeedCurrentItem(item)
+          ..debugAttachLibrary(library);
+        playback.bindSubtitleStreams(manager);
+        try {
+          await manager.startTranscription(
+            audio,
+            videoId: item.id,
+            libraryService: library,
+            autoStart: true,
+            translateChoice: translate
+                ? bingChoice
+                : const TranscriptTranslateChoice.off(),
+          );
+          await _until(() => playback.subtitles.length == 20);
+          final state = manager.streamForVideo(audio, videoId: item.id)!;
+          expect(state.primary, hasLength(20));
+          expect(state.primary.first.text, contains('设置'));
+          expect(
+            SubtitleParser.parse(await File(state.primaryPath).readAsString()),
+            hasLength(20),
+          );
+          expect(playback.subtitles.first.text, contains('设置'));
+          expect(playback.secondarySubtitles, hasLength(translate ? 20 : 0));
+          if (translate) {
+            expect(state.secondary, hasLength(20));
+            expect(
+              SubtitleParser.parse(
+                await File(state.secondaryPath!).readAsString(),
+              ),
+              hasLength(20),
+            );
+            expect(
+              translation.sourceTexts.expand((batch) => batch),
+              everyElement(contains('设置')),
+            );
+          } else {
+            expect(translation.sourceTexts, isEmpty);
+          }
+          expect(releaseSecond.isCompleted, isFalse);
+          releaseSecond.complete();
+          await _until(() => !manager.isQueueRunning);
+          await _until(() => playback.subtitles.length == 40);
+          expect(playback.secondarySubtitles, hasLength(translate ? 40 : 0));
+        } finally {
+          if (!releaseSecond.isCompleted) releaseSecond.complete();
+          await _until(() => !manager.isQueueRunning);
+          await playback.subtitleSelectionSavedForTest;
+          playback.dispose();
+        }
+      },
+    );
+  }
 
   void configureCloud() {
     center.current = ModelJobSpec(profile: ModelServiceProfile(id: 'cloud', name: 'ElevenLabs',

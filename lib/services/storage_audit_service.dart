@@ -42,6 +42,8 @@ const _dataFolders = {
   'yt_dlp_cookies',
   'yt_dlp',
   'portable_transfer',
+  'external_ai',
+  'protected_media_workspaces_v1',
 };
 const _dataFiles = {
   'library.json',
@@ -90,6 +92,7 @@ const _metadataFolders = {
   'databases',
   'bilibili_cookies',
   'cookies',
+  'external_ai',
 };
 
 /// Registered feature roots retain their logical folder even when the actual
@@ -939,6 +942,9 @@ bool _auditableLocalPath(String path) {
   if (first == 'batch_import_cache') {
     return (StorageCategory.picker, false, '批量导入的工作副本由导入功能管理');
   }
+  if (first == 'protected_media_workspaces_v1') {
+    return (StorageCategory.workTemp, false, '媒体处理工作目录由对应功能管理，避免删除进行中的操作');
+  }
   if (_dataFile(name) ||
       _metadataFolders.contains(first) ||
       first == 'portable_transfer' ||
@@ -1147,8 +1153,16 @@ _DescribedFile _describeFile(
     ...owners.map((owner) => owner.origin).whereType<StorageOrigin>(),
     if (asset != null) ...asset.sourceTags,
   };
+  final first = _storageParts(root, path).firstOrNull;
   final policy = !keepOriginal && asset != null
       ? asset.policy
+      : category == StorageCategory.thumbnails &&
+            const {
+              'chapter_thumbnails',
+              'bilibili_videoshots',
+              'yt_dlp_task_thumbnails',
+            }.contains(first)
+      ? StorageCleanupPolicy.regenerableCache
       : _policyFor(category, deletable);
   final role = _roleFor(path, asset, owners);
   var resolvedCategory = category;
@@ -1215,7 +1229,11 @@ _DescribedFile _describeFile(
 
 StorageCleanupPolicy _policyFor(StorageCategory category, bool deletable) {
   if (category == StorageCategory.subtitles ||
-      category == StorageCategory.offlineDownloads) {
+      category == StorageCategory.offlineDownloads ||
+      category == StorageCategory.downloads ||
+      category == StorageCategory.transfer ||
+      category == StorageCategory.orphaned ||
+      category == StorageCategory.thumbnails) {
     return StorageCleanupPolicy.savedContent;
   }
   if (category == StorageCategory.metadata ||
@@ -1235,6 +1253,7 @@ StorageOrigin _originFor(
 ) {
   final tagged = owners.map((o) => o.origin).whereType<StorageOrigin>().toSet();
   if (tagged.length == 1) return tagged.single;
+  if (tagged.length > 1) return StorageOrigin.shared;
   final feature = storageFeatureKey(root, path);
   if (feature == 'podcast') return StorageOrigin.podcast;
   if (feature == 'artwork') return StorageOrigin.shared;
@@ -1245,16 +1264,47 @@ StorageOrigin _originFor(
       feature == 'cloudAccounts') {
     return StorageOrigin.cloudDrive;
   }
-  final lower = path.toLowerCase();
-  if (lower.contains('bilibili')) return StorageOrigin.bilibili;
-  if (lower.contains('yt_dlp') || lower.contains('ytdlp')) {
+  final parts = _storageParts(root, path);
+  final first = parts.firstOrNull ?? '';
+  final name = p.basename(path).toLowerCase();
+  if (first.startsWith('bilibili_') ||
+      first == 'downloads' && parts.elementAtOrNull(1) == 'bilibili' ||
+      _dataFile(name) && name.startsWith('bilibili_')) {
+    return StorageOrigin.bilibili;
+  }
+  if (first.startsWith('yt_dlp') ||
+      first == 'downloads' && parts.elementAtOrNull(1) == 'yt_dlp') {
     return StorageOrigin.ytDlp;
+  }
+  if (first.startsWith('douyin_') ||
+      first == 'downloads' && parts.elementAtOrNull(1) == 'douyin') {
+    return StorageOrigin.douyin;
+  }
+  if (first.startsWith('web_media_') ||
+      first == 'downloads' && parts.elementAtOrNull(1) == 'web') {
+    return StorageOrigin.web;
+  }
+  if (const {
+    'imported_media',
+    'imported_videos',
+    'imported_archives',
+    'compatible_audio',
+    'thumbnails',
+    'chapter_thumbnails',
+    'subtitles',
+    'danmaku',
+  }.contains(first)) {
+    return StorageOrigin.localMedia;
   }
   return switch (category) {
     StorageCategory.libraryMedia ||
     StorageCategory.recycleBin ||
-    StorageCategory.compatibility => StorageOrigin.localMedia,
-    StorageCategory.metadata || StorageCategory.models => StorageOrigin.appData,
+    StorageCategory.compatibility ||
+    StorageCategory.transfer ||
+    StorageCategory.picker => StorageOrigin.localMedia,
+    StorageCategory.metadata ||
+    StorageCategory.models ||
+    StorageCategory.workTemp => StorageOrigin.appData,
     _ => StorageOrigin.unknown,
   };
 }

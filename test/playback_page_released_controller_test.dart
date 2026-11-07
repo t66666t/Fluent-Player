@@ -446,7 +446,106 @@ void main() {
 
   const hapticTick = 'HapticFeedbackType.selectionClick';
   const hapticLight = 'HapticFeedbackType.lightImpact';
-  const hapticMedium = 'HapticFeedbackType.mediumImpact';
+
+  for (final disableDuringGesture in [false, true]) {
+    testWidgets('video transform switch resets and blocks touch transforms, '
+        'active=$disableDuringGesture', (tester) async {
+      window(tester, const Size(1280, 720));
+      settings.isLandscapeSubtitleSidebarVisible = false;
+      await startPlayback(tester, items.first, 1);
+      await tester.pumpWidget(host(VideoPlayerScreen(videoItem: items.first)));
+      await settle(tester);
+      expect(find.byType(VideoPlayer), findsOneWidget);
+
+      Matrix4 matrix() => tester
+          .widget<Transform>(
+            find
+                .ancestor(
+                  of: find.byType(VideoPlayer),
+                  matching: find.byWidgetPredicate(
+                    (widget) =>
+                        widget is Transform &&
+                        widget.alignment == Alignment.center,
+                  ),
+                )
+                .first,
+          )
+          .transform;
+      final original = matrix().clone();
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('landscape-player-surface')),
+      );
+      final first = await tester.startGesture(
+        surface.center - const Offset(100, 0),
+        pointer: 1,
+      );
+      final second = await tester.startGesture(
+        surface.center + const Offset(100, 0),
+        pointer: 2,
+      );
+      await first.moveBy(const Offset(-70, -90));
+      await second.moveBy(const Offset(120, 90));
+      await tester.pump();
+      expect(matrix(), isNot(original));
+      if (!disableDuringGesture) {
+        await first.up();
+        await second.up();
+        await settle(tester);
+        expect(matrix(), isNot(original));
+      }
+
+      await settings.saveEnableVideoTransformGestures(false);
+      await tester.pump();
+      expect(matrix(), original);
+      if (disableDuringGesture) {
+        await first.moveBy(const Offset(-40, -40));
+        await second.moveBy(const Offset(40, 40));
+        await first.up();
+        await second.up();
+        await settle(tester);
+        expect(matrix(), original);
+      }
+      final disabledFirst = await tester.startGesture(
+        surface.center - const Offset(100, 0),
+        pointer: 3,
+      );
+      final disabledSecond = await tester.startGesture(
+        surface.center + const Offset(100, 0),
+        pointer: 4,
+      );
+      await disabledFirst.moveBy(const Offset(-70, -90));
+      await disabledSecond.moveBy(const Offset(120, 90));
+      await disabledFirst.up();
+      await disabledSecond.up();
+      await settle(tester);
+      expect(matrix(), original);
+      expect(
+        tester
+            .widget<VideoControlsOverlay>(find.byType(VideoControlsOverlay))
+            .suppressPrimaryGestures,
+        isFalse,
+      );
+
+      await settings.saveEnableVideoTransformGestures(true);
+      final enabledFirst = await tester.startGesture(
+        surface.center - const Offset(100, 0),
+        pointer: 5,
+      );
+      final enabledSecond = await tester.startGesture(
+        surface.center + const Offset(100, 0),
+        pointer: 6,
+      );
+      await enabledFirst.moveBy(const Offset(-70, -90));
+      await enabledSecond.moveBy(const Offset(120, 90));
+      await tester.pump();
+      expect(matrix(), isNot(original));
+      await enabledFirst.up();
+      await enabledSecond.up();
+      await close(tester);
+      await tester.runAsync(playback.stop);
+      expectNoErrorScreen(tester);
+    });
+  }
 
   for (final kind in ['portrait', 'landscape', 'mini', 'music']) {
     testWidgets(
@@ -536,7 +635,7 @@ void main() {
           final feedbackBeforeRelease = List<Object?>.of(calls);
           await cancelled.up();
           await tester.pump();
-          expect(calls.where((c) => c == hapticMedium), hasLength(1));
+          expect(calls.where((c) => c == hapticLight), hasLength(1));
           expect(
             calls,
             feedbackBeforeRelease,
@@ -658,7 +757,7 @@ void main() {
         calls.clear();
         await tester.tap(toggle);
         await settle(tester);
-        expect(calls, [hapticMedium]);
+        expect(calls, [hapticLight]);
 
         final resize = find.byKey(
           const ValueKey('player-sidebar-resize-handle'),

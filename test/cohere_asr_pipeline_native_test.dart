@@ -17,8 +17,9 @@ import 'package:video_player_app/features/model_center/model_transcription.dart'
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
 import 'support/cohere_candidate.dart';
+import 'support/prepared_local_models.dart';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center({required super.storage});
   final states = <Map<String, dynamic>>[];
   @override

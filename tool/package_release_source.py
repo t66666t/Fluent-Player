@@ -37,6 +37,10 @@ def main():
                 continue
             if any(fnmatch.fnmatch(path.name, pattern) for pattern in
                    ['key.properties', '*.jks', '*.keystore', '*.p12', '*.pfx', 'MiSans-*.otf',
+                    'NotoSerifCJKsc-*.otf',
+                    'NotoSansCJKsc-Thin.otf', 'NotoSansCJKsc-DemiLight.otf',
+                    'NotoSansCJKsc-Light.otf', 'NotoSansCJKsc-Medium.otf',
+                    'NotoSansCJKsc-Bold.otf', 'NotoSansCJKsc-Black.otf',
                     '_extract_notes.py', '_yt_audio_task_notes.txt']):
                 continue
             if (relative.startswith(('assets/binaries/', 'windows/runtime/',

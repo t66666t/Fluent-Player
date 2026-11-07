@@ -24,13 +24,18 @@ import '../services/app_haptics.dart';
 import '../models/video_collection.dart';
 import '../models/video_item.dart';
 import '../models/media_library_root_entry.dart';
+import '../models/media_library_view_mode.dart';
+import '../widgets/media_library_table_header.dart';
+import '../widgets/media_library_table_sort.dart';
 import '../widgets/folder_drop_target.dart';
 import '../widgets/cached_thumbnail_widget.dart';
 import '../widgets/folder_placeholder_cover.dart';
 import '../widgets/library_rename_dialog.dart';
 import '../widgets/media_library_list_tile.dart';
+import '../widgets/media_display_title.dart';
 import '../widgets/media_library_item_interaction_wrapper.dart';
 import '../widgets/media_library_grid_card.dart';
+import '../widgets/media_library_keyboard_navigation.dart';
 import '../widgets/media_library_gestures.dart';
 import '../widgets/media_library_activity_menu.dart';
 import '../widgets/media_library_action_dock.dart';
@@ -45,6 +50,8 @@ import '../debug/debug_log_overlay.dart';
 import '../widgets/media_library_settings_sheet.dart';
 import '../widgets/media_library_search_prompt.dart';
 import '../widgets/media_library_compact_app_bar.dart';
+import '../features/external_ai/external_ai_toolbar_action.dart';
+import '../features/external_ai/external_ai_workspace_context.dart';
 import '../widgets/media_library_selection_bottom_bar.dart';
 import '../widgets/media_library_selection_drop_targets.dart';
 import '../widgets/media_library_top_bar_import_progress.dart';
@@ -114,6 +121,8 @@ class _CollectionScreenState extends State<CollectionScreen>
   );
   final AndroidHardwareKeyDeduplicator _androidKeyDeduplicator =
       AndroidHardwareKeyDeduplicator();
+  final GlobalKey<MediaLibraryKeyboardRegionState> _keyboardRegionKey =
+      GlobalKey<MediaLibraryKeyboardRegionState>();
 
   // Pinch to zoom state
   int _baseCrossAxisCount = 2;
@@ -161,18 +170,113 @@ class _CollectionScreenState extends State<CollectionScreen>
     );
   }
 
-  bool _allowsFolderReorder() => !_isSearchResults && !_includeDescendantsNow();
+  bool _allowsFolderReorder() {
+    if (_isSearchResults || _includeDescendantsNow()) return false;
+    final settings = Provider.of<SettingsService>(context, listen: false);
+    return settings.mediaLibraryAllowsManualOrder;
+  }
+
+  bool _showUndockedFolderTreeButton(SettingsService settings) {
+    if (!settings.mediaLibraryShowsFolderTree) return false;
+    final shell = _libraryShell ?? MediaLibraryShell.maybeOf(context);
+    return shell != null && !shell.folderTreeDocked;
+  }
+
+  Widget _buildFolderTreeToolbarButton({required bool compact}) {
+    void openTree() => _libraryShell?.openFolderTree();
+    if (compact) {
+      return MediaLibraryCompactIconButton(
+        icon: Icons.account_tree_outlined,
+        tooltip: '文件夹树',
+        onPressed: openTree,
+      );
+    }
+    return DesktopButtonClickRegion(
+      child: IconButton(
+        icon: const Icon(Icons.account_tree_outlined, color: AppTokens.text2),
+        tooltip: '文件夹树',
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+        onPressed: openTree,
+      ),
+    );
+  }
+
+  Widget _wrapScrollAreaWithTableHeader({
+    required BuildContext context,
+    required SettingsService settings,
+    required Widget child,
+  }) {
+    final isTable =
+        settings.mediaLibraryContentLayout == MediaLibraryContentLayout.table;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final duration = disableAnimations
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final style = settings.listStyleFor(MediaQuery.sizeOf(context));
+        final headerHeight = isTable
+            ? MediaLibraryTableHeader.heightFor(style, width: width)
+            : 0.0;
+
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            AnimatedPadding(
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(top: headerHeight),
+              child: child,
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedSize(
+                duration: duration,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedOpacity(
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  opacity: isTable ? 1 : 0,
+                  child: isTable
+                      ? MediaLibraryTableHeader(style: style, width: width)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   bool _showParentLocate() => _isSearchResults || _includeDescendantsNow();
 
   List<dynamic> _visibleContents(LibraryService library) {
+    final settings = Provider.of<SettingsService>(context, listen: false);
+    late final List<dynamic> raw;
     if (_isSearchResults) {
-      return library.searchContents(widget.searchQuery!);
+      raw = library.searchContents(widget.searchQuery!);
+    } else if (_includeDescendantsNow()) {
+      raw = library.mediaInFolderTree(widget.collectionId);
+    } else {
+      raw = library.browseContents(widget.collectionId);
     }
-    if (_includeDescendantsNow()) {
-      return library.mediaInFolderTree(widget.collectionId);
+    if (settings.mediaLibraryContentLayout == MediaLibraryContentLayout.table) {
+      return sortMediaLibraryContents(
+        raw,
+        settings.mediaTableSort,
+        settings.mediaTableSortDescending,
+        library: library,
+      );
     }
-    return library.browseContents(widget.collectionId);
+    return raw;
   }
 
   String? _relativePathFor(LibraryService library, VideoItem item) {
@@ -200,6 +304,28 @@ class _CollectionScreenState extends State<CollectionScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _libraryShell = MediaLibraryShell.maybeOf(context);
+    _publishExternalAiWorkspace(context.read<LibraryService>());
+  }
+
+  void _publishExternalAiWorkspace(LibraryService library) {
+    final workspace = ExternalAiWorkspaceContext.instance;
+    if (!isMediaLibraryRouteCurrent(context)) {
+      workspace.clear(this);
+      return;
+    }
+    final collection = library.getCollection(widget.collectionId);
+    final view = _isSearchResults
+        ? ExternalAiWorkspaceView.search
+        : collection == null || collection.isRecycled
+        ? ExternalAiWorkspaceView.unknown
+        : collection.isPodcast
+        ? ExternalAiWorkspaceView.unknown
+        : ExternalAiWorkspaceView.libraryFolder;
+    workspace.publish(
+      owner: this,
+      viewType: view,
+      folderId: widget.collectionId,
+    );
   }
 
   /// The drop cover dims the frame's mini player as well as this page.
@@ -409,6 +535,8 @@ class _CollectionScreenState extends State<CollectionScreen>
     }
 
     return [
+      if (ExternalAiToolbarAction.isSupported)
+        const ExternalAiToolbarAction(compact: true),
       if (widget.returnToSearchResults)
         MediaLibraryCompactIconButton(
           icon: Icons.drive_folder_upload_outlined,
@@ -470,16 +598,6 @@ class _CollectionScreenState extends State<CollectionScreen>
                   unawaited(_toggleIncludeDescendants());
                 },
               ),
-            mediaLibraryCompactMenuItem(
-              icon: settings.mediaLibraryViewMode == 0
-                  ? Icons.view_list_rounded
-                  : Icons.grid_view_rounded,
-              label: settings.mediaLibraryViewMode == 0 ? '切换列表视图' : '切换卡片视图',
-              onSelected: () {
-                final nextMode = settings.mediaLibraryViewMode == 0 ? 1 : 0;
-                settings.updateSetting('mediaLibraryViewMode', nextMode);
-              },
-            ),
             if (_showExportSettingsButton)
               mediaLibraryCompactMenuItem(
                 icon: Icons.file_download,
@@ -712,6 +830,11 @@ class _CollectionScreenState extends State<CollectionScreen>
     return _visibleContents(library).length;
   }
 
+  List<String> _keyboardOrderedIds() => [
+    for (final item in _visibleContents(context.read<LibraryService>()))
+      (item as dynamic).id as String,
+  ];
+
   /// Helper: Get content ID at index
   String? _getItemId(int index) {
     final library = Provider.of<LibraryService>(context, listen: false);
@@ -747,19 +870,15 @@ class _CollectionScreenState extends State<CollectionScreen>
       scrollBox?.size.width ?? mediaSize.width,
       mediaSize.height,
     );
-    if (settings.mediaLibraryViewMode == 1) {
+    if (settings.mediaLibraryUsesRowPipeline) {
       final listStyle = settings.listStyleFor(mediaSize);
-      final metrics = MediaListLayoutMetrics.forGrid(
+      final metrics = MediaListLayoutMetrics.forStyle(
+        style: listStyle,
         screenShortestSide: mediaSize.shortestSide,
         availableWidth: viewportSize.width,
-        crossAxisCount: listStyle.crossAxisCount,
-        heightSetting: listStyle.heightScale,
-        titleSetting: listStyle.titleScale,
-        mainSpacingSetting: listStyle.mainSpacingScale,
-        crossSpacingSetting: listStyle.crossSpacingScale,
       );
       return MediaLibraryGridGeometry(
-        crossAxisCount: listStyle.crossAxisCount,
+        crossAxisCount: listStyle.isTable ? 1 : listStyle.crossAxisCount,
         itemWidth: metrics.cellWidth,
         itemHeight: metrics.rowHeight,
         horizontalSpacing: metrics.crossSpacing,
@@ -1176,6 +1295,7 @@ class _CollectionScreenState extends State<CollectionScreen>
 
   @override
   void dispose() {
+    ExternalAiWorkspaceContext.instance.clear(this);
     _entryWork.dispose();
     _playbackInsets.dispose();
     _libraryShell?.setFileDropActive(this, false);
@@ -1265,8 +1385,7 @@ class _CollectionScreenState extends State<CollectionScreen>
         }
         return KeyEventResult.handled;
       case DesktopMediaManagementShortcutAction.toggleViewMode:
-        final nextMode = settings.mediaLibraryViewMode == 0 ? 1 : 0;
-        settings.updateSetting('mediaLibraryViewMode', nextMode);
+        unawaited(settings.cycleMediaLibraryViewStyle());
         return KeyEventResult.handled;
       case DesktopMediaManagementShortcutAction.toggleFullScreen:
         if (!_isDesktopPlatform) {
@@ -1317,6 +1436,10 @@ class _CollectionScreenState extends State<CollectionScreen>
       case DesktopMediaManagementShortcutAction.openLibrarySettings:
         if (_isSelectionMode) return KeyEventResult.handled;
         showMediaLibrarySettingsBottomSheet(context, settings);
+        return KeyEventResult.handled;
+      case DesktopMediaManagementShortcutAction.openExternalAi:
+        if (_isSelectionMode) return KeyEventResult.handled;
+        ExternalAiToolbarAction.open(context);
         return KeyEventResult.handled;
       case DesktopMediaManagementShortcutAction.openSleepTimer:
         unawaited(showSleepTimerDialog(context));
@@ -1431,6 +1554,7 @@ class _CollectionScreenState extends State<CollectionScreen>
       message.toKeyEvent(),
       fromAndroidNativeBridge: true,
       hasBlockingModifierOverride: message.hasBlockingModifier,
+      shiftPressedOverride: message.isShiftPressed,
     );
   }
 
@@ -1438,6 +1562,7 @@ class _CollectionScreenState extends State<CollectionScreen>
     KeyEvent event, {
     bool fromAndroidNativeBridge = false,
     bool? hasBlockingModifierOverride,
+    bool? shiftPressedOverride,
   }) {
     if (!_supportsManagementKeyboardShortcuts) return KeyEventResult.ignored;
     // 当视频播放页或其他子页面活跃时，不处理键盘事件，避免与播放器快捷键冲突
@@ -1460,6 +1585,44 @@ class _CollectionScreenState extends State<CollectionScreen>
       return KeyEventResult.handled;
     }
     if (_isTextInputFocused()) {
+      return KeyEventResult.ignored;
+    }
+    final keyboardForCards = HardwareKeyboard.instance;
+    final keyForCards = event.logicalKey;
+    final isArrow = keyForCards == LogicalKeyboardKey.arrowLeft ||
+        keyForCards == LogicalKeyboardKey.arrowRight ||
+        keyForCards == LogicalKeyboardKey.arrowUp ||
+        keyForCards == LogicalKeyboardKey.arrowDown;
+    final shiftForCards = shiftPressedOverride ?? keyboardForCards.isShiftPressed;
+    final blockingForCards = hasBlockingModifierOverride ??
+        (keyboardForCards.isControlPressed || keyboardForCards.isAltPressed ||
+            keyboardForCards.isMetaPressed);
+    if (event is KeyDownEvent &&
+        _shortcutFocusNode.hasPrimaryFocus && isArrow &&
+        !blockingForCards && !shiftForCards &&
+        (_keyboardRegionKey.currentState?.focusInitial(
+          event: event,
+          fromNativeBridge: fromAndroidNativeBridge,
+        ) ?? false)) {
+      return KeyEventResult.handled;
+    }
+    if (fromAndroidNativeBridge &&
+        MediaLibraryKeyboardItem.handlesNativeKey(keyForCards, shift: shiftForCards)) {
+      return KeyEventResult.ignored;
+    }
+    if (!fromAndroidNativeBridge && _isSelectionMode &&
+        event is KeyDownEvent && keyForCards == LogicalKeyboardKey.keyA &&
+        (keyboardForCards.isControlPressed || keyboardForCards.isMetaPressed) &&
+        !keyboardForCards.isAltPressed && !keyboardForCards.isShiftPressed) {
+      setState(() {
+        _selectedIds.addAll(_keyboardOrderedIds());
+      });
+      return KeyEventResult.handled;
+    }
+    if ((keyForCards == LogicalKeyboardKey.space ||
+         keyForCards == LogicalKeyboardKey.arrowLeft ||
+         keyForCards == LogicalKeyboardKey.arrowRight) &&
+        MediaLibraryKeyboardItem.interactiveControlHasFocus) {
       return KeyEventResult.ignored;
     }
     if (event is KeyRepeatEvent) return KeyEventResult.handled;
@@ -1575,6 +1738,7 @@ class _CollectionScreenState extends State<CollectionScreen>
       selector: (_, service) => service.browseRevision,
       builder: (context, _, child) {
         final library = context.read<LibraryService>();
+        _publishExternalAiWorkspace(library);
         final collection = _isSearchResults
             ? VideoCollection(
                 id: '',
@@ -1622,7 +1786,9 @@ class _CollectionScreenState extends State<CollectionScreen>
                   bottom: BorderSide(color: AppTokens.lineSubtle),
                 ),
                 toolbarHeight: useCompactTopBar ? 44 : 48,
-                leadingWidth: useCompactTopBar ? 40 : 44,
+                leadingWidth: _showUndockedFolderTreeButton(settings)
+                    ? (useCompactTopBar ? 80 : 88)
+                    : (useCompactTopBar ? 40 : 44),
                 titleSpacing: useCompactTopBar ? 3 : 8,
                 title: _isSelectionMode
                     ? (_isSearchResults
@@ -1661,42 +1827,6 @@ class _CollectionScreenState extends State<CollectionScreen>
                             ))
                     : Row(
                         children: [
-                          DesktopButtonClickRegion(
-                            child: IconButton(
-                              icon: Icon(
-                                settings.mediaLibraryViewMode == 0
-                                    ? Icons.view_list_rounded
-                                    : Icons.grid_view_rounded,
-                                color: AppTokens.text2,
-                              ),
-                              tooltip: settings.mediaLibraryViewMode == 0
-                                  ? _managementTooltip(
-                                      "切换列表视图",
-                                      DesktopMediaManagementShortcutAction
-                                          .toggleViewMode,
-                                    )
-                                  : _managementTooltip(
-                                      "切换卡片视图",
-                                      DesktopMediaManagementShortcutAction
-                                          .toggleViewMode,
-                                    ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 36,
-                                height: 36,
-                              ),
-                              onPressed: () {
-                                final nextMode =
-                                    settings.mediaLibraryViewMode == 0 ? 1 : 0;
-                                settings.updateSetting(
-                                  'mediaLibraryViewMode',
-                                  nextMode,
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 4),
                           Expanded(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -1766,6 +1896,42 @@ class _CollectionScreenState extends State<CollectionScreen>
                                 onPressed: _exitSelectionMode,
                               ),
                             ))
+                    : _showUndockedFolderTreeButton(settings)
+                    ? (useCompactTopBar
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildFolderTreeToolbarButton(compact: true),
+                                MediaLibraryCompactIconButton(
+                                  icon: Icons.arrow_back,
+                                  tooltip: widget.returnToSearchResults
+                                      ? '返回搜索结果'
+                                      : '返回上一级',
+                                  onPressed: () =>
+                                      Navigator.of(context).maybePop(),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildFolderTreeToolbarButton(compact: false),
+                                DesktopButtonClickRegion(
+                                  child: IconButton(
+                                    icon: const Icon(Icons.arrow_back),
+                                    tooltip: widget.returnToSearchResults
+                                        ? '返回搜索结果'
+                                        : _managementTooltip(
+                                            "返回上一级",
+                                            DesktopMediaManagementShortcutAction
+                                                .backOrExitSelection,
+                                          ),
+                                    onPressed: () =>
+                                        Navigator.of(context).maybePop(),
+                                  ),
+                                ),
+                              ],
+                            ))
                     : (useCompactTopBar
                           ? MediaLibraryCompactIconButton(
                               icon: Icons.arrow_back,
@@ -1794,6 +1960,8 @@ class _CollectionScreenState extends State<CollectionScreen>
                         ResponsiveActionButtons(
                           buttons: [
                             if (!_isSelectionMode) ...[
+                              if (ExternalAiToolbarAction.isSupported)
+                                const ExternalAiToolbarAction(),
                               if (Platform.isWindows ||
                                   Platform.isLinux ||
                                   Platform.isMacOS)
@@ -1961,7 +2129,18 @@ class _CollectionScreenState extends State<CollectionScreen>
                   focusNode: _shortcutFocusNode,
                   autofocus: _supportsManagementKeyboardShortcuts,
                   onKeyEvent: (node, event) => _handleShortcutKeyEvent(event),
-                  child: Listener(
+                  child: MediaLibraryKeyboardRegion(
+                    key: _keyboardRegionKey,
+                    surface: () => widget.collectionId,
+                    orderedIds: _keyboardOrderedIds,
+                    selectionMode: () => _isSelectionMode,
+                    selectedIds: () => _selectedIds,
+                    onSelectionChanged: (ids) => setState(() {
+                      _selectedIds
+                        ..clear()
+                        ..addAll(ids);
+                    }),
+                    child: Listener(
                     behavior: HitTestBehavior.translucent,
                     onPointerDown: (event) {
                       _selectionPointer.down(event.pointer);
@@ -2030,7 +2209,7 @@ class _CollectionScreenState extends State<CollectionScreen>
                                         return;
                                       }
                                       _baseCrossAxisCount =
-                                          settings.mediaLibraryViewMode == 1
+                                          settings.mediaLibraryUsesRowPipeline
                                           ? _listStyle().crossAxisCount
                                           : _collectionCardStyle()
                                                 .crossAxisCount;
@@ -2058,18 +2237,18 @@ class _CollectionScreenState extends State<CollectionScreen>
                                       }
 
                                       final currentCount =
-                                          settings.mediaLibraryViewMode == 1
+                                          settings.mediaLibraryUsesRowPipeline
                                           ? _listStyle().crossAxisCount
                                           : _collectionCardStyle()
                                                 .crossAxisCount;
                                       if (newCount != currentCount) {
                                         final size = MediaQuery.sizeOf(context);
-                                        if (settings.mediaLibraryViewMode ==
-                                            1) {
+                                        if (settings
+                                            .mediaLibraryUsesRowPipeline) {
                                           unawaited(
-                                            settings.updateListStyleFor(
+                                            settings.updateActiveListColumnsFor(
                                               size,
-                                              crossAxisCount: newCount,
+                                              newCount,
                                             ),
                                           );
                                         } else {
@@ -2092,13 +2271,17 @@ class _CollectionScreenState extends State<CollectionScreen>
                                     child: Container(
                                       height: MediaQuery.sizeOf(context).height,
                                       color: Colors.transparent,
-                                      child: _buildMediaGridOrList(
+                                      child: _wrapScrollAreaWithTableHeader(
                                         context: context,
-                                        library: library,
                                         settings: settings,
-                                        contents: contents,
-                                        playbackCardBottomPadding:
-                                            playbackCardBottomPadding,
+                                        child: _buildMediaGridOrList(
+                                          context: context,
+                                          library: library,
+                                          settings: settings,
+                                          contents: contents,
+                                          playbackCardBottomPadding:
+                                              playbackCardBottomPadding,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -2173,10 +2356,10 @@ class _CollectionScreenState extends State<CollectionScreen>
                   ),
                 ),
               ),
+              ),
               floatingActionButtonLocation:
                   const PlaybackActionButtonsLocation(),
-              floatingActionButton:
-                  !_isSelectionMode && !_isSearchResults && contents.isNotEmpty
+              floatingActionButton: !_isSelectionMode && !_isSearchResults
                   ? Consumer<MediaPlaybackService>(
                       builder: (context, playbackService, child) {
                         final isCardVisible =
@@ -2299,7 +2482,7 @@ class _CollectionScreenState extends State<CollectionScreen>
     required double playbackCardBottomPadding,
     required double availableWidth,
   }) {
-    if (settings.mediaLibraryViewMode == 0) {
+    if (!settings.mediaLibraryUsesRowPipeline) {
       final metrics = MediaLibraryLayoutDefaults.cardGrid(
         textScaler: MediaQuery.textScalerOf(context),
         textStyle: DefaultTextStyle.of(context).style,
@@ -2361,14 +2544,11 @@ class _CollectionScreenState extends State<CollectionScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final listStyle = settings.listStyleFor(MediaQuery.sizeOf(context));
-        final metrics = MediaListLayoutMetrics.forGrid(
+        final columns = listStyle.isTable ? 1 : listStyle.crossAxisCount;
+        final metrics = MediaListLayoutMetrics.forStyle(
+          style: listStyle,
           screenShortestSide: MediaQuery.sizeOf(context).shortestSide,
           availableWidth: constraints.maxWidth,
-          crossAxisCount: listStyle.crossAxisCount,
-          heightSetting: listStyle.heightScale,
-          titleSetting: listStyle.titleScale,
-          mainSpacingSetting: listStyle.mainSpacingScale,
-          crossSpacingSetting: listStyle.crossSpacingScale,
         );
 
         return PlaybackGridView.builder(
@@ -2381,7 +2561,7 @@ class _CollectionScreenState extends State<CollectionScreen>
             bottom: metrics.outerPadding + playbackCardBottomPadding,
           ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: listStyle.crossAxisCount,
+            crossAxisCount: columns,
             mainAxisExtent: metrics.rowHeight,
             crossAxisSpacing: metrics.crossSpacing,
             mainAxisSpacing: metrics.mainSpacing,
@@ -2422,7 +2602,7 @@ class _CollectionScreenState extends State<CollectionScreen>
               }
               return MediaCoverRevealStamp(
                 index: index,
-                crossAxisCount: listStyle.crossAxisCount,
+                crossAxisCount: columns,
                 child: card,
               );
             },
@@ -2463,6 +2643,7 @@ class _CollectionScreenState extends State<CollectionScreen>
       isSelected: isSelected,
       isSelectionMode: _isSelectionMode,
       titleScale: listStyle.titleScale,
+      style: listStyle,
       onShowInParentFolder: _isSearchResults
           ? () => _showInParentDirectory(collection)
           : null,
@@ -2559,6 +2740,7 @@ class _CollectionScreenState extends State<CollectionScreen>
       isSelected: isSelected,
       isSelectionMode: _isSelectionMode,
       titleScale: listStyle.titleScale,
+      style: listStyle,
       relativePath: _relativePathFor(library, item),
       onShowInParentFolder: _showParentLocate()
           ? () => _showInParentDirectory(item)
@@ -2579,6 +2761,7 @@ class _CollectionScreenState extends State<CollectionScreen>
       onTap: handleTap,
       onSecondaryTap: () => _handleCardSecondaryTap(item.id),
       showActivityMenu: !_isSelectionMode,
+      allowHidePodcastFromFolders: true,
       onMoveToParent: _moveToParentMenuAction(item.id),
     );
     return MediaLibraryItemInteractionWrapper(
@@ -2875,7 +3058,7 @@ class _CollectionScreenState extends State<CollectionScreen>
                         child: Text(
                           collection.isPodcast
                               ? podcastLibrarySummary(collection)
-                              : '${collection.childrenIds.length} 个项目',
+                              : '${library.browseContents(collection.id).length} 个项目',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -2907,6 +3090,8 @@ class _CollectionScreenState extends State<CollectionScreen>
           }
 
           Widget interactiveCard = MediaLibraryGridCard(
+            keyboardItemId: collection.id,
+            isSelectionMode: _isSelectionMode,
             radius: radius,
             isSelected: isSelected,
             onTap: handleTap,
@@ -3319,7 +3504,7 @@ class _CollectionScreenState extends State<CollectionScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          item.title,
+                          mediaLibraryItemTitle(context, item),
                           style: TextStyle(
                             fontSize: titleFontSize,
                             fontWeight: FontWeight.w500,
@@ -3385,6 +3570,7 @@ class _CollectionScreenState extends State<CollectionScreen>
           }
 
           Widget interactiveCard = MediaLibraryGridCard(
+            keyboardItemId: item.id,
             radius: radius,
             isSelected: isSelected,
             onTap: handleTap,

@@ -13,8 +13,10 @@ import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/screens/music_player_screen.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
+import 'package:video_player_app/services/subtitle_font_service.dart';
 import 'package:video_player_app/widgets/music_lyric_view.dart';
 import 'package:video_player_app/widgets/music_lyric_anchor_guide.dart';
+import 'package:video_player_app/widgets/music_timed_lyric_text.dart';
 
 Finder get _panel => find.byKey(const ValueKey('music-page-settings-panel'));
 Finder get _autoHideRow =>
@@ -156,6 +158,46 @@ Future<void> _capture(WidgetTester tester, String name) async {
   });
 }
 
+Finder get _fontPanel => find.byKey(const ValueKey('music-lyric-font-panel'));
+Finder get _ratioSlider =>
+    find.byKey(const ValueKey('music-lyric-secondary-ratio-slider'));
+
+MusicTimedLyricText _lyric(WidgetTester tester, String text) => tester
+    .widgetList<MusicTimedLyricText>(find.byType(MusicTimedLyricText))
+    .firstWhere((line) => line.text == text);
+
+double _fontSurfaceAlpha(WidgetTester tester) =>
+    ((tester
+                    .widget<AnimatedContainer>(
+                      find.byKey(const ValueKey('music-lyric-font-surface')),
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .color!)
+        .a;
+
+List<SubtitleItem> get _bilingualLyrics => [
+  SubtitleItem(
+    index: 0,
+    startTime: Duration.zero,
+    endTime: const Duration(seconds: 30),
+    text: 'Primary line',
+    lyricTranslation: '副字幕一行',
+  ),
+];
+
+Future<void> _openFontSettings(WidgetTester tester) async {
+  await tester.runAsync(() async {
+    await SubtitleFontService.instance.ready;
+    await SubtitleFontService.instance.catalog();
+  });
+  await _openSettings(tester);
+  await tester.tap(find.byKey(const ValueKey('music-lyric-font-settings')));
+  await tester.pumpAndSettle();
+  expect(_fontPanel, findsOneWidget);
+  expect(find.text('字体设置'), findsOneWidget);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -188,6 +230,24 @@ void main() {
       expect(settings.musicPortraitControlsAutoHide, enabled);
     }
   });
+
+  test(
+    'progress end time defaults to the duration and persists both modes',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsService()..resetForTest();
+      await settings.init();
+      expect(settings.musicProgressShowsRemaining, isFalse);
+      for (final showRemaining in [true, false]) {
+        await settings.updateMusicProgressShowsRemaining(showRemaining);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getBool('musicProgressShowsRemaining'), showRemaining);
+        settings.resetForTest();
+        await settings.init();
+        expect(settings.musicProgressShowsRemaining, showRemaining);
+      }
+    },
+  );
 
   test(
     'lyric typography keeps precise values and normalizes saved limits',
@@ -718,4 +778,220 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('font settings sits between the page title and close', (
+    tester,
+  ) async {
+    await _mount(tester);
+    await _openSettings(tester);
+    final title = tester.renderObject<RenderParagraph>(find.text('页面设置'));
+    final glyphs = title.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: title.text.toPlainText().length),
+    );
+    final font = tester.getRect(
+      find.byKey(const ValueKey('music-lyric-font-settings')),
+    );
+    final close = tester.getRect(
+      find.byKey(const ValueKey('music-page-settings-close')),
+    );
+    // The title slot stretches, so compare the painted glyphs with the button.
+    expect(
+      font.left,
+      greaterThan(title.localToGlobal(Offset(glyphs.last.right, 0)).dx),
+    );
+    expect(font.right, lessThanOrEqualTo(close.left));
+    expect(font.center.dy, closeTo(close.center.dy, 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('portrait font window stays low and previews the ratio', (
+    tester,
+  ) async {
+    const size = Size(390, 844);
+    final settings = await _mount(
+      tester,
+      size: size,
+      subtitles: _bilingualLyrics,
+    );
+    final videoStyle = settings.subtitleTextStyle;
+    await _openFontSettings(tester);
+    final bounds = tester.getRect(_fontPanel);
+    expect(bounds.top, greaterThan(size.height * 0.4));
+    expect(bounds.height, lessThanOrEqualTo(400));
+    expect(bounds.bottom, lessThanOrEqualTo(size.height - 8));
+    expect(bounds.left, greaterThanOrEqualTo(8));
+    expect(bounds.right, lessThanOrEqualTo(size.width - 8));
+
+    final slider = tester.widget<Slider>(_ratioSlider);
+    expect(slider.divisions, isNull);
+    expect(slider.value, 1);
+    expect(_lyric(tester, 'Primary line').style.fontFamily, 'Inter');
+    expect(_lyric(tester, 'Primary line').style.fontWeight, FontWeight.w800);
+    expect(_lyric(tester, '副字幕一行').style.fontFamily, 'Noto Sans SC');
+    expect(_lyric(tester, '副字幕一行').style.fontWeight, FontWeight.w600);
+    final primary = _lyric(tester, 'Primary line').style.fontSize;
+    final secondary = _lyric(tester, '副字幕一行').style.fontSize!;
+
+    expect(
+      tester.getTopLeft(find.text('通用字体')).dy,
+      lessThan(tester.getTopLeft(_ratioSlider).dy),
+    );
+    final resting = _fontSurfaceAlpha(tester);
+    expect(resting, greaterThan(0.75));
+    await tester.ensureVisible(_ratioSlider);
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(tester.getCenter(_ratioSlider));
+    await gesture.moveBy(const Offset(36, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_fontSurfaceAlpha(tester), lessThan(0.35));
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(const ValueKey('subtitle-font-dimmable-header')),
+          )
+          .opacity,
+      0.08,
+    );
+    expect(
+      tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.text('通用字体'),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity,
+      0.08,
+    );
+    expect(_ratioSlider, findsOneWidget);
+    for (final fade in tester.widgetList<Opacity>(
+      find.ancestor(of: _ratioSlider, matching: find.byType(Opacity)),
+    )) {
+      expect(fade.opacity, greaterThan(0.9));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_fontSurfaceAlpha(tester), greaterThan(0.75));
+    expect(_lyric(tester, 'Primary line').style.fontSize, primary);
+    expect(_lyric(tester, '副字幕一行').style.fontSize, greaterThan(secondary));
+    expect(settings.musicLyricSecondaryRatioPortrait, greaterThan(1));
+    expect(settings.musicLyricSecondaryRatioLandscape, 1);
+    expect(identical(settings.subtitleTextStyle, videoStyle), isTrue);
+
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    final wide = tester.getRect(_fontPanel);
+    final anchor = tester.getRect(find.byTooltip('页面设置 (S)'));
+    expect(wide.bottom, closeTo(anchor.top - 8, 2));
+    expect(wide.right, closeTo(anchor.right, 2));
+    expect(wide.top, greaterThan(80));
+    expect(wide.height, greaterThan(160));
+    expect(wide.height, lessThan(700));
+    expect(tester.widget<Slider>(_ratioSlider).value, 1);
+    final landscapeDrag = await tester.startGesture(
+      tester.getCenter(_ratioSlider),
+    );
+    await landscapeDrag.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_fontSurfaceAlpha(tester), greaterThan(0.75));
+    await landscapeDrag.up();
+    await tester.pumpAndSettle();
+    final portraitRatio = settings.musicLyricSecondaryRatioPortrait;
+    expect(settings.musicLyricSecondaryRatioLandscape, greaterThan(1));
+    expect(settings.musicLyricSecondaryRatioPortrait, portraitRatio);
+
+    await tester.tapAt(const Offset(1200, 200));
+    await tester.pumpAndSettle();
+    expect(_fontPanel, findsNothing);
+    expect(_panel, findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('music lyric fonts follow the video picker without sharing it', (
+    tester,
+  ) async {
+    final settings = await _mount(tester, subtitles: _bilingualLyrics);
+    final videoStyle = settings.subtitleTextStyle;
+    await _openFontSettings(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('subtitle-font-weight-zh')),
+    );
+    await tester.pumpAndSettle();
+    tester
+        .widget<Slider>(find.byKey(const ValueKey('subtitle-font-weight-zh')))
+        .onChanged!(599);
+    await tester.pumpAndSettle();
+    final weight = tester.widget<Slider>(
+      find.byKey(const ValueKey('subtitle-font-weight-zh')),
+    );
+    expect(weight.divisions, 80);
+    expect(weight.value, 600);
+    final chinese = _lyric(tester, '副字幕一行').style;
+    expect(chinese.fontFamily, 'Noto Sans SC');
+    expect(chinese.fontWeight, FontWeight.w600);
+    expect(chinese.fontVariations, isNull);
+    expect(
+      settings.musicLyricTextStyle.resolvedLanguageFonts['zh']!.weight,
+      600,
+    );
+
+    await tester.ensureVisible(find.text('英文'));
+    await tester.tap(find.text('英文'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择字体'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('字体设置'), findsOneWidget);
+    expect(_panel, findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('英文'),
+      80,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('subtitle-font-dimmable-body')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.text('英文'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Comic Relief');
+    await tester.pumpAndSettle();
+    final useComic = find.byKey(
+      const ValueKey('subtitle-font-use-Comic Relief'),
+    );
+    await tester.ensureVisible(useComic);
+    expect(tester.widget<TextButton>(useComic).onPressed, isNotNull);
+    await tester.tap(useComic);
+    // Selecting a face awaits a file check before the style is published.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(find.text('字体设置'), findsOneWidget);
+    expect(_lyric(tester, 'Primary line').style.fontFamily, 'Comic Relief');
+    expect(
+      settings.musicLyricTextStyle.resolvedLanguageFonts['en']!.family,
+      'Comic Relief',
+    );
+    expect(settings.musicLyricTextStyle.resolvedLanguageFonts['zh']!.weight, 600);
+    expect(identical(settings.subtitleTextStyle, videoStyle), isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(_fontPanel, findsNothing);
+    expect(_panel, findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('music-lyric-font-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: _fontPanel, matching: find.byTooltip('关闭')),
+    );
+    await tester.pumpAndSettle();
+    expect(_fontPanel, findsNothing);
+    expect(_panel, findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

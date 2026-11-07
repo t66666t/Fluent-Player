@@ -223,7 +223,9 @@ class MediaLibrarySelectionBottomBar extends StatelessWidget {
                                     filled: true,
                                     stacked: true,
                                     fitLabel: true,
-                                    label: '插播',
+                                    label: _custom
+                                        ? AddToPlaylistButton.defaultLabel
+                                        : '插播',
                                     tooltip: AddToPlaylistButton.defaultLabel,
                                   ),
                                 ),

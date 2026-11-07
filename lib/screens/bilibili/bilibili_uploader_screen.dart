@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../services/app_web_navigation.dart';
 import 'package:video_player_app/models/bilibili_uploader_models.dart';
 import 'package:video_player_app/screens/bilibili/bilibili_card_actions.dart';
 import 'package:video_player_app/screens/bilibili/bilibili_import_buttons.dart';
@@ -306,7 +306,7 @@ class _BilibiliUploaderScreenState extends State<BilibiliUploaderScreen>
     try {
       final open =
           widget.openExternal ??
-          ((Uri u) => launchUrl(u, mode: LaunchMode.externalApplication));
+          ((Uri u) => AppWebNavigation.openFromRoot(u, title: article.title));
       if (!await open(uri) && mounted) {
         setState(() => _notice = '无法打开该专栏');
       }

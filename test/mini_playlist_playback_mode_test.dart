@@ -42,7 +42,7 @@ Widget _host(
   value: queue,
   child: MaterialApp(
     theme: ThemeData.dark().copyWith(
-      textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+      textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
     ),
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
@@ -83,8 +83,8 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();

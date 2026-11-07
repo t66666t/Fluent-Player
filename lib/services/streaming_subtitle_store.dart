@@ -79,6 +79,8 @@ class StreamingSubtitleStore {
   String? sourceLanguage, targetLanguage;
   List<String> precedingSource = const [];
   final Map<int, String> pendingTranslations = {};
+  final Map<int, String> pendingOptimizations = {};
+  String optimizationWarning = '';
   Future<void> _writes = Future<void>.value();
   int _journalBytes = 0;
   bool _journalNeedsRepair = false;
@@ -172,7 +174,15 @@ class StreamingSubtitleStore {
             : (record['primary'] as List).cast<SubtitleItem>();
         for (final cue in committed) {
           store.pendingTranslations.remove(cue.index);
+          store.pendingOptimizations.remove(cue.index);
         }
+      } else if (record['type'] == 'optimizations') {
+        for (final entry in (record['values'] as Map).entries) {
+          store.pendingOptimizations[int.parse(entry.key as String)] =
+              entry.value as String;
+        }
+        store.optimizationWarning =
+            record['warning'] as String? ?? store.optimizationWarning;
       } else if (record['type'] == 'translations') {
         for (final entry in (record['values'] as Map).entries) {
           store.pendingTranslations[int.parse(entry.key as String)] =
@@ -296,6 +306,22 @@ class StreamingSubtitleStore {
         pendingTranslations.addAll(values);
       });
 
+  Future<void> rememberOptimizations(
+    Map<int, String> values, {
+    String? warning,
+  }) => _serial(() async {
+    if (values.isEmpty) return;
+    await _record({
+      'type': 'optimizations',
+      'values': {
+        for (final entry in values.entries) '${entry.key}': entry.value,
+      },
+      'warning': ?warning,
+    });
+    pendingOptimizations.addAll(values);
+    if (warning != null) optimizationWarning = warning;
+  });
+
   Future<void> append(
     List<SubtitleItem> originals,
     List<SubtitleItem> translations,
@@ -359,6 +385,7 @@ class StreamingSubtitleStore {
     }
     for (final cue in primaryComplete ? translations : originals) {
       pendingTranslations.remove(cue.index);
+      pendingOptimizations.remove(cue.index);
     }
   });
 

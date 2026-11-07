@@ -66,8 +66,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await SubtitleFontService.instance.ready;
     await SubtitleFontService.instance.catalog();
-    final font = FontLoader('MiSans')
-      ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+    final font = FontLoader('Noto Sans SC')
+      ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
     final icons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     await Future.wait([font.load(), icons.load()]);
@@ -143,7 +143,7 @@ void main() {
             Provider<MediaPlaybackService>.value(value: playback),
           ],
           child: MaterialApp(
-            theme: ThemeData(brightness: Brightness.dark, fontFamily: 'MiSans'),
+            theme: ThemeData(brightness: Brightness.dark, fontFamily: 'Noto Sans SC'),
             builder: (context, child) => ValueListenableBuilder<double>(
               valueListenable: scale,
               builder: (context, factor, _) => MediaQuery(

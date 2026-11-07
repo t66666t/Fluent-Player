@@ -151,6 +151,50 @@ void main() {
   );
 
   test(
+    'completed subtitles overtake waiting prefetch without interrupting work',
+    () async {
+      final queue = ModelStageQueue();
+      final entered = Completer<void>(), release = Completer<void>();
+      final calls = <String>[];
+      final active = queue.run(() async {
+        calls.add('active');
+        entered.complete();
+        await release.future;
+        calls.add('active finished');
+      });
+      await entered.future;
+
+      final low1 = queue.run(() async => calls.add('prefetch 1'));
+      final low2 = queue.run(() async => calls.add('prefetch 2'));
+      final failure = queue.run<void>(() {
+        calls.add('refine 1');
+        throw StateError('refinement failed');
+      }, priority: 1);
+      final failed = expectLater(failure, throwsStateError);
+      final high2 = queue.run(() async => calls.add('refine 2'), priority: 1);
+      var drained = false;
+      final drain = queue.drained.then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, ['active']);
+      expect(drained, isFalse);
+
+      release.complete();
+      await Future.wait([active, low1, low2, high2, failed, drain]);
+      expect(calls, [
+        'active',
+        'active finished',
+        'refine 1',
+        'refine 2',
+        'prefetch 1',
+        'prefetch 2',
+      ]);
+      expect(drained, isTrue);
+      await queue.run(() async => calls.add('reused'));
+      expect(calls.last, 'reused');
+    },
+  );
+
+  test(
     'stage one advances while stage two is blocked, with bounded backlog and ordered output',
     () async {
       final entered = Completer<void>(), release = Completer<void>();

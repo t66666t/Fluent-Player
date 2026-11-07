@@ -19,7 +19,7 @@ void RegisterShortcut(const std::wstring& app_id, const std::wstring& display_na
                      const std::wstring& executable) {
   PWSTR programs = nullptr;
   if (FAILED(SHGetKnownFolderPath(FOLDERID_Programs, 0, nullptr, &programs))) return;
-  const std::wstring directory = std::wstring(programs) + L"\\" + display_name;
+  const std::wstring directory = std::wstring(programs) + L"\\" + kDesktopShortcutGroup;
   CoTaskMemFree(programs);
   if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return;
   const std::wstring path = directory + L"\\" + display_name + L".lnk";

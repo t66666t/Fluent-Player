@@ -14,6 +14,7 @@ import 'package:video_player_app/features/cloud_drive/presentation/cloud_drive_s
 import 'package:video_player_app/features/cloud_drive/services/cloud_drive_runtime.dart';
 import 'package:video_player_app/features/media_cache/media_cache_service.dart';
 import 'package:video_player_app/models/import_card_placement.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/media_library_root_entry.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
@@ -63,11 +64,12 @@ void main() {
 
   setUpAll(() async {
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
   });
 
   setUp(() async {
+    mediaLibraryAlternateViewsEnabled = true;
     SharedPreferences.setMockInitialValues({'onboarding.handled.v1': true});
     settings.resetForTest();
     await settings.init();
@@ -87,6 +89,7 @@ void main() {
   });
 
   tearDown(() async {
+    mediaLibraryAlternateViewsEnabled = false;
     CloudDriveNavigation.request.value = null;
     await runtime.shutdown();
     library.resetLibraryForTesting();
@@ -123,7 +126,7 @@ void main() {
           theme: ThemeData(
             brightness: Brightness.dark,
             useMaterial3: true,
-            fontFamily: 'MiSans',
+            fontFamily: 'Noto Sans SC',
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(

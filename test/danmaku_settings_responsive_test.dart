@@ -13,11 +13,11 @@ void main() {
   testWidgets('render final dialog sizes', (tester) async {
     await tester.runAsync(() async {
       await (FontLoader(
-        'MiSans',
-      )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
-      await (FontLoader('Noto Sans SC')
+        'Noto Sans SC',
+      )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
+      await (FontLoader('Noto Sans CJK Fallback')
             ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'))
-            ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Bold.otf')))
+            ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
           .load();
       await (FontLoader(
         'MaterialIcons',
@@ -45,7 +45,7 @@ void main() {
           value: settings,
           child: MaterialApp(
             theme: ThemeData.dark().copyWith(
-              textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+              textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
             ),
             builder: (_, child) => RepaintBoundary(key: capture, child: child!),
             home: Scaffold(

@@ -123,7 +123,7 @@ void main() {
   });
 
   test(
-    'only offline sources offer the action, including downloaded URL provenance',
+    'local paths keep file actions regardless of historical online provenance',
     () {
       final actions = SourceMediaFileActions(platform: TargetPlatform.android);
       final item = media('/storage/Movies/source.mp4');
@@ -136,9 +136,10 @@ void main() {
       for (final kind in [
         MediaSourceKind.cloudDrive,
         MediaSourceKind.bilibiliStream,
+        MediaSourceKind.podcastEpisode,
       ]) {
         item.sourceRef = MediaSourceRef(value: 'online', kind: kind);
-        expect(actions.pathFor(item), isNull);
+        expect(actions.pathFor(item), item.path);
       }
       item.sourceRef = null;
       item.isRecycled = true;

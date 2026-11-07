@@ -15,7 +15,7 @@
   },
   "files": {
     "Flatbuffers-LICENSE": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",
-    "fluent_ocr_accel.dll": "eaf6df0b28de388d746a0df6387c341f49dda69eb94525db3fd269cd4e007d58",
+    "fluent_ocr_accel.dll": "693df47e4b179397ab861c0e65f1d50abd19d6daee99cbd421c3f2a3d941cc15",
     "MNN-LICENSE": "a830d59c4f98d110e0540d0581efada06192ba6e798434307d1794b07a290302",
     "Protobuf-LICENSE": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
     "ThirdPartyLicenses/flatbuffers/LICENSE.txt": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3",

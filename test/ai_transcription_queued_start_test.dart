@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/features/model_center/model_center_service.dart';
@@ -11,12 +12,15 @@ import 'package:video_player_app/widgets/ai_transcription_panel.dart';
 class _Center extends ModelCenterService {
   final capture = Completer<ModelJobSpec>();
   @override
-  bool get started => true;
+  // A first task must initialize/capture the real configuration instead of
+  // synthesizing a local job with an empty model identity.
+  bool get started => false;
   @override
   Future<ModelJobSpec> captureTranscription() => capture.future;
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   for (final translate in [false, true]) {
     testWidgets(
       'the media panel can first-start an imported task: translate=$translate',
@@ -75,6 +79,14 @@ void main() {
           find.byKey(const ValueKey('ai-transcription-resume-card')),
           findsNothing,
         );
+        if (translate) {
+          final toggle = find.byKey(
+            const ValueKey('ai-transcription-translation-toggle'),
+          );
+          await tester.ensureVisible(toggle);
+          await tester.tap(toggle);
+          await tester.pump();
+        }
         final action = find.byKey(
           ValueKey(
             translate

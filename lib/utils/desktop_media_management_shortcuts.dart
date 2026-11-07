@@ -15,6 +15,7 @@ enum DesktopMediaManagementShortcutAction {
   toggleSelectAll,
   openSearch,
   openLibrarySettings,
+  openExternalAi,
   openSleepTimer,
   createCollection,
   importMedia,
@@ -52,6 +53,8 @@ class DesktopMediaManagementShortcuts {
     DesktopMediaManagementShortcutAction.openSearch: LogicalKeyboardKey.keyS,
     DesktopMediaManagementShortcutAction.openLibrarySettings:
         LogicalKeyboardKey.keyP,
+    DesktopMediaManagementShortcutAction.openExternalAi:
+        LogicalKeyboardKey.keyQ,
     DesktopMediaManagementShortcutAction.openSleepTimer:
         LogicalKeyboardKey.keyZ,
     DesktopMediaManagementShortcutAction.createCollection:
@@ -89,6 +92,19 @@ class DesktopMediaManagementShortcuts {
     DesktopMediaManagementShortcutAction action,
     TargetPlatform platform,
   ) {
+    if (action == DesktopMediaManagementShortcutAction.openExternalAi) {
+      return platform == TargetPlatform.windows ||
+          platform == TargetPlatform.macOS ||
+          platform == TargetPlatform.linux;
+    }
+    if (const {
+      DesktopMediaManagementShortcutAction.openBilibiliDownload,
+      DesktopMediaManagementShortcutAction.openYtDlpDownload,
+      DesktopMediaManagementShortcutAction.openDouyinDownload,
+      DesktopMediaManagementShortcutAction.openWebMedia,
+    }.contains(action)) {
+      return false;
+    }
     switch (platform) {
       case TargetPlatform.windows:
       case TargetPlatform.macOS:

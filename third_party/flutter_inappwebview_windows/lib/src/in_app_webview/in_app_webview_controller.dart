@@ -66,8 +66,7 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
   static final MethodChannel _staticChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
   // List of properties to be saved and restored for keep alive feature
-  Map<String, JavaScriptHandlerCallback> _javaScriptHandlersMap =
-      HashMap<String, JavaScriptHandlerCallback>();
+  Map<String, Function> _javaScriptHandlersMap = HashMap<String, Function>();
   Map<UserScriptInjectionTime, List<UserScript>> _userScripts = {
     UserScriptInjectionTime.AT_DOCUMENT_START: <UserScript>[],
     UserScriptInjectionTime.AT_DOCUMENT_END: <UserScript>[]
@@ -369,6 +368,33 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
             _inAppBrowserEventHandler!.onScrollChanged(x, y);
         }
         break;
+      case "onDownloadStarting":
+        final blockedResponse = DownloadStartResponse(
+            action: DownloadStartResponseAction.CANCEL, handled: true);
+        final arguments = Map<String, dynamic>.from(call.arguments as Map);
+        if (arguments['nativeCancelled'] != true ||
+            arguments['nativeHandled'] != true) {
+          return blockedResponse.toMap(enumMethod: EnumMethod.value);
+        }
+        // Only the constant, metadata-free cancellation notification is public.
+        // A consumer cannot turn this into a download by returning ALLOW.
+        final request =
+            DownloadStartRequest(url: WebUri('about:blank'), contentLength: 0);
+        try {
+          final handler = webviewParams?.onDownloadStarting;
+          if (handler != null) {
+            await handler(_controllerFromPlatform, request);
+          } else if (webviewParams?.onDownloadStartRequest != null) {
+            webviewParams!.onDownloadStartRequest!(
+                _controllerFromPlatform, request);
+          } else if (_inAppBrowserEventHandler != null) {
+            await _inAppBrowserEventHandler!.onDownloadStarting(request);
+          }
+        } catch (_) {
+          // Native cancellation has already completed; notification failure
+          // must never restore WebView2's automatic download behavior.
+        }
+        return blockedResponse.toMap(enumMethod: EnumMethod.value);
       case "onDownloadStartRequest":
         if ((webviewParams != null &&
                 // ignore: deprecated_member_use_from_same_package
@@ -1555,7 +1581,25 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
         if (_javaScriptHandlersMap.containsKey(handlerName)) {
           // convert result to json
           try {
-            return jsonEncode(await _javaScriptHandlersMap[handlerName]!(args));
+            final callback = _javaScriptHandlersMap[handlerName]!;
+            dynamic result;
+            if (callback is JavaScriptHandlerCallback) {
+              result = await callback(args);
+            } else if (callback is JavaScriptHandlerFunction) {
+              final requestUrl =
+                  WebUri(call.arguments['requestUrl'] ?? 'about:blank');
+              final parsed = Uri.tryParse(requestUrl.toString());
+              result = await callback(JavaScriptHandlerFunctionData(
+                args: args,
+                isMainFrame: call.arguments['isMainFrame'] == true,
+                origin: WebUri(call.arguments['origin'] ??
+                    (parsed?.hasAuthority == true ? parsed!.origin : 'null')),
+                requestUrl: requestUrl,
+              ));
+            } else {
+              result = await callback();
+            }
+            return jsonEncode(result);
           } catch (error, stacktrace) {
             developer.log(error.toString() + '\n' + stacktrace.toString(),
                 name: 'JavaScript Handler "$handlerName"');
@@ -2002,16 +2046,14 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
 
   @override
   void addJavaScriptHandler(
-      {required String handlerName,
-      required JavaScriptHandlerCallback callback}) {
+      {required String handlerName, required Function callback}) {
     assert(!_JAVASCRIPT_HANDLER_FORBIDDEN_NAMES.contains(handlerName),
         '"$handlerName" is a forbidden name!');
     this._javaScriptHandlersMap[handlerName] = (callback);
   }
 
   @override
-  JavaScriptHandlerCallback? removeJavaScriptHandler(
-      {required String handlerName}) {
+  Function? removeJavaScriptHandler({required String handlerName}) {
     return this._javaScriptHandlersMap.remove(handlerName);
   }
 
@@ -2468,8 +2510,8 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
   Future<String?> saveWebArchive(
       {required String filePath, bool autoname = false}) async {
     if (!autoname) {
-      assert(
-          filePath.endsWith("." + WebArchiveFormat.WEBARCHIVE.toNativeValue()));
+      assert(filePath.endsWith(
+          ".${WebArchiveFormat.WEBARCHIVE.toNativeValue() ?? 'webarchive'}"));
     }
 
     Map<String, dynamic> args = <String, dynamic>{};
@@ -2660,6 +2702,10 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
   @override
   Future<dynamic> callDevToolsProtocolMethod(
       {required String methodName, Map<String, dynamic>? parameters}) async {
+    if (methodName.startsWith('Network.') || methodName.startsWith('Fetch.')) {
+      throw UnsupportedError(
+          'Community web playback does not expose network capture');
+    }
     Map<String, dynamic> args = <String, dynamic>{};
     args.putIfAbsent('methodName', () => methodName);
     args.putIfAbsent('parametersAsJson',
@@ -2676,13 +2722,19 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
   Future<void> addDevToolsProtocolEventListener(
       {required String eventName,
       required Function(dynamic data) callback}) async {
+    if (eventName == 'Fluent.webResourceResponseReceived' ||
+        eventName.startsWith('Network.') ||
+        eventName.startsWith('Fetch.')) {
+      throw UnsupportedError(
+          'Community web playback does not expose network capture');
+    }
     Map<String, dynamic> args = <String, dynamic>{};
     args.putIfAbsent('eventName', () => eventName);
     final previous = this._devToolsProtocolEventListenerMap[eventName];
     this._devToolsProtocolEventListenerMap[eventName] = callback;
     try {
-      // Native events can arrive before registration's platform reply, including
-      // buffered responses from the first document load.
+      // Register before the native reply so ordinary document events cannot
+      // race the callback map. Network observation is deliberately unavailable.
       await channel?.invokeMethod('addDevToolsProtocolEventListener', args);
     } catch (_) {
       if (previous == null) {

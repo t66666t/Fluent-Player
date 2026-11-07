@@ -1,259 +1,167 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:video_player_app/features/media_cache/media_cache_models.dart';
 import 'package:video_player_app/features/media_cache/media_cache_service.dart';
-import 'package:video_player_app/features/media_cache/media_cache_variants_dialog.dart';
 import 'package:video_player_app/features/portable_transfer/portable_export_cache_dialog.dart';
 import 'package:video_player_app/features/portable_transfer/portable_export_readiness.dart';
-import 'package:video_player_app/models/cloud_drive_source_ref.dart';
+import 'package:video_player_app/features/portable_transfer/portable_media_selection.dart';
 import 'package:video_player_app/models/media_source_ref.dart';
+import 'package:video_player_app/models/podcast_source_ref.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/library_service.dart';
-import 'package:video_player_app/services/settings_service.dart';
 
-import 'media_cache_service_test.dart' show FakeBackend;
+class _ForbiddenCache extends ChangeNotifier implements MediaCacheService {
+  int calls = 0;
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    calls++;
+    throw StateError('readiness must not acquire online media');
+  }
+}
 
-class _Paths extends PathProviderPlatform {
-  _Paths(this.root);
-  final String root;
+class _ReadinessLibrary extends ChangeNotifier implements LibraryService {
+  final items = <String, VideoItem>{};
   @override
-  Future<String?> getApplicationDocumentsPath() async => root;
+  void seedVideoForTesting(VideoItem item) => items[item.id] = item;
   @override
-  Future<String?> getApplicationSupportPath() async => root;
+  VideoItem? getVideo(String id) => items[id];
   @override
-  Future<String?> getTemporaryPath() async => p.join(root, 'temporary');
+  List<dynamic> getContents(String? parentId) =>
+      items.values.where((item) => item.parentId == parentId).toList();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
-  late LibraryService library;
-  late FakeBackend backend;
-  late MediaCacheService cache;
-  late PathProviderPlatform previousPaths;
-  MediaCacheService? previousCache;
-  var widgetDrained = false;
-
+  late _ReadinessLibrary library;
+  late _ForbiddenCache cache;
   setUp(() async {
-    widgetDrained = false;
-    root = await Directory.systemTemp.createTemp('portable-readiness-');
-    previousPaths = PathProviderPlatform.instance;
-    previousCache = MediaCacheService.instance;
-    PathProviderPlatform.instance = _Paths(root.path);
     SharedPreferences.setMockInitialValues({});
-    SettingsService().resetForTest();
-    SettingsService().largeDataRootPath = root.path;
-    library = LibraryService()..resetLibraryForTesting();
-    await library.init();
-    library.skipImportSidecarWorkForTesting = true;
-    backend = FakeBackend(root);
-    cache = MediaCacheService(
-      backend: backend,
-      journal: File(p.join(root.path, 'cache.json')),
-      observeNetwork: false,
-    );
-    await cache.initialize();
-    MediaCacheService.instance = cache;
+    root = await Directory.systemTemp.createTemp('local-export-readiness-');
+    library = _ReadinessLibrary();
+    cache = _ForbiddenCache();
   });
-
   tearDown(() async {
-    MediaCacheService.instance = previousCache;
-    if (!widgetDrained) await cache.shutdown();
+    library.dispose();
     cache.dispose();
-    if (!widgetDrained) await library.saveProgress();
-    library.resetLibraryForTesting();
-    SettingsService().resetForTest();
-    PathProviderPlatform.instance = previousPaths;
     await root.delete(recursive: true);
   });
 
-  Future<VideoItem> cloud(
-    String id, {
-    String? parentId,
-    String? localPath,
-    String? playbackPath,
-    String revision = 'v1',
-  }) async {
-    final ref = CloudDriveSourceRef(
-      providerId: 'baidu',
-      remoteAccountId: 'remote-account',
-      driveId: 'drive',
-      fileId: id,
-      revision: revision,
-    );
-    final item = VideoItem(
-      id: id,
-      title: 'Cloud $id',
-      durationMs: 1000,
-      path: localPath ?? ref.logicalUri,
-      playbackPath: playbackPath,
-      parentId: parentId,
-      sourceRef: MediaSourceRef(
-        value: ref.logicalUri,
-        kind: MediaSourceKind.cloudDrive,
-        cloudDrive: ref,
-      ),
-      lastUpdated: 1,
-    );
-    await library.addSingleVideo(item, reuseExistingItem: false);
-    return item;
-  }
-
-  Future<CacheVariant> complete(
-    VideoItem item, {
-    CacheContent content = CacheContent.media,
-    String revision = 'v1',
-  }) async {
-    final file = await File(
-      p.join(root.path, '${item.id}-${content.name}-$revision.mp4'),
-    ).writeAsBytes([1, 2, 3, 4]);
-    final variant = CacheVariant(
-      source: CacheSource.fromItem(item)!,
-      quality: CacheQuality(
-        id: '1080',
-        label: '1080P',
-        height: 1080,
-        revision: revision,
-      ),
-      path: file.path,
-      bytes: 4,
-      content: content,
-      createdAt: 1,
-    );
-    await cache.registerMaterial([variant]);
-    return variant;
-  }
-
-  test('uncached selection is reported without starting a download', () async {
-    final item = await cloud('uncached');
-    expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-      item,
-    ]);
-    expect(cache.tasks, isEmpty);
-    expect(backend.calls, 0);
-  });
-
-  test(
-    'a complete current cloud cache makes the selection exportable',
-    () async {
-      final item = await cloud('cached');
-      await complete(item);
-      expect(
-        await uncachedCloudExportItems(library, [item.id], cache: cache),
-        isEmpty,
-      );
-      expect(cache.tasks, isEmpty);
-      expect(backend.calls, 0);
-    },
+  VideoItem item(String id, String path, MediaSourceKind kind) => VideoItem(
+    id: id,
+    path: path,
+    title: id,
+    durationMs: 1000,
+    lastUpdated: 1,
+    sourceRef: MediaSourceRef(kind: kind, value: 'retained-origin'),
   );
 
-  for (final content in [CacheContent.video, CacheContent.audio]) {
-    test('an isolated ${content.name} track is insufficient', () async {
-      final item = await cloud('track-${content.name}');
-      await complete(item, content: content);
-      expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-        item,
-      ]);
-    });
-  }
-
   test(
-    'old cloud revision cannot satisfy an export of the current file',
+    'local files retain export readiness for every historical source kind without cache access',
     () async {
-      final item = await cloud('changed');
-      final variant = await complete(item, revision: 'v0');
-      expect(cache.hasCache(variant.source.key), isTrue);
-      expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-        item,
-      ]);
-      expect(await cache.acquireVariant(variant, item), isNull);
-    },
-  );
-
-  for (final corruption in ['deleted', 'truncated', 'pending-delete']) {
-    test('$corruption cache cannot satisfy preflight', () async {
-      final item = await cloud(corruption);
-      final variant = await complete(item);
-      switch (corruption) {
-        case 'deleted':
-          await File(variant.path).delete();
-        case 'truncated':
-          await File(variant.path).writeAsBytes([1]);
-        case 'pending-delete':
-          variant.pendingDelete = true;
-      }
-      expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-        item,
-      ]);
-    });
-  }
-
-  test(
-    'a transient playback file does not stand in for complete cache',
-    () async {
-      final file = await File(
-        p.join(root.path, 'playback.mp4'),
+      final local = await File(
+        p.join(root.path, 'local.mp4'),
       ).writeAsBytes([1, 2, 3]);
-      final item = await cloud('transient', playbackPath: file.path);
-      expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-        item,
-      ]);
+      for (final kind in [
+        MediaSourceKind.bilibiliStream,
+        MediaSourceKind.cloudDrive,
+        MediaSourceKind.podcastEpisode,
+      ]) {
+        final media = item(kind.name, local.path, kind);
+        library.seedVideoForTesting(media);
+        expect(
+          await uncachedCloudExportItems(library, [media.id], cache: cache),
+          isEmpty,
+        );
+        final tree = PortableTreeIndex.fromLibrary(library);
+        expect(tree.node(media.id)!.isOnline, isFalse);
+        expect(media.sourceRef?.kind, kind);
+      }
+      expect(cache.calls, 0);
     },
   );
 
-  test('an imported local cloud download already contains the bytes', () async {
-    final file = await File(
-      p.join(root.path, 'download.mp4'),
-    ).writeAsBytes([1, 2, 3]);
-    final item = await cloud('local', localPath: file.path);
-    expect(
-      await uncachedCloudExportItems(library, [item.id], cache: cache),
-      isEmpty,
+  test('RSS podcast references are ready without downloading media', () async {
+    final podcast = VideoItem(
+      id: 'podcast',
+      path: 'podcast:episode',
+      title: 'Podcast',
+      durationMs: 1000,
+      lastUpdated: 1,
+      sourceRef: const MediaSourceRef(
+        value: 'https://publisher.test/episode.mp3',
+        kind: MediaSourceKind.podcastEpisode,
+        podcast: PodcastEpisodeRef(
+          channelId: 'channel', episodeId: 'episode',
+          feedUrl: 'https://publisher.test/rss',
+          mediaUrl: 'https://publisher.test/episode.mp3',
+        ),
+      ),
     );
-    expect(cache.tasks, isEmpty);
-  });
-
-  test('empty local media is reported as unavailable', () async {
-    final file = await File(p.join(root.path, 'empty.mp4')).writeAsBytes([]);
-    final item = await cloud('empty', localPath: file.path);
-    expect(await uncachedCloudExportItems(library, [item.id], cache: cache), [
-      item,
-    ]);
+    library.seedVideoForTesting(podcast);
+    expect(await uncachedCloudExportItems(library, [podcast.id], cache: cache),
+        isEmpty);
+    expect(cache.calls, 0);
   });
 
   test(
-    'folder selection checks selected descendants and ignores other cards',
+    'missing and remote media cannot be satisfied by an old cache or playback path',
     () async {
-      final folder = await library.createCollection('selected', null);
-      final inner = await library.createCollection('nested', folder.id);
-      final missing = await cloud('nested-missing', parentId: inner.id);
-      final cached = await cloud('nested-ready', parentId: inner.id);
-      await complete(cached);
-      await cloud('unselected');
-      expect(
-        await uncachedCloudExportItems(library, [folder.id], cache: cache),
-        [missing],
+      final empty = await File(p.join(root.path, 'empty.mp4')).writeAsBytes([]);
+      final alternate = await File(
+        p.join(root.path, 'old-cache.mp4'),
+      ).writeAsBytes([1]);
+      for (final path in [
+        p.join(root.path, 'missing.mp4'),
+        empty.path,
+        'https://example.test/media.mp4',
+        'cloud-drive://old',
+        'podcast:old',
+      ]) {
+        final media = item(path, path, MediaSourceKind.cloudDrive)
+          ..playbackPath = alternate.path;
+        library.seedVideoForTesting(media);
+        expect(
+          await uncachedCloudExportItems(library, [media.id], cache: cache),
+          [media],
+        );
+      }
+      expect(cache.calls, 0);
+    },
+  );
+
+  test(
+    'local Android document URIs remain delegated to the exporter grant check',
+    () async {
+      final media = item(
+        'document',
+        'content://documents/video/1',
+        MediaSourceKind.url,
       );
+      library.seedVideoForTesting(media);
       expect(
-        await uncachedCloudExportItems(library, [cached.id], cache: cache),
+        await uncachedCloudExportItems(library, [media.id], cache: cache),
         isEmpty,
       );
+      expect(cache.calls, 0);
     },
   );
 
   testWidgets(
-    'export prompt opens actual cache quality picker without downloading',
+    'missing media dialog offers local relocation without a cache picker',
     (tester) async {
-      final item = await tester.runAsync(() => cloud('quality-picker'));
+      final media = item(
+        'missing',
+        'https://example.test/video',
+        MediaSourceKind.url,
+      );
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData.dark(),
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(
@@ -261,47 +169,28 @@ void main() {
                   context: context,
                   builder: (_) => PortableExportCacheDialog(
                     library: library,
-                    rootIds: [item!.id],
-                    missing: [item],
+                    rootIds: [media.id],
+                    missing: [media],
                   ),
                 ),
-                child: const Text('Export'),
+                child: const Text('open'),
               ),
             ),
           ),
         ),
       );
-      await tester.tap(find.text('Export'));
+      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      expect(find.text('先缓存网盘媒体'), findsOneWidget);
-      await tester.runAsync(() async {
-        await tester.tap(find.text('选择缓存画质'));
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      });
+      expect(find.text('需要本地媒体文件'), findsOneWidget);
+      expect(find.textContaining('重新定位或导入'), findsOneWidget);
+      expect(find.text('选择缓存画质'), findsNothing);
+      expect(find.text('检查缓存并继续'), findsNothing);
+      await tester.tap(find.text('返回'));
       await tester.pumpAndSettle();
-      expect(find.byType(MediaCacheVariantsDialog), findsOneWidget);
-      expect(find.text('360P'), findsOneWidget);
-      expect(find.text('1080P'), findsOneWidget);
-      expect(cache.tasks, isEmpty);
-      expect(backend.calls, 0);
+      expect(find.byType(PortableExportCacheDialog), findsNothing);
+      expect(cache.calls, 0);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('cache-variants-close')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('稍后导出'));
-      await tester.pumpAndSettle();
-      await tester.pumpWidget(const SizedBox.shrink());
-      unawaited(
-        Future.wait([cache.shutdown(), library.saveProgress()]).then((_) {
-          widgetDrained = true;
-        }),
-      );
-      for (var i = 0; i < 100 && !widgetDrained; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-      expect(widgetDrained, isTrue);
+      await tester.pumpWidget(const SizedBox());
     },
   );
 }

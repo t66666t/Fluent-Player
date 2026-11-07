@@ -11,7 +11,7 @@ from release_metadata import ROOT, prefix, read_version, write_platform_manifest
 
 
 def validate_badging(badging, version):
-    expected = {'name': 'com.example.video_player_app', 'versionName': version['version'],
+    expected = {'name': 'cn.teezy.fluentplayer.standard', 'versionName': version['version'],
                 'versionCode': str(version['buildNumber'])}
     package_line = next((line for line in badging.splitlines() if line.startswith('package:')), '')
     for key, value in expected.items():

@@ -1,6 +1,7 @@
 Silero VAD
 https://github.com/snakers4/silero-vad
-Bundled ONNX distributed through the sherpa-onnx Silero VAD release.
+Shared ONNX dependency downloaded through the sherpa-onnx Silero VAD release.
+Pinned download metadata: assets/models/asr_dependencies.json.
 SHA-256: 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
 
 MIT License

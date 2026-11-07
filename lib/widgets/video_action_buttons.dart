@@ -1,13 +1,12 @@
-import '../features/cloud_drive/presentation/cloud_drive_navigation.dart';
-import '../features/media_cache/media_cache_actions.dart';
 import 'dart:async';
-import 'dart:math' as math;
 import '../features/podcasts/podcast_pages.dart';
+import 'dart:math' as math;
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'operation_status.dart';
+import 'media_import_sheet.dart';
 import 'package:video_player_app/theme/app_page_transitions.dart';
 
 import '../theme/app_tokens.dart';
@@ -22,15 +21,14 @@ import 'package:path/path.dart' as p;
 import '../utils/local_filesystem_path.dart';
 import '../utils/import_gallery_access.dart';
 import '../utils/import_cache_roots.dart';
-import 'package:video_player_app/features/youtube_download/presentation/pages/yt_dlp_download_screen.dart';
 
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../screens/batch_import_screen.dart';
-import '../screens/bilibili_download_screen.dart';
 import '../screens/batch_subtitle_screen.dart';
 import '../utils/android_hardware_input_bridge.dart';
 import 'media_library_shell.dart';
+import 'media_library_keyboard_navigation.dart';
 import 'library_create_collection_dialog.dart';
 import '../utils/desktop_media_management_shortcuts.dart';
 import '../utils/hardware_keyboard_shortcuts.dart';
@@ -39,9 +37,6 @@ import '../utils/incoming_share_signatures.dart';
 import '../utils/page_shortcut_keys.dart';
 import '../features/portable_transfer/portable_transfer_models.dart';
 import '../features/portable_transfer/portable_transfer_navigation.dart';
-import '../features/web_media/web_media_browser_route.dart';
-import '../features/douyin_download/douyin_download_screen.dart';
-import '../features/cloud_drive/presentation/cloud_drive_route.dart';
 import 'package:video_player_app/widgets/capsule_selector.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -104,61 +99,29 @@ class VideoActionButtons extends StatefulWidget {
     String? collectionId,
     bool streamingMode = false,
   }) {
-    pushAboveMediaLibrary(
-      context,
-      AppMaterialPageRoute(
-        builder: (_) => BilibiliDownloadScreen(
-          targetFolderId: collectionId,
-          initialStreamingMode: streamingMode,
-        ),
-        settings: RouteSettings(
-          name: streamingMode
-              ? '/bilibili_stream_import'
-              : '/bilibili_download',
-        ),
-      ),
-    );
+    _showLocalOnlyNotice(context);
   }
 
   static void openYtDlpDownloadPage(
     BuildContext context, {
     String? collectionId,
   }) {
-    pushAboveMediaLibrary(
-      context,
-      AppMaterialPageRoute(
-        builder: (_) => YtDlpDownloadScreen(targetFolderId: collectionId),
-        settings: const RouteSettings(name: '/yt_dlp_download'),
-      ),
-    );
+    _showLocalOnlyNotice(context);
   }
 
   static void openWebMediaPage(BuildContext context, {String? collectionId}) {
-    pushAboveMediaLibrary(
-      context,
-      WebMediaBrowserRoute(targetFolderId: collectionId),
-    );
+    _showLocalOnlyNotice(context);
   }
 
   static void openDouyinDownloadPage(
     BuildContext context, {
     String? collectionId,
   }) {
-    pushAboveMediaLibrary(
-      context,
-      DouyinDownloadRoute(targetFolderId: collectionId),
-    );
+    _showLocalOnlyNotice(context);
   }
 
   static void openCloudDrivePage(BuildContext context, String? targetFolderId) {
-    if (MediaLibraryShell.maybeOf(context) != null) {
-      CloudDriveNavigation.open(targetFolderId: targetFolderId);
-    } else {
-      pushAboveMediaLibrary(
-        context,
-        CloudDriveRoute(targetFolderId: targetFolderId),
-      );
-    }
+    _showLocalOnlyNotice(context);
   }
 
   static void openBatchSubtitlePage(
@@ -182,6 +145,7 @@ class VideoActionButtons extends StatefulWidget {
       context,
       AppMaterialPageRoute(
         builder: (_) => BatchImportScreen(folderId: collectionId),
+        settings: const RouteSettings(name: '/batch_import'),
       ),
     );
   }
@@ -190,7 +154,14 @@ class VideoActionButtons extends StatefulWidget {
     BuildContext context, {
     String? collectionId,
   }) {
-    unawaited(openMediaCache(context));
+    _showLocalOnlyNotice(context);
+  }
+
+  static void _showLocalOnlyNotice(BuildContext context) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('社区版仅支持本地媒体，请导入本地文件。')));
   }
 
   const VideoActionButtons({
@@ -266,13 +237,14 @@ class VideoActionButtons extends StatefulWidget {
   }) async {
     _importFolder = collectionId;
     _importFailure.value = null;
-    const validExtensions = LibraryService.supportedMediaExtensions;
+    final filterExtensions = SettingsService().localImportFilterMediaExtensions;
 
     final validPaths = paths
         .map(normalizeLocalFilesystemPath)
         .whereType<String>()
         .where(
-          (path) => validExtensions.contains(p.extension(path).toLowerCase()),
+          (path) =>
+              !filterExtensions || LibraryService.isSupportedMediaPath(path),
         )
         .toList();
     if (validPaths.isEmpty) {
@@ -413,6 +385,7 @@ class VideoActionButtons extends StatefulWidget {
     final mediaPaths = <String>[];
     final archivePaths = <String>[];
     final folderPaths = <String>[];
+    final filterExtensions = SettingsService().localImportFilterMediaExtensions;
 
     for (final path in normalizedPaths) {
       final type = await FileSystemEntity.type(path, followLinks: false);
@@ -423,12 +396,12 @@ class VideoActionButtons extends StatefulWidget {
       if (type != FileSystemEntityType.file) {
         continue;
       }
-      if (LibraryService.isSupportedMediaPath(path)) {
-        mediaPaths.add(path);
-        continue;
-      }
       if (LibraryService.isSupportedArchivePath(path)) {
         archivePaths.add(path);
+        continue;
+      }
+      if (!filterExtensions || LibraryService.isSupportedMediaPath(path)) {
+        mediaPaths.add(path);
       }
     }
 
@@ -1101,10 +1074,15 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
   }
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: VideoActionButtons._importFailure,
-    builder: (context, failure, _) => _buildActions(context),
-  );
+  Widget build(BuildContext context) {
+    final actions = ValueListenableBuilder(
+      valueListenable: VideoActionButtons._importFailure,
+      builder: (context, failure, _) => _buildActions(context),
+    );
+    return widget.isHorizontal
+        ? actions
+        : MediaLibrarySpatialNavigationOverlay(child: actions);
+  }
 
   bool get _importFailed =>
       VideoActionButtons._importFailure.value != null &&
@@ -1117,6 +1095,19 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
         spacing: 16,
         runSpacing: 12,
         children: [
+          DesktopButtonClickRegion(
+            child: ElevatedButton(
+              onPressed: () => importVideos(context, widget.collectionId),
+              child: Text(_importFailed ? "导入失败，重新选择" : "导入视频或音频"),
+            ),
+          ),
+          DesktopButtonClickRegion(
+            child: ElevatedButton(
+              onPressed: () =>
+                  showCreateCollectionDialog(context, widget.collectionId),
+              child: const Text("新建合集"),
+            ),
+          ),
           DesktopButtonClickRegion(
             child: ElevatedButton(
               onPressed: () {
@@ -1138,15 +1129,11 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
           ),
           DesktopButtonClickRegion(
             child: ElevatedButton(
-              onPressed: () =>
-                  showCreateCollectionDialog(context, widget.collectionId),
-              child: const Text("新建合集"),
-            ),
-          ),
-          DesktopButtonClickRegion(
-            child: ElevatedButton(
-              onPressed: () => importVideos(context, widget.collectionId),
-              child: Text(_importFailed ? "导入失败，重新选择" : "导入视频或音频"),
+              onPressed: () => VideoActionButtons.openBatchImportPage(
+                context,
+                collectionId: widget.collectionId,
+              ),
+              child: const Text('批量导入'),
             ),
           ),
         ],
@@ -1173,15 +1160,32 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
             constraints.maxWidth,
             math.max(0.0, screenSize.width - padding.horizontal - 32),
           );
-          final layout = VideoActionRailLayout.resolve(
-            screenSize: screenSize,
-            availableWidth: availableWidth,
-            availableHeight: availableHeight,
-            textScaler: MediaQuery.textScalerOf(context),
-            showLabels: settings.showActionButtonLabels,
-          );
-          final actions = <Widget>[
-            _railButton(
+          final actionBuilders = <Widget Function(VideoActionRailLayout)>[
+            (layout) => _railButton(
+              label: _importFailed ? '导入失败' : '导入媒体',
+              layout: layout,
+              tooltip: _fabTooltip(
+                "导入视频或音频",
+                DesktopMediaManagementShortcutAction.importMedia,
+              ),
+              icon: _importFailed ? Icons.error_outline : Icons.video_call,
+              color: _importFailed
+                  ? Theme.of(context).colorScheme.error
+                  : AppTokens.text1,
+              onPressed: () => importVideos(context, widget.collectionId),
+            ),
+            (layout) => _railButton(
+              label: '新建合集',
+              layout: layout,
+              tooltip: _fabTooltip(
+                "新建合集",
+                DesktopMediaManagementShortcutAction.createCollection,
+              ),
+              icon: Icons.create_new_folder,
+              onPressed: () =>
+                  showCreateCollectionDialog(context, widget.collectionId),
+            ),
+            (layout) => _railButton(
               label: '语音转录',
               layout: layout,
               tooltip: _fabTooltip(
@@ -1200,31 +1204,28 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
                 );
               },
             ),
-            _railButton(
-              label: '新建合集',
+            (layout) => _railButton(
+              label: '批量导入',
               layout: layout,
               tooltip: _fabTooltip(
-                "新建合集",
-                DesktopMediaManagementShortcutAction.createCollection,
+                '批量导入',
+                DesktopMediaManagementShortcutAction.openBatchImport,
               ),
-              icon: Icons.create_new_folder,
-              onPressed: () =>
-                  showCreateCollectionDialog(context, widget.collectionId),
-            ),
-            _railButton(
-              label: _importFailed ? '导入失败' : '导入媒体',
-              layout: layout,
-              tooltip: _fabTooltip(
-                "导入视频或音频",
-                DesktopMediaManagementShortcutAction.importMedia,
+              icon: Icons.playlist_add,
+              onPressed: () => VideoActionButtons.openBatchImportPage(
+                context,
+                collectionId: widget.collectionId,
               ),
-              icon: _importFailed ? Icons.error_outline : Icons.video_call,
-              color: _importFailed
-                  ? Theme.of(context).colorScheme.error
-                  : AppTokens.text1,
-              onPressed: () => importVideos(context, widget.collectionId),
             ),
           ];
+          final layout = VideoActionRailLayout.resolve(
+            screenSize: screenSize,
+            availableWidth: availableWidth,
+            availableHeight: availableHeight,
+            textScaler: MediaQuery.textScalerOf(context),
+            showLabels: settings.showActionButtonLabels,
+            actionCount: actionBuilders.length,
+          );
           Widget toggle([Animation<double>? expansion]) => _railButton(
             label: isCollapsed ? '展开' : '收起',
             layout: layout,
@@ -1264,7 +1265,9 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
             maxHeight: availableHeight,
             collapsed: isCollapsed,
             scrollController: _railScrollController,
-            actions: actions,
+            actions: [
+              for (final buildAction in actionBuilders) buildAction(layout),
+            ],
             toggleBuilder: toggle,
           );
         },
@@ -1348,11 +1351,8 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
   ) async {
     VideoActionButtons._importFolder = collectionId;
     final mainContext = context;
-    await showModalBottomSheet(
+    await showMediaImportSheet<void>(
       context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      useSafeArea: true,
       builder: (sheetContext) {
         void run(ImportSheetShortcutAction action) {
           if (action != ImportSheetShortcutAction.close) {
@@ -1375,14 +1375,6 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
               _VideoActionButtonsState._pickFromFileManager(
                 mainContext,
                 collectionId,
-              );
-              return;
-            case ImportSheetShortcutAction.bilibiliOnline:
-              Navigator.pop(sheetContext);
-              VideoActionButtons.openBilibiliDownloadPage(
-                mainContext,
-                collectionId: collectionId,
-                streamingMode: true,
               );
               return;
             case ImportSheetShortcutAction.archive:
@@ -1505,28 +1497,32 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
                   onTap: () => run(ImportSheetShortcutAction.fluentPack),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
-                  title: const Text('网盘在线播放'),
-                  subtitle: const Text('登录自己的网盘，浏览并播放视频'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    VideoActionButtons.openCloudDrivePage(
-                      mainContext,
-                      collectionId,
-                    );
-                  },
-                ),
-                ListTile(
                   leading: const Icon(Icons.podcasts_rounded),
                   title: const Text('订阅或导入播客'),
                   subtitle: const Text('搜索频道、导入 RSS 或 OPML 列表'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    Navigator.of(mainContext).push(
+                    pushAboveMediaLibrary(
+                      mainContext,
                       MaterialPageRoute<void>(
                         builder: (_) =>
                             PodcastDiscoverPage(targetFolderId: collectionId),
+                        settings: const RouteSettings(
+                          name: '/podcasts/discover',
+                        ),
                       ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.playlist_add),
+                  title: const Text('批量导入'),
+                  subtitle: const Text('选择本地媒体与字幕，配对后导入媒体库'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    VideoActionButtons.openBatchImportPage(
+                      mainContext,
+                      collectionId: collectionId,
                     );
                   },
                 ),
@@ -1639,12 +1635,15 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
     String? collectionId,
   ) async {
     try {
+      final filterExtensions =
+          SettingsService().localImportFilterMediaExtensions;
       // SAF grants access to the selected files; broad media/all-files
       // permissions must not block the system document picker.
       if (defaultTargetPlatform == TargetPlatform.android) {
         final result = await VideoActionButtons._fileManagerChannel
             .invokeMethod<Object?>("pickFiles", {
-              "mimeTypes": ["video/*", "audio/*"],
+              "mimeTypes": filterExtensions ? ["video/*", "audio/*"] : ["*/*"],
+              "filterMediaExtensions": filterExtensions,
               "allowMultiple": true,
               "includeSourceHints": true,
             });
@@ -1674,10 +1673,12 @@ class _VideoActionButtonsState extends State<VideoActionButtons> {
       }
 
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: LibraryService.supportedMediaExtensions
-            .map((ext) => ext.replaceFirst('.', ''))
-            .toList(),
+        type: filterExtensions ? FileType.custom : FileType.any,
+        allowedExtensions: filterExtensions
+            ? LibraryService.supportedMediaExtensions
+                  .map((ext) => ext.replaceFirst('.', ''))
+                  .toList()
+            : null,
         allowMultiple: true,
         withData: false,
         withReadStream: false,

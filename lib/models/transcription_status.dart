@@ -4,6 +4,7 @@ enum TranscriptionStatus {
   extracting,
   uploading,
   transcribing,
+  optimizing,
   translating,
   embedding,
   completed,

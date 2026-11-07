@@ -102,7 +102,7 @@ Future<Map<String, Object?>> runAndroidResourceComposeAudit(
       name: 'Resource audit',
       category: 'audit',
       description: 'Fixed precise-render native validation',
-      primaryFont: 'MiSans',
+      primaryFont: 'Noto Sans SC',
       secondaryFont: 'Comic Relief',
       size: 32,
       bottom: .08,

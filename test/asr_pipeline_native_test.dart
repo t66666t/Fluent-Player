@@ -13,6 +13,7 @@ import 'package:video_player_app/features/model_center/bounded_model_pipeline.da
 import 'package:video_player_app/features/model_center/local_asr_worker.dart';
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -62,11 +63,11 @@ void main() {
           directory: p.absolute(
             '.artifacts/model-center/native/parakeet-v3-int8',
           ),
-          vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'en',
           threads: 2,
           libraryDirectory:
-              'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+              '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
           enhancements: options,
           naturalPunctuationContext: true,
           stage: stage,

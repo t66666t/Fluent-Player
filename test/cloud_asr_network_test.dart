@@ -14,7 +14,17 @@ import 'cloud_asr_test_support.dart';
 import 'network_proxy_bridge_test.dart' show FakeProxyResolver;
 import 'network_settings_service_test.dart'
     show MemoryNetworkStore, MemoryCredentials;
-import 'network_transport_security_test.dart' show serverTls, trustedTls, Bytes;
+import 'network_transport_security_test.dart' show Bytes;
+import 'support/temporary_tls_fixture.dart';
+
+late TemporaryTlsFixture _tlsFixture;
+
+SecurityContext serverTls() => SecurityContext()
+  ..useCertificateChain(_tlsFixture.certificate)
+  ..usePrivateKey(_tlsFixture.privateKey);
+SecurityContext trustedTls() =>
+    SecurityContext(withTrustedRoots: false)
+      ..setTrustedCertificates(_tlsFixture.certificate);
 
 class _TlsNetwork extends NetworkHttp {
   _TlsNetwork({
@@ -61,6 +71,8 @@ class _NeverSends implements HttpClientAdapter {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async => _tlsFixture = await TemporaryTlsFixture.create());
+  tearDownAll(() async => _tlsFixture.dispose());
   setUp(() => HttpOverrides.global = null);
   NetworkSettingsService settings() => NetworkSettingsService(
     store: MemoryNetworkStore(),

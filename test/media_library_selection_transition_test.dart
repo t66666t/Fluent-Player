@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/models/library_activity.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/screens/collection_screen.dart';
@@ -17,6 +18,9 @@ import 'package:video_player_app/widgets/mini_playback_card.dart';
 import 'package:video_player_app/widgets/playback_card_layout.dart';
 
 void main() {
+  setUp(() => mediaLibraryAlternateViewsEnabled = true);
+  tearDown(() => mediaLibraryAlternateViewsEnabled = false);
+
   for (final (platform, size, inset) in [
     (TargetPlatform.android, const Size(390, 844), 24.0),
     (TargetPlatform.windows, const Size(1200, 800), 0.0),

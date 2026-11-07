@@ -28,6 +28,8 @@ import 'package:video_player_app/services/settings_export_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/subtitle_debug_session.dart';
 import 'package:video_player_app/services/subtitle_manual_translation_settings.dart';
+import 'package:video_player_app/services/subtitle_file_processing_settings.dart';
+import 'package:video_player_app/services/subtitle_optimization.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
 import 'package:video_player_app/services/transcription_hotword_store.dart';
 
@@ -46,6 +48,12 @@ SettingsExportService _exporter({
   nativeYtDlpPreferences: nativeYtDlpReader ?? () async => null,
 );
 
+// Model a loaded legacy preferences object without reactivating its downloader.
+class _LoadedBilibiliPreferences extends BilibiliDownloadService {
+  @override
+  bool get settingsLoaded => true;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late SettingsService settings;
@@ -56,28 +64,49 @@ void main() {
     settings.subtitlePresets = [];
   });
 
-  test('download export keeps independent cleanup choices and omits retired switches', () async {
-    SharedPreferences.setMockInitialValues({
-      'bilibili_auto_import': false,
-      'bilibili_sequential_export': true,
-      'bilibili_auto_delete_import': true,
-      'bilibili_online_auto_delete_import': false,
-      'douyin_auto_remove_after_import': true,
-      'web_media_queue_settings_v2': jsonEncode({'autoRemoveAfterImport': true}),
-      'yt_dlp_download_preferences_v1': jsonEncode({'autoImportToLibrary': false, 'autoDeleteTaskAfterImport': true}),
-    });
+  test(
+    'download export keeps independent cleanup choices and omits retired switches',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'bilibili_auto_import': false,
+        'bilibili_sequential_export': true,
+        'bilibili_auto_delete_import': true,
+        'bilibili_online_auto_delete_import': false,
+        'douyin_auto_remove_after_import': true,
+        'web_media_queue_settings_v2': jsonEncode({
+          'autoRemoveAfterImport': true,
+        }),
+        'yt_dlp_download_preferences_v1': jsonEncode({
+          'autoImportToLibrary': false,
+          'autoDeleteTaskAfterImport': true,
+        }),
+      });
+      await settings.init();
+      final snapshot = await _exporter().buildSnapshot(settings: settings);
+      final bilibili = snapshot['bilibili'] as Map;
+      expect(bilibili['autoDeleteTaskAfterImport'], isTrue);
+      expect(bilibili['autoDeleteOnlineTaskAfterImport'], isFalse);
+      expect(bilibili, isNot(contains('autoImportToLibrary')));
+      expect(bilibili, isNot(contains('sequentialExport')));
+      expect(snapshot['douyin']['autoRemoveAfterImport'], isTrue);
+      expect(snapshot['webMedia']['queue']['autoRemoveAfterImport'], isTrue);
+      final yt = snapshot['ytDlp']['preferences'] as Map;
+      expect(yt['autoDeleteTaskAfterImport'], isTrue);
+      expect(yt, isNot(contains('autoImportToLibrary')));
+    },
+  );
+
+  test('file-processing export preserves explicit false and does not migrate on read', () async {
     await settings.init();
+    await const SubtitleOptimizationSettings(enabled: true).save();
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = await _exporter().buildSnapshot(settings: settings);
+    expect(legacy['subtitleFileProcessing'], {'optimize': true, 'translate': true});
+    expect(prefs.containsKey(SubtitleFileProcessingSettings.preferencesKey), isFalse);
+    await SubtitleFileProcessingSettings.update(optimize: false, translate: false);
     final snapshot = await _exporter().buildSnapshot(settings: settings);
-    final bilibili = snapshot['bilibili'] as Map;
-    expect(bilibili['autoDeleteTaskAfterImport'], isTrue);
-    expect(bilibili['autoDeleteOnlineTaskAfterImport'], isFalse);
-    expect(bilibili, isNot(contains('autoImportToLibrary')));
-    expect(bilibili, isNot(contains('sequentialExport')));
-    expect(snapshot['douyin']['autoRemoveAfterImport'], isTrue);
-    expect(snapshot['webMedia']['queue']['autoRemoveAfterImport'], isTrue);
-    final yt = snapshot['ytDlp']['preferences'] as Map;
-    expect(yt['autoDeleteTaskAfterImport'], isTrue);
-    expect(yt, isNot(contains('autoImportToLibrary')));
+    expect(snapshot['subtitleFileProcessing'], {'optimize': false, 'translate': false});
+    expect(snapshot['subtitleOptimization']['enabled'], isTrue);
   });
 
   test(
@@ -102,6 +131,7 @@ void main() {
           'cloudDrive',
           'translation',
           'modelProcessing',
+          'subtitleOptimization',
           'aiChat',
           'podcasts',
           'portableExport',
@@ -114,6 +144,10 @@ void main() {
       expect(snapshot['sourceDevice']['devicePixelRatio'], 3);
       expect(snapshot['bilibili']['maxConnectionsPerVideo'], 2);
       expect(snapshot['bilibili']['downloadDanmaku'], true);
+      expect(snapshot['subtitleOptimization'], {
+        'enabled': false,
+        'prompt': defaultSubtitleOptimizationPrompt,
+      });
       expect(snapshot['mediaCache'], MediaCachePreferences().toJson());
       expect(
         snapshot['ytDlp']['preferences'],
@@ -154,7 +188,12 @@ void main() {
       final slots =
           snapshot['settings']['layout']['mediaLibraryOrientationOverrides']
               as Map;
-      expect(slots.length, 24);
+      expect(
+        slots.length,
+        SettingsService.mediaLibraryLayoutExportKeys.length,
+        reason:
+            'Each orientation slot (grid, legacy list, rows, table) must export.',
+      );
       expect(slots.values.every((v) => v == null), isTrue);
       expect(
         snapshot['settings']['layout']['effectiveMediaLibraryProfiles'].keys,
@@ -508,6 +547,42 @@ void main() {
   );
 
   test(
+    'optimization exports stable fields without changing its local connection',
+    () async {
+      const connection = 'DEVICE_LOCAL_OPTIMIZATION_CONNECTION';
+      const extra = 'PRIVATE_OPTIMIZATION_EXTRA';
+      const prompt = 'Keep the original language and correct clear typos only.';
+      final original = jsonEncode({
+        'enabled': true,
+        'prompt': prompt,
+        'connectionId': connection,
+        'endpoint': {'baseUrl': extra, 'model': extra},
+        'apiKey': extra,
+        'profiles': {extra: extra},
+        'background': extra,
+        'unknownFutureField': extra,
+      });
+      SharedPreferences.setMockInitialValues({
+        SubtitleOptimizationSettings.preferencesKey: original,
+      });
+      await settings.init();
+      final snapshot = await _exporter().buildSnapshot(settings: settings);
+      expect(snapshot['subtitleOptimization'], {
+        'enabled': true,
+        'prompt': prompt,
+      });
+      final encoded = jsonEncode(snapshot);
+      expect(encoded, isNot(contains(connection)));
+      expect(encoded, isNot(contains(extra)));
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString(SubtitleOptimizationSettings.preferencesKey),
+        original,
+      );
+    },
+  );
+
+  test(
     'credentials, selections, local paths and personal state never leak',
     () async {
       const secret = 'PRIVATE_SENTINEL_DO_NOT_EXPORT';
@@ -532,6 +607,37 @@ void main() {
         'clipboardLastHandledText': secret,
         'subtitleFontLanguages': jsonEncode({secret: 'en'}),
         'bilibili_session_cookies_v1': secret,
+        'bilibiliOfflineDetails': jsonEncode({
+          'BV_OFFLINE_CONTROL': {
+            't': secret,
+            'o': secret,
+            'm': 123,
+            'd': secret,
+            'tags': [secret],
+            'at': 123456,
+          },
+        }),
+        'subtitle_ai_connections_v1': jsonEncode([
+          {
+            'id': secret,
+            'name': secret,
+            'endpoint': {
+              'baseUrl': secret,
+              'model': secret,
+              'apiKey': secret,
+              'profiles': {secret: secret},
+            },
+          },
+        ]),
+        'subtitle_optimization_v1': jsonEncode({
+          'enabled': true,
+          'prompt': 'Portable optimization prompt control',
+          'connectionId': secret,
+          // Malicious/unknown extra fields must never become preferences.
+          'apiKey': secret,
+          'profiles': {secret: secret},
+          'background': secret,
+        }),
         'cloudDrive.baidu.account': secret,
         'subtitle_translate_provider_enzh': 'local',
         'subtitle_ai_api_v1': jsonEncode({
@@ -615,6 +721,14 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('lastSelectedModelType'), secret);
       expect(prefs.getString('subtitle_translate_provider_enzh'), 'local');
+      expect(prefs.getString('bilibiliOfflineDetails'), contains(secret));
+      expect(prefs.getString('subtitle_ai_connections_v1'), contains(secret));
+      expect(
+        jsonDecode(prefs.getString('subtitle_optimization_v1')!)[
+          'connectionId'
+        ],
+        secret,
+      );
     },
   );
 
@@ -622,9 +736,8 @@ void main() {
     'latest runtime values win and returned snapshots are detached',
     () async {
       await settings.init();
-      final bilibili = BilibiliDownloadService();
+      final bilibili = _LoadedBilibiliPreferences();
       addTearDown(bilibili.dispose);
-      await bilibili.loadSettingsForTesting();
       bilibili.maxConcurrentDownloads = 5;
       bilibili.downloadDanmaku = false;
       final gate = Completer<Map<String, dynamic>>();
@@ -672,7 +785,7 @@ void main() {
   );
 
   test(
-    'legacy native YTDLP settings normalize without migration writes',
+    'dormant legacy settings stay passive without migration writes',
     () async {
       await settings.init();
       final snapshot = await _exporter(
@@ -684,8 +797,8 @@ void main() {
         ),
       ).buildSnapshot(settings: settings);
       expect(snapshot['ytDlp']['session']['forceIpv4'], true);
-      expect(snapshot['ytDlp']['session']['concurrentFragments'], 16);
-      expect(snapshot['ytDlp']['session']['retries'], 2);
+      expect(snapshot['ytDlp']['session']['concurrentFragments'], 4);
+      expect(snapshot['ytDlp']['session']['retries'], 99);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.containsKey('yt_dlp_session_config_v1'), false);
       expect(prefs.containsKey('yt_dlp_parallel_download_defaults_v3'), false);

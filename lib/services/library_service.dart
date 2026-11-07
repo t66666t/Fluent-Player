@@ -65,6 +65,7 @@ import '../utils/ui_idle_gate.dart';
 import '../utils/subtitle_file_matcher.dart';
 import 'subtitle_discovery_service.dart';
 import 'task_subtitle_storage_service.dart';
+import 'generated_subtitle_names.dart';
 import 'subtitle_word_timing_store.dart';
 import 'chapter_thumbnail_service.dart';
 import 'bilibili/bilibili_streaming_service.dart';
@@ -600,46 +601,9 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  /// The cache registry must have durably adopted each file before this call.
-  /// Card identity, activity and user data are deliberately left untouched.
-  Future<int> promoteBilibiliDownloadCards(Iterable<String> ids) async {
-    final previous = <VideoItem, (String, MediaSourceRef, String?, String?)>{};
-    for (final id in ids) {
-      final item = _videos[id];
-      final source = item?.sourceRef;
-      if (item == null ||
-          source == null ||
-          item.path.contains('://') ||
-          source.bvid?.isNotEmpty != true ||
-          (source.cid ?? 0) <= 0) {
-        continue;
-      }
-      previous[item] = (
-        item.path,
-        source,
-        item.sourceFingerprint,
-        item.bilibiliDownloadPath,
-      );
-      item.bilibiliDownloadPath = item.path;
-      item.path = 'bilibili://stream/${source.bvid}?cid=${source.cid}';
-      item.sourceRef = source.copyWith(kind: MediaSourceKind.bilibiliStream);
-      item.sourceFingerprint = 'bilibili-stream-card:${item.id}';
-    }
-    if (previous.isEmpty) return 0;
-    await _saveLibrary();
-    if (hasPersistenceFailure) {
-      for (final entry in previous.entries) {
-        entry.key.path = entry.value.$1;
-        entry.key.sourceRef = entry.value.$2;
-        entry.key.sourceFingerprint = entry.value.$3;
-        entry.key.bilibiliDownloadPath = entry.value.$4;
-      }
-      throw StateError('媒体库迁移尚未保存，将保留原视频并重试');
-    }
-    _invalidateSizeCaches();
-    notifyListeners();
-    return previous.length;
-  }
+  /// Retired compatibility API: keep completed local files local, without
+  /// converting their cards back into remote playback identities.
+  Future<int> promoteBilibiliDownloadCards(Iterable<String> ids) async => 0;
 
   /// Saved temporary Bilibili playlist. Only valid after [init].
   File get bilibiliWatchPlaylistFile =>
@@ -988,6 +952,24 @@ class LibraryService extends ChangeNotifier {
   }) async {
     final sourceItem = _videos[videoId];
     if (sourceItem == null) throw StateError('媒体库中找不到该视频卡片');
+    requireCommunityProcessingSource(
+      sourceItem.path,
+      source: sourceItem.sourceRef,
+    );
+    if (communityMediaIsLocal(sourceItem.path)) {
+      final file = File(communityLocalMediaPath(sourceItem.path));
+      final exists = await file.exists();
+      return MediaMaterializationEstimate(
+        estimatedBytes: exists ? await file.length() : null,
+        qualityId: null,
+        width: null,
+        height: null,
+        qualityLabel: '本地文件',
+        alreadyAvailable: exists,
+        requiresVideoDownload: false,
+        requiresAudioDownload: false,
+      );
+    }
     final item = _materializationItem(sourceItem, qualityId);
     if (qualityId != null) targetHeight = null;
     await _discoverReusableMedia(item);
@@ -1061,7 +1043,23 @@ class LibraryService extends ChangeNotifier {
     final original = sourceItem ?? _videos[videoId];
     if (original == null) throw StateError('媒体库中找不到该视频卡片');
     if (original.id != videoId) throw StateError('媒体来源与任务不一致，请重新开始');
-    requireCommunityLocalMedia(original.path);
+    requireCommunityProcessingSource(original.path, source: original.sourceRef);
+    if (communityMediaIsLocal(original.path)) {
+      final path = communityLocalMediaPath(original.path);
+      if (!await File(path).exists()) throw StateError('媒体文件不存在');
+      return MaterializedMediaLease(
+        videoId: original.id,
+        audioPath: requirement == MediaMaterializationRequirement.videoFrames
+            ? null
+            : path,
+        videoPath: path,
+        completePath: path,
+        qualityId: null,
+        width: null,
+        height: null,
+        onRelease: () async {},
+      );
+    }
     final item = _materializationItem(original, qualityId);
     if (qualityId != null) targetHeight = null;
     await _discoverReusableMedia(item);
@@ -1141,6 +1139,10 @@ class LibraryService extends ChangeNotifier {
     VideoItem item, {
     String? qualityId,
   }) async {
+    requireCommunityPlaybackSource(item.path, source: item.sourceRef);
+    if (communityMediaIsLocal(item.path) || item.sourceRef?.podcast != null) {
+      return null;
+    }
     // A sealed, indexed file is already validated by acquisition. Do not put
     // a materialization-directory scan and registry writes ahead of playback.
     final existing = await MediaCacheHooks.acquire?.call(
@@ -1223,7 +1225,10 @@ class LibraryService extends ChangeNotifier {
       _collections.values
           .where(
             (c) =>
-                c.parentId == null && !c.isRecycled && !c.isHiddenFromFolders,
+                c.parentId == null &&
+                !c.isRecycled &&
+                !c.isHiddenFromFolders &&
+                _isCommunityLocalCollection(c),
           )
           .toList()
         ..sort((a, b) => b.createTime.compareTo(a.createTime)); // Default sort
@@ -1231,10 +1236,10 @@ class LibraryService extends ChangeNotifier {
   // New: Get Recycle Bin Items (Mixed)
   List<dynamic> getRecycleBinContents() {
     final recycledCols = _collections.values
-        .where((c) => c.isRecycled)
+        .where((c) => c.isRecycled && _isCommunityLocalCollection(c))
         .toList();
     final recycledVideos = _videos.values
-        .where((v) => v.isRecycled && !v.isTransient)
+        .where((v) => v.isRecycled && _isCommunityLocalVideo(v))
         .toList();
 
     // Logic: Only show items whose parent is NOT recycled (or has no parent).
@@ -1320,48 +1325,96 @@ class LibraryService extends ChangeNotifier {
   List<dynamic> getRecycledFolderContents(String folderId) => [
     for (final id in _collectionChildIdsIncludingRecycled(folderId))
       if (isStorageItemRecycled(id))
-        if (_collections[id] case final VideoCollection collection)
+        if (_libraryCollection(id) case final VideoCollection collection)
           collection
-        else if (_videos[id] case final VideoItem video)
-          if (!video.isTransient) video,
+        else if (_libraryVideo(id) case final VideoItem video)
+          video,
   ];
 
   /// Local file cards can restore a missing path. Streams, URLs, and Bilibili
   /// identities must not enter the file-picker recovery flow.
-  bool canRelocateLocalMediaSource(VideoItem item) {
-    if (item.isRecycled) return false;
-    if (_isBilibiliStreamItem(item)) return false;
-    final kind = item.sourceRef?.kind;
-    if (kind == MediaSourceKind.url ||
-        kind == MediaSourceKind.bilibiliStream ||
-        kind == MediaSourceKind.bilibiliBv ||
-        kind == MediaSourceKind.bilibiliId ||
-        kind == MediaSourceKind.cloudDrive) {
+  bool canRelocateLocalMediaSource(VideoItem item) =>
+      !item.isRecycled && communityMediaIsLocal(item.path);
+
+  bool _restoreCompletedLocalDownload(VideoItem item) {
+    if (communityMediaIsLocal(item.path) ||
+        !(item.path.startsWith('bilibili://stream/') ||
+            item.sourceRef?.kind == MediaSourceKind.bilibiliStream)) {
       return false;
     }
-    final path = item.path.trim();
-    if (path.startsWith('http://') ||
-        path.startsWith('https://') ||
-        path.startsWith('bilibili://') ||
-        isCloudDriveLogicalPath(path)) {
+    final owned = item.bilibiliDownloadPath;
+    if (owned == null || !communityMediaIsLocal(owned)) return false;
+    final path = communityLocalMediaPath(owned);
+    if (!isSupportedMediaPath(path)) return false;
+    try {
+      final stat = File(path).statSync();
+      if (stat.type != FileSystemEntityType.file || stat.size <= 0) {
+        return false;
+      }
+      item.path = path;
+      return true;
+    } on FileSystemException {
       return false;
     }
-    return true;
+  }
+
+  bool _isCommunityLocalVideo(VideoItem item) =>
+      !item.isTransient &&
+      communityMediaIsPlayable(item.path, source: item.sourceRef);
+
+  // Keep ordinary folders, including empty ones. Retired source folders remain
+  // visible only when they contain local files; all persisted rows stay intact.
+  bool _isCommunityLocalCollection(VideoCollection collection) {
+    if (collection.podcastRef != null || collection.sourceRef == null) {
+      return true;
+    }
+    final seen = <String>{};
+    bool hasLocalDescendant(VideoCollection folder) {
+      if (!seen.add(folder.id)) return false;
+      for (final id in folder.childrenIds) {
+        final video = _videos[id];
+        if (video != null && _isCommunityLocalVideo(video)) return true;
+        final child = _collections[id];
+        if (child != null && hasLocalDescendant(child)) return true;
+      }
+      return false;
+    }
+
+    return hasLocalDescendant(collection);
+  }
+
+  VideoCollection? _libraryCollection(String id) {
+    final collection = _collections[id];
+    return collection != null && _isCommunityLocalCollection(collection)
+        ? collection
+        : null;
   }
 
   LibraryActivityProjection get activityProjection {
     return LibraryActivityProjection(
       store: _activity,
-      videoOf: _libraryVideo,
-      collectionOf: getCollection,
-      allVideos: () => _videos.values.where((item) => !item.isTransient),
+      videoOf: (id) {
+        final item = _libraryVideo(id);
+        return item == null ? null : _localActivityItem(item);
+      },
+      collectionOf: _libraryCollection,
+      allVideos: () =>
+          _videos.values.where(_isCommunityLocalVideo).map(_localActivityItem),
     );
   }
+
+  // Activity's old provider grouping must not hide downloaded local files.
+  // Project only for reads; the persisted provenance and task identity remain.
+  VideoItem _localActivityItem(VideoItem item) =>
+      item.sourceRef == null ||
+          (!communityMediaIsLocal(item.path) && item.sourceRef?.podcast != null)
+      ? item
+      : VideoItem.fromJson({...item.toJson(), 'sourceRef': null});
 
   /// Library card [id]; null for unknown ids and watch-only cards.
   VideoItem? _libraryVideo(String id) {
     final item = _videos[id];
-    return item == null || item.isTransient ? null : item;
+    return item == null || !_isCommunityLocalVideo(item) ? null : item;
   }
 
   MediaActivityRecord? mediaActivity(String id) => _activity.media[id];
@@ -1708,7 +1761,7 @@ class LibraryService extends ChangeNotifier {
     final List<VideoItem> result = [];
     for (var id in sourceIds) {
       final video = _videos[id];
-      if (video != null && !video.isRecycled && !video.isTransient) {
+      if (video != null && !video.isRecycled && _isCommunityLocalVideo(video)) {
         result.add(video);
       }
     }
@@ -2151,10 +2204,11 @@ class LibraryService extends ChangeNotifier {
   Future<String?> ensureThumbnailForVideo(String videoId) async {
     final item = _videos[videoId];
     if (item == null) return null;
-    if (item.type == MediaType.audio && item.sourceRef?.cloudDrive == null) {
+    if (!communityMediaIsLocal(item.path)) return null;
+    if (item.type == MediaType.audio) {
       return _resolveImportedAudioCover(item, persist: true);
     }
-    if (item.type != MediaType.video && item.sourceRef?.cloudDrive == null) {
+    if (item.type != MediaType.video) {
       return null;
     }
 
@@ -2186,17 +2240,15 @@ class LibraryService extends ChangeNotifier {
       }
     }
 
-    final cloud = item.sourceRef?.cloudDrive;
-    final generatedPath = cloud == null
-        ? await _generateThumbnail(item.path, videoId: item.id)
-        : await cloudDriveThumbnails?.ensure(cloud);
+    final localPath = communityLocalMediaPath(item.path);
+    final generatedPath = await _generateThumbnail(localPath, videoId: item.id);
     if (generatedPath == null || generatedPath.isEmpty) {
       return null;
     }
 
     if (!identical(_videos[item.id], item) ||
-        item.sourceRef?.cloudDrive?.sourceKey != cloud?.sourceKey ||
-        item.sourceRef?.cloudDrive?.revision != cloud?.revision) {
+        !communityMediaIsLocal(item.path) ||
+        communityLocalMediaPath(item.path) != localPath) {
       return null;
     }
     if (item.thumbnailPath != generatedPath) {
@@ -2227,6 +2279,7 @@ class LibraryService extends ChangeNotifier {
     VideoItem item, {
     required bool saveLibrary,
   }) async {
+    requireCommunityLocalMedia(item.path);
     if (item.type != MediaType.audio) return item.path;
     final playbackFile = await AudioPlaybackCompatibilityService.resolve(
       File(item.path),
@@ -2265,7 +2318,9 @@ class LibraryService extends ChangeNotifier {
     _isDurationBackfillRunning = true;
     try {
       final pendingItems = _videos.values
-          .where((item) => item.durationMs <= 0)
+          .where(
+            (item) => item.durationMs <= 0 && communityMediaIsLocal(item.path),
+          )
           .toList();
       if (pendingItems.isEmpty) {
         return;
@@ -2433,6 +2488,7 @@ class LibraryService extends ChangeNotifier {
     bool persist = false,
     bool allowFfmpegFallback = true,
   }) async {
+    if (!communityMediaIsLocal(item.path)) return null;
     if (item.type != MediaType.audio) return item.thumbnailPath;
     final inFlight = _thumbnailRepairInFlight[item.id];
     if (inFlight != null) return inFlight;
@@ -2689,6 +2745,9 @@ class LibraryService extends ChangeNotifier {
     // Load Videos
     if (snapshot.videos != null) {
       _videos = snapshot.videos!;
+      for (final item in _videos.values) {
+        if (_restoreCompletedLocalDownload(item)) _needsPostLoadSave = true;
+      }
       _cloudDriveCardsIndex = null;
     }
 
@@ -2903,6 +2962,7 @@ class LibraryService extends ChangeNotifier {
 
   @visibleForTesting
   void seedVideoForTesting(VideoItem item) {
+    _restoreCompletedLocalDownload(item);
     _bilibiliCacheCandidates = null;
     _cloudDriveCardsIndex = null;
     _videos[item.id] = item;
@@ -3016,10 +3076,14 @@ class LibraryService extends ChangeNotifier {
     for (var id in sourceIds) {
       if (_collections.containsKey(id)) {
         final col = _collections[id]!;
-        if (!col.isRecycled && !col.isHiddenFromFolders) results.add(col);
+        if (!col.isRecycled &&
+            !col.isHiddenFromFolders &&
+            _isCommunityLocalCollection(col)) {
+          results.add(col);
+        }
       } else if (_videos.containsKey(id)) {
         final vid = _videos[id]!;
-        if (!vid.isRecycled && !vid.isTransient) results.add(vid);
+        if (!vid.isRecycled && _isCommunityLocalVideo(vid)) results.add(vid);
       }
     }
 
@@ -3031,7 +3095,7 @@ class LibraryService extends ChangeNotifier {
     return MediaLibraryFolderWalk.collectMedia(
       rootId: folderId,
       folderOf: getCollection,
-      videoOf: getVideo,
+      videoOf: _libraryVideo,
     );
   }
 
@@ -3073,11 +3137,12 @@ class LibraryService extends ChangeNotifier {
         (collection) =>
             !collection.isRecycled &&
             !collection.isHiddenFromFolders &&
+            _isCommunityLocalCollection(collection) &&
             !hasRecycledAncestor(collection.parentId) &&
             searchQuery.matchesTitle(collection.name),
       ),
       ..._videos.values.where((video) {
-        if (video.isTransient ||
+        if (!_isCommunityLocalVideo(video) ||
             video.isRecycled ||
             hasRecycledAncestor(video.parentId)) {
           return false;
@@ -3648,8 +3713,11 @@ class LibraryService extends ChangeNotifier {
     // 将递归遍历移入独立 Isolate，避免大文件夹扫描阻塞 UI 线程。
     // 这是 Windows 端"导入文件夹时点击即闪退"的核心根因：
     // UI isolate 被阻塞后 Windows 判定应用无响应并强杀进程。
-    final result = await compute(_analyzeFolderSelectionIsolate, folderPath)
-        .timeout(
+    final result =
+        await compute(_analyzeFolderSelectionIsolate, (
+          folderPath,
+          SettingsService().localImportFilterMediaExtensions,
+        )).timeout(
           const Duration(seconds: 30),
           onTimeout: () {
             throw TimeoutException('文件夹扫描超时（30秒），请检查目录是否过大或包含软链接环路');
@@ -3704,6 +3772,8 @@ class LibraryService extends ChangeNotifier {
     // immediately, while this folder import remains internally consistent.
     final copyImportedFilesToLibrary =
         SettingsService().copyImportedMediaToPrivateStorage;
+    final filterMediaExtensions =
+        SettingsService().localImportFilterMediaExtensions;
     return _runExclusiveImport(() async {
       final rootDir = Directory(folderPath);
       if (!await rootDir.exists()) {
@@ -3722,6 +3792,7 @@ class LibraryService extends ChangeNotifier {
         sortOptions: sortOptions,
         importLabel: '文件夹',
         copyImportedFilesToLibrary: copyImportedFilesToLibrary,
+        filterMediaExtensions: filterMediaExtensions,
         totalMediaEntriesHint: null,
         activitySourceKind: LibraryImportSourceKind.folder,
       );
@@ -3894,6 +3965,8 @@ class LibraryService extends ChangeNotifier {
       throw UnsupportedError('当前仅支持 zip、tar、tar.gz、tar.bz2、tar.xz 压缩包');
     }
 
+    final filterMediaExtensions =
+        SettingsService().localImportFilterMediaExtensions;
     final shouldDeleteSourceArchive = await _isAppOwnedArchiveCachePath(
       archivePath,
     );
@@ -3906,6 +3979,7 @@ class LibraryService extends ChangeNotifier {
           await compute(_extractArchiveToDiskWorker, <String, Object?>{
             'archivePath': archivePath,
             'destDir': importRootDir.path,
+            'filterMediaExtensions': filterMediaExtensions,
             'maxEntryCount': _defaultMaxArchiveEntryCount,
             'maxTotalBytes': _defaultMaxArchiveTotalBytes,
             'maxSingleFileBytes': _defaultMaxArchiveSingleFileBytes,
@@ -3927,6 +4001,7 @@ class LibraryService extends ChangeNotifier {
         parentId: destinationParentId,
         sortOptions: sortOptions,
         importLabel: '压缩包',
+        filterMediaExtensions: filterMediaExtensions,
         moveImportedFilesToLibrary: true,
         totalMediaEntriesHint: extractedMediaEntries,
         deferPostProcessing: true,
@@ -3962,6 +4037,7 @@ class LibraryService extends ChangeNotifier {
     bool copyImportedFilesToLibrary = false,
     required int? totalMediaEntriesHint,
     bool deferPostProcessing = false,
+    bool filterMediaExtensions = true,
     LibraryImportSourceKind? activitySourceKind,
   }) async {
     if (!skipImportSidecarWorkForTesting) {
@@ -4007,6 +4083,7 @@ class LibraryService extends ChangeNotifier {
         totalMediaEntriesHint: totalMediaEntriesHint,
         importLabel: importLabel,
         probeDurationDuringImport: !deferPostProcessing,
+        filterMediaExtensions: filterMediaExtensions,
       );
 
       final activityBatchId = accumulator.activityBatchId;
@@ -4083,8 +4160,13 @@ class LibraryService extends ChangeNotifier {
     required int? totalMediaEntriesHint,
     required String importLabel,
     required bool probeDurationDuringImport,
+    required bool filterMediaExtensions,
   }) async {
-    final entries = await _collectImportEntries(sourceDir, sortOptions);
+    final entries = await _collectImportEntries(
+      sourceDir,
+      sortOptions,
+      filterMediaExtensions: filterMediaExtensions,
+    );
     for (final entry in entries) {
       if (entry.isDirectory) {
         final childCollection = _createCollectionInMemory(
@@ -4105,6 +4187,7 @@ class LibraryService extends ChangeNotifier {
           totalMediaEntriesHint: totalMediaEntriesHint,
           importLabel: importLabel,
           probeDurationDuringImport: probeDurationDuringImport,
+          filterMediaExtensions: filterMediaExtensions,
         );
       } else {
         await _addStructuredMediaFile(
@@ -4169,13 +4252,21 @@ class LibraryService extends ChangeNotifier {
 
   Future<List<_FileSystemEntrySnapshot>> _collectImportEntries(
     Directory sourceDir,
-    StructuredImportSortOptions sortOptions,
-  ) async {
+    StructuredImportSortOptions sortOptions, {
+    required bool filterMediaExtensions,
+  }) async {
     final entries = <_FileSystemEntrySnapshot>[];
     await for (final entity in sourceDir.list(followLinks: false)) {
       if (entity is Directory) {
         entries.add(await _snapshotImportEntry(entity, true));
-      } else if (entity is File && isSupportedMediaPath(entity.path)) {
+      } else if (entity is File &&
+          // The archive recovery journal is app metadata, never imported media.
+          !(p.basename(entity.path) == _archiveImportMarkerName &&
+              p.isWithin(
+                p.join(_dataRootDir.path, _importedArchivesDirName),
+                entity.path,
+              )) &&
+          (!filterMediaExtensions || isSupportedMediaPath(entity.path))) {
         entries.add(await _snapshotImportEntry(entity, false));
       }
     }
@@ -6366,7 +6457,10 @@ class LibraryService extends ChangeNotifier {
 
     // Step 1: Visible Items
     final visibleItems = getContents(parentId);
-    if (oldIndex >= visibleItems.length || newIndex >= visibleItems.length) {
+    if (oldIndex < 0 ||
+        newIndex < 0 ||
+        oldIndex >= visibleItems.length ||
+        newIndex >= visibleItems.length) {
       return;
     }
 
@@ -6435,6 +6529,23 @@ class LibraryService extends ChangeNotifier {
 
     // 1. Get Visible Items
     final visibleItems = getContents(parentId);
+    if (draggedItemIndex < 0 ||
+        targetIndex < 0 ||
+        draggedItemIndex >= visibleItems.length ||
+        targetIndex >= visibleItems.length) {
+      return;
+    }
+    final selected = itemIds.toSet();
+    final movingIds = [
+      for (final item in visibleItems)
+        if (selected.contains((item as dynamic).id))
+          (item as dynamic).id as String,
+    ];
+    if (movingIds.isEmpty ||
+        !movingIds.contains((visibleItems[draggedItemIndex] as dynamic).id) ||
+        movingIds.contains((visibleItems[targetIndex] as dynamic).id)) {
+      return;
+    }
 
     // 2. Identify Target Insert Position
     // We use the same logic as single reorder:
@@ -6446,6 +6557,10 @@ class LibraryService extends ChangeNotifier {
       targetLookupIndex = targetIndex + 1;
     } else {
       targetLookupIndex = targetIndex;
+    }
+    while (targetLookupIndex < visibleItems.length &&
+        movingIds.contains((visibleItems[targetLookupIndex] as dynamic).id)) {
+      targetLookupIndex++;
     }
 
     String? insertBeforeId;
@@ -6476,12 +6591,12 @@ class LibraryService extends ChangeNotifier {
     // C should not be in itemIds.
 
     // Filter out itemIds from masterList
-    _markDownloadOrderManual(parentId, itemIds);
-    masterList.removeWhere((id) => itemIds.contains(id));
+    _markDownloadOrderManual(parentId, movingIds);
+    masterList.removeWhere((id) => movingIds.contains(id));
 
     // 4. Insert
     if (insertBeforeId == null) {
-      masterList.addAll(itemIds);
+      masterList.addAll(movingIds);
     } else {
       // Find where to insert
       // Note: insertBeforeId might have been removed if it was in itemIds?
@@ -6491,9 +6606,9 @@ class LibraryService extends ChangeNotifier {
       int insertIndex = masterList.indexOf(insertBeforeId);
       if (insertIndex == -1) {
         // Fallback: append
-        masterList.addAll(itemIds);
+        masterList.addAll(movingIds);
       } else {
-        masterList.insertAll(insertIndex, itemIds);
+        masterList.insertAll(insertIndex, movingIds);
       }
     }
 
@@ -6507,6 +6622,7 @@ class LibraryService extends ChangeNotifier {
     String? sidecarHintPath,
     bool allowFfmpegFallback = true,
   }) async {
+    if (!communityMediaIsLocal(videoPath)) return null;
     // Audio: extract embedded cover art (album art)
     if (_detectMediaType(videoPath) == MediaType.audio) {
       return await _extractAudioCoverArt(
@@ -6966,6 +7082,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<int> _probeMediaDurationMs(String mediaPath) async {
+    if (!communityMediaIsLocal(mediaPath)) return 0;
     final override = probeMediaDurationOverrideForTesting;
     if (override != null) {
       return override(mediaPath);
@@ -7623,6 +7740,8 @@ class LibraryService extends ChangeNotifier {
         name.contains('.ai.') ||
         name.contains('.manual.') ||
         name.contains('.translated.') ||
+        name.contains('.翻译.') ||
+        name.contains('.优化.') ||
         name.contains('.stream_') ||
         name.contains('.imported.') ||
         name.endsWith('_main${p.extension(name)}') ||
@@ -7644,14 +7763,14 @@ class LibraryService extends ChangeNotifier {
 
   ManagedSubtitleAssetKind _inferManagedSubtitleKind(String path) {
     final name = p.basename(path).toLowerCase();
-    if (name.contains('.translated.') || name.contains('.translation.')) {
+    if (name.contains('.translated.') || name.contains('.translation.') || name.contains('.翻译.')) {
       return ManagedSubtitleAssetKind.translated;
     }
     if (name.contains('.manual.')) return ManagedSubtitleAssetKind.manual;
     if (name.contains('.stream_')) return ManagedSubtitleAssetKind.embedded;
     if (name.contains('.download')) return ManagedSubtitleAssetKind.downloaded;
     if (name.contains('.imported.')) return ManagedSubtitleAssetKind.imported;
-    if (name.contains('.ai.') ||
+    if (name.contains('.ai.') || name.contains('.优化.') ||
         name == 'ai.srt' ||
         RegExp(r'^ai\.\d+\.srt$').hasMatch(name)) {
       return ManagedSubtitleAssetKind.ai;
@@ -7759,6 +7878,9 @@ class LibraryService extends ChangeNotifier {
     bool shareWithBilibiliPart = true,
     String? contentHash,
     String? sourceLabel,
+    bool machineGenerated = false,
+    bool generatedName = false,
+    void Function()? authorize,
     String? entryId,
     int? offsetMs,
   }) async {
@@ -7770,6 +7892,7 @@ class LibraryService extends ChangeNotifier {
         : null;
     final existing = managedSubtitleAssetForPath(videoId, path);
     if (existing != null) {
+      authorize?.call();
       if (wordTimingPath != existing.wordTimingPath) {
         item.managedSubtitleAssets = item.managedSubtitleAssets
             .map(
@@ -7808,19 +7931,21 @@ class LibraryService extends ChangeNotifier {
     if (!await subtitleFileBelongsToCard(videoId, path)) {
       throw StateError('只能登记当前媒体任务目录内的字幕');
     }
+    authorize?.call();
     final asset = ManagedSubtitleAsset(
       assetId: const Uuid().v4(),
       path: p.normalize(path),
       kind: kind,
-      displayName: displayName.trim().isEmpty
-          ? p.basename(path)
-          : displayName.trim(),
+      displayName: generatedName
+          ? uniqueGeneratedSubtitleName(displayName.trim(), item.managedSubtitleAssets.map((asset) => subtitleManuscriptDisplayName(item, asset)))
+          : displayName.trim().isEmpty ? p.basename(path) : displayName.trim(),
       sourceAssetId: sourceAssetId,
       language: language,
       wordTimingPath: wordTimingPath,
       createdAt: DateTime.now().millisecondsSinceEpoch,
       contentHash: contentHash,
       sourceLabel: sourceLabel,
+      machineGenerated: machineGenerated,
       entryId: entryId,
       offsetMs: offsetMs,
     );
@@ -7859,6 +7984,7 @@ class LibraryService extends ChangeNotifier {
     String? wordTimingPath,
     String? sourceAssetId,
     bool shareWithBilibiliPart = true,
+    bool generatedName = false,
   }) async {
     final item = _videos[videoId];
     if (item == null) return null;
@@ -7869,15 +7995,22 @@ class LibraryService extends ChangeNotifier {
         await File(SubtitleWordTimingStore.pathFor(path)).exists()
         ? SubtitleWordTimingStore.pathFor(path)
         : null;
-    final visible = subtitleDisplayLabel(
+    final requestedName = subtitleDisplayLabel(
       displayName.trim().isEmpty
           ? p.basenameWithoutExtension(path)
           : displayName,
     );
+    final visible = generatedName
+        ? uniqueGeneratedSubtitleName(requestedName, item.managedSubtitleAssets
+            .where((asset) => !_samePath(asset.path, path))
+            .map((asset) => subtitleManuscriptDisplayName(item, asset)))
+        : requestedName;
     final local = <String, String>{...?item.localSubtitles};
     // The map key has to be unique. The stored display name stays [visible],
     // so a second "中文" is not renamed to "中文（2）" in the app.
-    var key = visible;
+    var key = generatedName
+        ? local.entries.where((entry) => _samePath(entry.value, path)).firstOrNull?.key ?? visible
+        : visible;
     if (local.containsKey(key) && !_samePath(local[key]!, path)) {
       final baseName = p.basename(path);
       key = baseName;
@@ -8161,6 +8294,7 @@ class LibraryService extends ChangeNotifier {
     String? activityBatchId,
     LibraryImportSourceKind sourceKind = LibraryImportSourceKind.localFile,
   }) async {
+    _restoreCompletedLocalDownload(item);
     if (_collections[item.parentId]?.isPodcast == true &&
         item.sourceRef?.kind != MediaSourceKind.podcastEpisode) {
       throw const FormatException('请将普通媒体导入其他文件夹');
@@ -9787,7 +9921,8 @@ String _buildArchiveEntryOutputPath({
 /// 使用 listSync 同步遍历（Isolate 内同步不影响 UI），返回仅含原始计数的
 /// Map，避免跨 Isolate 传递复杂对象。由 [LibraryService.analyzeFolderSelection]
 /// 通过 compute() 调用。
-Map<String, dynamic> _analyzeFolderSelectionIsolate(String folderPath) {
+Map<String, dynamic> _analyzeFolderSelectionIsolate((String, bool) selection) {
+  final (folderPath, filterMediaExtensions) = selection;
   final rootDir = Directory(folderPath);
   var folderCount = 1;
   var mediaFileCount = 0;
@@ -9795,7 +9930,8 @@ Map<String, dynamic> _analyzeFolderSelectionIsolate(String folderPath) {
     if (entity is Directory) {
       folderCount++;
     } else if (entity is File &&
-        LibraryService.isSupportedMediaPath(entity.path)) {
+        (!filterMediaExtensions ||
+            LibraryService.isSupportedMediaPath(entity.path))) {
       mediaFileCount++;
     }
   }
@@ -9857,6 +9993,7 @@ Map<String, int> _extractArchiveToDiskWorker(Map<String, Object?> args) {
   return _extractArchiveToDiskWithParentsSync(
     archivePath: archivePath,
     outputPath: destDir,
+    filterMediaExtensions: args['filterMediaExtensions'] as bool? ?? true,
     maxEntryCount: args['maxEntryCount'] as int?,
     maxTotalBytes: args['maxTotalBytes'] as int?,
     maxSingleFileBytes: args['maxSingleFileBytes'] as int?,
@@ -9868,6 +10005,7 @@ Map<String, int> _extractArchiveToDiskWorker(Map<String, Object?> args) {
 Map<String, int> _extractArchiveToDiskWithParentsSync({
   required String archivePath,
   required String outputPath,
+  bool filterMediaExtensions = true,
   int? maxEntryCount,
   int? maxTotalBytes,
   int? maxSingleFileBytes,
@@ -9983,6 +10121,7 @@ Map<String, int> _extractArchiveToDiskWithParentsSync({
       }
 
       final isImportableFile =
+          !filterMediaExtensions ||
           LibraryService.isSupportedMediaPath(entry.name) ||
           SubtitleFileMatcher.supportedExtensions.contains(
             p.extension(entry.name).toLowerCase(),
@@ -10090,7 +10229,9 @@ Map<String, int> _extractArchiveToDiskWithParentsSync({
 
       // Keep media and supported sidecar subtitles. Other archive contents are
       // intentionally not inflated into the app-managed import directory.
-      final isMedia = LibraryService.isSupportedMediaPath(filePath);
+      final isMedia =
+          !filterMediaExtensions ||
+          LibraryService.isSupportedMediaPath(filePath);
       final isSubtitle = SubtitleFileMatcher.supportedExtensions.contains(
         p.extension(filePath).toLowerCase(),
       );

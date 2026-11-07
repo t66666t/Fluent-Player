@@ -263,7 +263,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
             leading: _managingTasks
                 ? DesktopButtonClickRegion(
                     child: IconButton(
-                      onPressed: _leaveTaskManagement,
+                      onPressed: AppHaptics.wrap(
+                        _leaveTaskManagement,
+                        light: true,
+                      ),
                       tooltip: _ptTooltip(
                         '退出管理',
                         PortableTransferShortcutAction.backOrExitManagement,
@@ -285,7 +288,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                   if (!_managingTasks) {
                     return DesktopButtonClickRegion(
                       child: IconButton(
-                        onPressed: _enterTaskManagement,
+                        onPressed: AppHaptics.wrap(
+                          _enterTaskManagement,
+                          light: true,
+                        ),
                         tooltip: _ptTooltip(
                           '批量管理',
                           PortableTransferShortcutAction.enterManagement,
@@ -302,7 +308,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                     children: [
                       DesktopButtonClickRegion(
                         child: IconButton(
-                          onPressed: () => _toggleSelectAll(manageable),
+                          onPressed: AppHaptics.wrap(
+                            () => _toggleSelectAll(manageable),
+                            light: true,
+                          ),
                           tooltip: _ptTooltip(
                             allSelected ? '取消全选' : '全选',
                             PortableTransferShortcutAction.selectAll,
@@ -316,9 +325,12 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                       ),
                       DesktopButtonClickRegion(
                         child: IconButton(
-                          onPressed: _selectedTaskIds.isEmpty
-                              ? null
-                              : _deleteSelectedTasks,
+                          onPressed: AppHaptics.wrap(
+                            _selectedTaskIds.isEmpty
+                                ? null
+                                : _deleteSelectedTasks,
+                            light: true,
+                          ),
                           tooltip: _ptTooltip(
                             '删除所选任务',
                             PortableTransferShortcutAction.deleteSelected,
@@ -449,11 +461,14 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                       false);
               if (!hasTasks || _managingTasks) return const SizedBox.shrink();
               return FloatingActionButton.extended(
-                onPressed: _picking
-                    ? null
-                    : (_tab == PortableTransferKind.export
-                          ? _startExport
-                          : _startImport),
+                onPressed: AppHaptics.wrap(
+                  _picking
+                      ? null
+                      : (_tab == PortableTransferKind.export
+                            ? _startExport
+                            : _startImport),
+                  light: true,
+                ),
                 icon: Icon(
                   _tab == PortableTransferKind.export
                       ? Icons.add_rounded
@@ -658,8 +673,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                 value: existingPaths.isNotEmpty && deleteFiles,
                 onChanged: existingPaths.isEmpty
                     ? null
-                    : (value) =>
-                          setDialogState(() => deleteFiles = value ?? true),
+                    : AppHaptics.wrapValue(
+                        (value) =>
+                            setDialogState(() => deleteFiles = value ?? true),
+                      ),
                 title: const Text('同时删除文件'),
                 subtitle: Text(
                   tasks.any((task) => task.kind == PortableTransferKind.import)
@@ -680,7 +697,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
           actions: [
             DesktopButtonClickRegion(
               child: TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(dialogContext),
+                  light: true,
+                ),
                 child: const Text('取消'),
               ),
             ),
@@ -689,9 +709,12 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFD9515D),
                 ),
-                onPressed: () => Navigator.pop(
-                  dialogContext,
-                  existingPaths.isNotEmpty && deleteFiles,
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(
+                    dialogContext,
+                    existingPaths.isNotEmpty && deleteFiles,
+                  ),
+                  light: true,
                 ),
                 child: const Text('删除'),
               ),
@@ -738,7 +761,10 @@ class _PortableTransferScreenState extends State<PortableTransferScreen> {
                 padding: const EdgeInsets.all(4),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(11),
-                  onTap: () => _switchTab(kind),
+                  onTap: () {
+                    AppHaptics.pulse();
+                    _switchTab(kind);
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOutCubic,
@@ -1264,13 +1290,19 @@ class _ImportPreviewDialogState extends State<_ImportPreviewDialog> {
           actions: [
             DesktopButtonClickRegion(
               child: TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(context, false),
+                  light: true,
+                ),
                 child: Text(shortcutHintLabel(context, '取消', 'Esc')),
               ),
             ),
             DesktopButtonClickRegion(
               child: FilledButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(context, true),
+                  light: true,
+                ),
                 child: Text(shortcutHintLabel(context, '开始导入', 'Enter')),
               ),
             ),
@@ -1408,13 +1440,19 @@ class _ArchiveImportPreviewDialogState
           actions: [
             DesktopButtonClickRegion(
               child: TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(context, false),
+                  light: true,
+                ),
                 child: Text(shortcutHintLabel(context, '取消', 'Esc')),
               ),
             ),
             DesktopButtonClickRegion(
               child: FilledButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: AppHaptics.wrap(
+                  () => Navigator.pop(context, true),
+                  light: true,
+                ),
                 child: Text(shortcutHintLabel(context, '开始导入', 'Enter')),
               ),
             ),
@@ -1500,7 +1538,7 @@ class _EmptyTransferState extends StatelessWidget {
             const SizedBox(height: 24),
             DesktopButtonClickRegion(
               child: FilledButton.icon(
-                onPressed: onPressed,
+                onPressed: AppHaptics.wrap(onPressed, light: true),
                 icon: Icon(
                   exporting ? Icons.add_rounded : Icons.file_open_outlined,
                 ),
@@ -1561,7 +1599,9 @@ class _TransferTaskCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(17),
-        onTap: selectionMode && !task.isActive ? onToggleSelection : null,
+        onTap: AppHaptics.wrap(
+          selectionMode && !task.isActive ? onToggleSelection : null,
+        ),
         onLongPress: task.isActive ? null : onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
@@ -1633,7 +1673,9 @@ class _TransferTaskCard extends StatelessWidget {
                       if (selectionMode && !task.isActive)
                         Checkbox(
                           value: selected,
-                          onChanged: (_) => onToggleSelection(),
+                          onChanged: AppHaptics.wrapValue(
+                            (_) => onToggleSelection(),
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(5),
                           ),
@@ -1643,7 +1685,7 @@ class _TransferTaskCard extends StatelessWidget {
                               task.progress < 0.4))
                         DesktopButtonClickRegion(
                           child: IconButton(
-                            onPressed: onCancel,
+                            onPressed: AppHaptics.wrap(onCancel, light: true),
                             tooltip: '取消',
                             icon: const Icon(Icons.close_rounded, size: 20),
                           ),
@@ -1663,7 +1705,10 @@ class _TransferTaskCard extends StatelessWidget {
                         Builder(
                           builder: (anchor) => DesktopButtonClickRegion(
                             child: IconButton(
-                              onPressed: () => onMore(anchor),
+                              onPressed: AppHaptics.wrap(
+                                () => onMore(anchor),
+                                light: true,
+                              ),
                               tooltip: '更多操作',
                               icon: const Icon(Icons.more_horiz_rounded),
                             ),
@@ -1693,7 +1738,10 @@ class _TransferTaskCard extends StatelessWidget {
                         if (isDesktop)
                           DesktopButtonClickRegion(
                             child: TextButton.icon(
-                              onPressed: onReveal,
+                              onPressed: AppHaptics.wrap(
+                                onReveal,
+                                light: true,
+                              ),
                               icon: const Icon(
                                 Icons.folder_open_outlined,
                                 size: 17,
@@ -1704,7 +1752,10 @@ class _TransferTaskCard extends StatelessWidget {
                         else
                           DesktopButtonClickRegion(
                             child: TextButton.icon(
-                              onPressed: onShare,
+                              onPressed: AppHaptics.wrap(
+                                onShare,
+                                light: true,
+                              ),
                               icon: const Icon(
                                 Icons.ios_share_rounded,
                                 size: 17,
@@ -1715,7 +1766,10 @@ class _TransferTaskCard extends StatelessWidget {
                         const Spacer(),
                         DesktopButtonClickRegion(
                           child: TextButton.icon(
-                            onPressed: onOpen,
+                            onPressed: AppHaptics.wrap(
+                              onOpen,
+                              light: true,
+                            ),
                             icon: const Icon(
                               Icons.open_in_new_rounded,
                               size: 17,
@@ -1763,7 +1817,7 @@ class _TaskManagementBar extends StatelessWidget {
           ),
           DesktopButtonClickRegion(
             child: FilledButton.icon(
-              onPressed: onDelete,
+              onPressed: AppHaptics.wrap(onDelete, light: true),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFD9515D),
                 disabledBackgroundColor: Colors.white10,

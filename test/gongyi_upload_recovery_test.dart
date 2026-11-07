@@ -137,7 +137,7 @@ void main() {
     return GongyiAsrService(dio: fixture.dio, uploadRetryDelays: const []);
   }
 
-  for (final type in ['', 'application/json']) {
+  for (final type in ['', 'application/octet-stream']) {
     test(
       'signature header mismatch is repaired without changing the route: "$type"',
       () async {
@@ -277,7 +277,7 @@ void main() {
         dio: dio,
       ).transcribeAudio(audio.path);
       expect(result.single.text, '网络正常');
-      expect(receivedTypes, ['application/octet-stream', null]);
+      expect(receivedTypes, ['application/json', null]);
       expect(authorizations, 1);
       expect(uploads, 2);
     },

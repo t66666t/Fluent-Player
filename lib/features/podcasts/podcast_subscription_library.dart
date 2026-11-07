@@ -92,7 +92,23 @@ class _PodcastSubscriptionLibraryState
     // a later gesture always replaces this snapshot before accepting a drop.
   }
 
-  void beginSelection() => setState(() => _selection.active = true);
+  void _restoreKeyboardCardAfterRebuild(bool restore) {
+    if (!restore) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.isActive && isMediaLibraryRouteCurrent(context)) {
+        MediaLibraryKeyboardRegion.focusInitialOf(context);
+      }
+    });
+  }
+
+  void beginSelection() {
+    final restore = MediaLibraryKeyboardItem.hasPrimaryFocus;
+    setState(() => _selection.active = true);
+    _restoreKeyboardCardAfterRebuild(restore);
+  }
+
+  void setKeyboardSelection(Set<String> ids) =>
+      setState(() => _selection.selectAll(ids));
 
   void selectAll({bool toggle = false}) {
     setState(() {
@@ -108,8 +124,10 @@ class _PodcastSubscriptionLibraryState
 
   bool handleBack() {
     if (_selection.active) {
+      final restore = MediaLibraryKeyboardItem.hasPrimaryFocus;
       _endGestures();
       setState(_selection.clear);
+      _restoreKeyboardCardAfterRebuild(restore);
       return true;
     }
     if (_folderId != null) {
@@ -700,6 +718,7 @@ class _PodcastSubscriptionLibraryState
                     },
                     child: _visibleIds.isEmpty
                         ? PodcastEmpty(
+                            bottomPadding: widget.bottomPadding,
                             title: _folderId == null ? '把喜欢的频道带进来' : '文件夹还是空的',
                             message: _folderId == null
                                 ? '搜索播客、粘贴订阅链接，或导入已有的 OPML 列表。'
@@ -783,6 +802,7 @@ class _PodcastSubscriptionLibraryState
                                               .entries(id, channels)
                                               .length,
                                           isSelected: selected,
+                                          isSelectionMode: _selection.active,
                                           onTap: () => _activate(id),
                                           onSecondaryTap: () =>
                                               _toggle(id, force: true),
@@ -916,6 +936,7 @@ class _PodcastSubscriptionFolderCard extends StatelessWidget {
     required this.titleScale,
     required this.count,
     required this.isSelected,
+    required this.isSelectionMode,
     required this.onTap,
     required this.onSecondaryTap,
   });
@@ -924,6 +945,7 @@ class _PodcastSubscriptionFolderCard extends StatelessWidget {
   final double titleScale;
   final int count;
   final bool isSelected;
+  final bool isSelectionMode;
   final VoidCallback onTap, onSecondaryTap;
 
   @override
@@ -937,6 +959,8 @@ class _PodcastSubscriptionFolderCard extends StatelessWidget {
         );
         return MediaLibraryGridCard(
           key: ValueKey('podcast-folder-${folder.id}'),
+          keyboardItemId: folder.id,
+          isSelectionMode: isSelectionMode,
           radius: MediaLibraryLayoutDefaults.cardCornerRadius(width),
           isSelected: isSelected,
           onTap: onTap,

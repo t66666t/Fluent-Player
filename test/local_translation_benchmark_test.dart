@@ -10,10 +10,11 @@ import 'package:video_player_app/features/model_center/local_subtitle_translator
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/features/model_center/model_center_service.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
+import 'support/prepared_local_models.dart';
 
 // Opt-in, uncached production-pipeline benchmark. Model weights stay outside
 // the test storage; only disposable checkpoints are written to that storage.
-class _BenchmarkCenter extends ModelCenterService {
+class _BenchmarkCenter extends ModelCenterService with PreparedLocalModels {
   _BenchmarkCenter(this.model, this.directory, {required super.storage});
   final ModelArtifact model;
   final Directory directory;

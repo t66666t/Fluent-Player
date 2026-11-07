@@ -110,37 +110,38 @@ void main() {
 
     Color? colorOf(String label) =>
         tester.widget<Text>(find.text(label)).style?.color;
-    final recent = colorOf('最近添加');
-    final bilibili = colorOf('哔哩哔哩');
+    final left = colorOf(MediaLibraryRootEntryOrder.defaults[2].label);
+    final right = colorOf(MediaLibraryRootEntryOrder.defaults[3].label);
     final start = colorOf('继续学习');
-    expect(recent, Color.lerp(AppTokens.text3, AppTokens.text1, 0.5));
-    expect(bilibili, recent);
+    expect(left, Color.lerp(AppTokens.text3, AppTokens.text1, 0.5));
+    expect(right, left);
     expect(start, Color.lerp(AppTokens.text3, AppTokens.text1, 0));
   });
 
-  testWidgets('default chip order puts folders between the activity pages', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          appBar: AppBar(
-            title: MediaLibraryEntrySwitcher(
-              selected: MediaLibraryRootEntry.folders,
-              availableEntries: MediaLibraryRootEntry.values.toSet(),
-              onSelected: (_) {},
+  testWidgets(
+    'default chip order starts with continue and folders and ends in recent',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(
+              title: MediaLibraryEntrySwitcher(
+                selected: MediaLibraryRootEntry.folders,
+                availableEntries: MediaLibraryRootEntry.values.toSet(),
+                onSelected: (_) {},
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    final continueX = tester.getTopLeft(find.text('继续学习')).dx;
-    final foldersX = tester.getTopLeft(find.text('文件夹')).dx;
-    final recentX = tester.getTopLeft(find.text('最近添加')).dx;
-    expect(continueX < foldersX, isTrue);
-    expect(foldersX < recentX, isTrue);
-  });
+      final continueX = tester.getTopLeft(find.text('继续学习')).dx;
+      final foldersX = tester.getTopLeft(find.text('文件夹')).dx;
+      final recentX = tester.getTopLeft(find.text('最近添加')).dx;
+      expect(continueX < foldersX, isTrue);
+      expect(foldersX < recentX, isTrue);
+    },
+  );
 
   testWidgets('swipe highlight does not shift chip positions', (tester) async {
     Future<List<double>> pumpHighlight(double highlight) async {
@@ -203,7 +204,8 @@ void main() {
       expect(tester.getSize(scrollable).width, 180);
       expect(
         tester.getTopLeft(find.text('继续学习')).dx,
-        tester.getTopLeft(switcher).dx,
+        tester.getTopLeft(switcher).dx + 4,
+        reason: 'the leading label leaves even space for its focus outline',
       );
       expect(find.byType(IconButton), findsNothing);
       final state = tester.state<ScrollableState>(scrollable);

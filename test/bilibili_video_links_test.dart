@@ -13,6 +13,7 @@ import 'package:video_player_app/services/bilibili/bilibili_offline_details.dart
 import 'package:video_player_app/services/bilibili/bilibili_public_api_service.dart';
 import 'package:video_player_app/services/bilibili/bilibili_video_detail_cache.dart';
 import 'package:video_player_app/services/bilibili/bilibili_video_links.dart';
+import 'package:video_player_app/services/app_web_navigation.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/utils/bilibili_url_parser.dart';
 import 'package:video_player_app/utils/app_toast.dart';
@@ -43,14 +44,12 @@ void main() {
     copied = <String>[];
     launch = (_) => true;
     copy = (_) {};
-    messenger.setMockMethodCallHandler(_launcherChannel, (call) async {
-      expect(call.method, 'launch', reason: 'do not gate on canLaunch');
-      final arguments = call.arguments as Map;
-      expect(arguments['useWebView'], isFalse);
-      expect(arguments['useSafariVC'], isFalse);
-      final uri = Uri.parse(arguments['url'] as String);
+    AppWebNavigation.rootOpenerForTesting = (uri, {title}) async {
       launched.add(uri);
       return await launch(uri);
+    };
+    messenger.setMockMethodCallHandler(_launcherChannel, (call) async {
+      fail('Content playback must not launch an external app');
     });
     messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
       if (call.method == 'Clipboard.setData') {
@@ -64,6 +63,7 @@ void main() {
 
   tearDown(() {
     messenger.setMockMethodCallHandler(_launcherChannel, null);
+    AppWebNavigation.rootOpenerForTesting = null;
     messenger.setMockMethodCallHandler(SystemChannels.platform, null);
     debugDefaultTargetPlatformOverride = null;
   });
@@ -137,16 +137,11 @@ void main() {
     TargetPlatform.macOS,
     TargetPlatform.linux,
   ]) {
-    final mobile =
-        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
-    test('$platform opens directly with the correct external URL', () async {
+    test('$platform opens the selected part inside this application', () async {
       debugDefaultTargetPlatformOverride = platform;
       final links = BilibiliVideoLinks.tryParse(_bvid, page: 2)!;
-      expect(
-        await links.open(),
-        mobile ? BilibiliVideoOpenResult.app : BilibiliVideoOpenResult.browser,
-      );
-      expect(launched, <Uri>[mobile ? links.app! : links.web]);
+      expect(await links.open(), BilibiliVideoOpenResult.app);
+      expect(launched, <Uri>[links.web]);
     });
 
     for (final profile in <({Size size, double scale})>[
@@ -164,7 +159,7 @@ void main() {
         await tester.pumpWidget(host(scale: profile.scale));
         await tester.pumpAndSettle();
         expect(find.text(_bvid), findsOneWidget);
-        expect(find.byTooltip(mobile ? '用哔哩哔哩打开' : '用浏览器打开'), findsOneWidget);
+        expect(find.byTooltip('在应用内打开官方播放器'), findsOneWidget);
         final bounds = tester.getRect(find.byType(BilibiliVideoLinkActions));
         for (final key in <Key>[_bvKey, _copyKey, _openKey]) {
           final rect = tester.getRect(find.byKey(key));
@@ -179,7 +174,7 @@ void main() {
         await tester.ensureVisible(find.byKey(_openKey));
         await tester.tap(find.byKey(_openKey));
         await tester.pumpAndSettle();
-        expect(launched.single.scheme, mobile ? 'bilibili' : 'https');
+        expect(launched.single.scheme, 'https');
         await finish(tester);
       });
     }
@@ -191,31 +186,30 @@ void main() {
   ]) {
     for (final throws in <bool>[false, true]) {
       test(
-        '$platform: app failure (throws=$throws) falls back to the same P',
+        '$platform: failed internal route never launches a fallback (throws=$throws)',
         () async {
           debugDefaultTargetPlatformOverride = platform;
-          launch = (uri) {
-            if (uri.scheme == 'https') return true;
-            if (throws) throw PlatformException(code: 'ACTIVITY_NOT_FOUND');
+          launch = (_) {
+            if (throws) throw PlatformException(code: 'ROUTE_UNAVAILABLE');
             return false;
           };
           final links = BilibiliVideoLinks.tryParse(_bvid, page: 7)!;
-          expect(await links.open(), BilibiliVideoOpenResult.browser);
-          expect(launched, <Uri>[links.app!, links.web]);
-          expect(launched.last.queryParameters['p'], '7');
+          expect(await links.open(), BilibiliVideoOpenResult.failed);
+          expect(launched, <Uri>[links.web]);
+          expect(launched.single.queryParameters['p'], '7');
         },
       );
     }
   }
 
-  test('both native and web launch failures are handled', () async {
+  test('internal route exceptions fail without an external fallback', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     launch = (_) => throw MissingPluginException();
     expect(
       await BilibiliVideoLinks.tryParse(_bvid)!.open(),
       BilibiliVideoOpenResult.failed,
     );
-    expect(launched, hasLength(2));
+    expect(launched, hasLength(1));
   });
 
   testWidgets('copy the public link and BV separately without launching', (
@@ -372,7 +366,7 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final detail = Completer<BilibiliVideoDetail>();
       final native = Completer<bool>();
-      launch = (uri) => uri.scheme == 'bilibili' ? native.future : true;
+      launch = (_) => native.future;
       await tester.pumpWidget(
         MaterialApp(
           navigatorKey: AppToast.navigatorKey,
@@ -414,9 +408,9 @@ void main() {
       );
       native.complete(false);
       await tester.pumpAndSettle();
-      expect(launched, hasLength(2));
-      expect(launched.last.queryParameters['p'], '3');
-      expect(find.text('未能唤起哔哩哔哩，已用浏览器打开'), findsOneWidget);
+      expect(launched, hasLength(1));
+      expect(launched.single.queryParameters['p'], '3');
+      expect(find.text('无法打开视频，请复制链接后手动打开'), findsOneWidget);
       await tester.tap(find.byKey(_copyKey));
       await tester.pumpAndSettle();
       expect(copied.single, endsWith('?p=3'));

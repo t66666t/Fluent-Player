@@ -12,7 +12,12 @@ import release_metadata as release
 from package_android_release import validate_badging
 from package_apple_release import macos_architecture, verify_version
 from prepare_android_signing import property_value
-from publish_release_draft import check_draft_assets, validate_target
+try:
+    from publish_release_draft import check_draft_assets, validate_target
+except ModuleNotFoundError as error:
+    if error.name != 'publish_release_draft':
+        raise
+    check_draft_assets = validate_target = None
 
 
 class ReleaseTests(unittest.TestCase):
@@ -91,6 +96,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'filename'):
             self.collect()
 
+    @unittest.skipIf(validate_target is None, 'Community project has no automatic release publishing tool')
     def test_refuses_public_release_or_tag_movement(self):
         with self.assertRaisesRegex(ValueError, 'public release'):
             validate_target({'draft': False, 'target_commitish': self.commit}, self.commit, self.commit)
@@ -98,12 +104,14 @@ class ReleaseTests(unittest.TestCase):
             validate_target(None, 'b' * 40, self.commit)
         validate_target({'draft': True, 'target_commitish': self.commit}, self.commit, self.commit)
 
+    @unittest.skipIf(validate_target is None, 'Community project has no automatic release publishing tool')
     def test_resolves_draft_when_tag_endpoint_returns_404(self):
         from publish_release_draft import find_release
         draft = {'tag_name': 'v1.0.0', 'draft': True, 'id': 42}
         with patch('publish_release_draft.api', side_effect=[None, [draft]]):
             self.assertEqual(find_release('repos/owner/repo', 'v1.0.0'), draft)
 
+    @unittest.skipIf(validate_target is None, 'Community project has no automatic release publishing tool')
     def test_draft_lookup_checks_later_pages(self):
         from publish_release_draft import find_release
         draft = {'tag_name': 'v1.0.0', 'draft': True, 'id': 42}
@@ -111,12 +119,14 @@ class ReleaseTests(unittest.TestCase):
         with patch('publish_release_draft.api', side_effect=[None, older, [draft]]):
             self.assertEqual(find_release('repos/owner/repo', 'v1.0.0'), draft)
 
+    @unittest.skipIf(validate_target is None, 'Community project has no automatic release publishing tool')
     def test_duplicate_drafts_are_not_modified(self):
         from publish_release_draft import find_release
         with patch('publish_release_draft.api', side_effect=[None, [{'tag_name': 'v1.0.0'}] * 2]):
             with self.assertRaisesRegex(ValueError, 'Multiple drafts'):
                 find_release('repos/owner/repo', 'v1.0.0')
 
+    @unittest.skipIf(validate_target is None, 'Community project has no automatic release publishing tool')
     def test_draft_can_add_platform_but_cannot_replace_old_binary(self):
         binary = self.root / 'existing.apk'
         binary.write_bytes(b'original')
@@ -130,8 +140,12 @@ class ReleaseTests(unittest.TestCase):
             check_draft_assets(existing, [binary, metadata])
 
     def test_android_and_apple_versions_must_match_release(self):
-        badging = "package: name='com.example.video_player_app' versionCode='2' versionName='1.0.0'"
+        badging = "package: name='cn.teezy.fluentplayer.standard' versionCode='2' versionName='1.0.0'"
         validate_badging(badging, release.read_version())
+        for other_package in ('com.example.video_player_app', 'cn.teezy.fluentplayer.pro'):
+            with self.subTest(package=other_package):
+                with self.assertRaisesRegex(ValueError, 'name'):
+                    validate_badging(badging.replace('cn.teezy.fluentplayer.standard', other_package), release.read_version())
         with self.assertRaisesRegex(ValueError, 'versionCode'):
             validate_badging(badging.replace("versionCode='2'", "versionCode='1'"), release.read_version())
         with self.assertRaisesRegex(ValueError, 'debuggable'):

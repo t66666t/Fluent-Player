@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/folder_placeholder_style.dart';
 import '../models/video_collection.dart';
+import '../services/app_haptics.dart';
 import '../services/settings_service.dart';
 import '../theme/app_tokens.dart';
 import 'adaptive_settings_dialog.dart';
@@ -250,7 +251,10 @@ class FolderPlaceholderStyleDialogBody extends StatelessWidget {
         actions: [
           DesktopButtonClickRegion(
             child: TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: AppHaptics.wrap(
+                () => Navigator.of(context).pop(),
+                light: true,
+              ),
               child: const Text('完成'),
             ),
           ),
@@ -536,8 +540,10 @@ class _ControlsColumn extends StatelessWidget {
             ),
           ),
           value: current.showCoverText,
-          onChanged: (value) => settings.updateFolderPlaceholderSettings(
-            current.copyWith(showCoverText: value),
+          onChanged: AppHaptics.wrapValue(
+            (value) => settings.updateFolderPlaceholderSettings(
+              current.copyWith(showCoverText: value),
+            ),
           ),
         ),
         if (current.showCoverText) ...[
@@ -556,8 +562,10 @@ class _ControlsColumn extends StatelessWidget {
                   key: ValueKey<String>('folder-placeholder-max-text-$count'),
                   label: Text('$count 字'),
                   selected: current.maxCoverTextLength == count,
-                  onSelected: (_) => settings.updateFolderPlaceholderSettings(
-                    current.copyWith(maxCoverTextLength: count),
+                  onSelected: AppHaptics.wrapValue(
+                    (_) => settings.updateFolderPlaceholderSettings(
+                      current.copyWith(maxCoverTextLength: count),
+                    ),
                   ),
                   selectedColor: Colors.blueAccent.withValues(alpha: 0.28),
                   backgroundColor: const Color(0xFF2A2A2A),
@@ -594,8 +602,10 @@ class _ControlsColumn extends StatelessWidget {
                 key: ValueKey<String>('folder-placeholder-color-${style.name}'),
                 label: Text(folderPlaceholderColorStyleLabel(style)),
                 selected: current.colorStyle == style,
-                onSelected: (_) => settings.updateFolderPlaceholderSettings(
-                  current.copyWith(colorStyle: style),
+                onSelected: AppHaptics.wrapValue(
+                  (_) => settings.updateFolderPlaceholderSettings(
+                    current.copyWith(colorStyle: style),
+                  ),
                 ),
                 selectedColor: Colors.blueAccent.withValues(alpha: 0.28),
                 backgroundColor: const Color(0xFF2A2A2A),
@@ -622,8 +632,11 @@ class _ControlsColumn extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: DesktopButtonClickRegion(
             child: TextButton(
-              onPressed: () => settings.updateFolderPlaceholderSettings(
-                current.resetCurrentPaintDefaults(),
+              onPressed: AppHaptics.wrap(
+                () => settings.updateFolderPlaceholderSettings(
+                  current.resetCurrentPaintDefaults(),
+                ),
+                light: true,
               ),
               child: const Text('恢复此画法默认'),
             ),
@@ -834,7 +847,10 @@ class _PaintStyleTile extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: AppHaptics.wrap(
+          onTap,
+          light: true,
+        ),
         child: Padding(
           padding: EdgeInsets.fromLTRB(
             compact ? 5 : 6,
@@ -932,7 +948,7 @@ class _LivePreviewGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isListMode = settings.mediaLibraryViewMode == 1;
+    final isListMode = settings.mediaLibraryUsesRowPipeline;
     return KeyedSubtree(
       key: FolderPlaceholderStyleDialog.previewGridKey,
       child: isListMode
@@ -1098,14 +1114,10 @@ class _ListPreviewGrid extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final listStyle = settings.listStyleFor(size);
     // Full-screen list cells, then the 3×2 crop is scaled as one piece.
-    final metrics = MediaListLayoutMetrics.forGrid(
+    final metrics = MediaListLayoutMetrics.forStyle(
+      style: listStyle,
       screenShortestSide: size.shortestSide,
       availableWidth: size.width,
-      crossAxisCount: listStyle.crossAxisCount,
-      heightSetting: listStyle.heightScale,
-      titleSetting: listStyle.titleScale,
-      mainSpacingSetting: listStyle.mainSpacingScale,
-      crossSpacingSetting: listStyle.crossSpacingScale,
     );
     return _UniformScaledSampleGrid(
       itemWidth: metrics.cellWidth,
@@ -1128,6 +1140,7 @@ class _ListPreviewGrid extends StatelessWidget {
             isSelected: false,
             isSelectionMode: false,
             titleScale: listStyle.titleScale,
+            style: listStyle,
             onTap: () {},
           ),
         );
@@ -1202,6 +1215,8 @@ class _ScaleSlider extends StatelessWidget {
             value: slider,
             min: FolderPlaceholderSliderCurve.sliderMin,
             max: FolderPlaceholderSliderCurve.sliderMax,
+            onChangeStart: (_) => AppHaptics.pulse(),
+            onChangeEnd: (_) => AppHaptics.pulse(),
             onChanged: (next) => onChanged(spec.fromSlider(next)),
           ),
         ),

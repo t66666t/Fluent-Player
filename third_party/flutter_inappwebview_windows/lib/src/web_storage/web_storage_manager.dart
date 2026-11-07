@@ -64,7 +64,8 @@ class WindowsWebStorageManager extends PlatformWebStorageManager
     List<WebsiteDataRecord> recordList = [];
     List<String> dataTypesList = [];
     for (var dataType in dataTypes) {
-      dataTypesList.add(dataType.toNativeValue());
+      final value = dataType.toNativeValue();
+      if (value != null) dataTypesList.add(value);
     }
     Map<String, dynamic> args = <String, dynamic>{};
     args.putIfAbsent("dataTypes", () => dataTypesList);
@@ -93,7 +94,8 @@ class WindowsWebStorageManager extends PlatformWebStorageManager
       required List<WebsiteDataRecord> dataRecords}) async {
     List<String> dataTypesList = [];
     for (var dataType in dataTypes) {
-      dataTypesList.add(dataType.toNativeValue());
+      final value = dataType.toNativeValue();
+      if (value != null) dataTypesList.add(value);
     }
 
     List<Map<String, dynamic>> recordList = [];
@@ -112,7 +114,8 @@ class WindowsWebStorageManager extends PlatformWebStorageManager
       {required Set<WebsiteDataType> dataTypes, required DateTime date}) async {
     List<String> dataTypesList = [];
     for (var dataType in dataTypes) {
-      dataTypesList.add(dataType.toNativeValue());
+      final value = dataType.toNativeValue();
+      if (value != null) dataTypesList.add(value);
     }
 
     var timestamp = date.millisecondsSinceEpoch;

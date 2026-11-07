@@ -31,13 +31,13 @@ class QuietEmptyAction extends StatelessWidget {
     final face =
         textStyle ??
         const TextStyle(
-          fontFamily: 'MiSans',
-          fontFamilyFallback: ['Noto Sans SC'],
+          fontFamily: 'Noto Sans SC',
+          fontFamilyFallback: ['Noto Sans CJK Fallback'],
           fontWeight: FontWeight.w500,
           fontSize: 13,
           height: 20 / 13,
         );
-    // MiSans' ink sits below its line-box center. Correct the label optically
+    // Noto's ink sits below its line-box center. Correct the label optically
     // without shifting the glass, icon, layout bounds, or native hit target.
     final labelText = Transform.translate(
       offset: const Offset(0, -2),

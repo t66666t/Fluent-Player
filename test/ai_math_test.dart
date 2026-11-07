@@ -686,7 +686,7 @@ void main() {
     await mount(tester, r'\[P_{\text{结果}}=\frac{\text{成功次数}}{\text{总次数}}\]');
     final labels = tester
         .widgetList<RichText>(find.byType(RichText))
-        .where((text) => text.text.style?.fontFamily == 'MiSans');
+        .where((text) => text.text.style?.fontFamily == 'Noto Sans SC');
     expect(labels.length, greaterThan(4));
     expect(tester.takeException(), isNull);
     expect(find.text('公式暂无法排版，已保留原文'), findsNothing);
@@ -715,8 +715,8 @@ void main() {
           ..addFont(Future.value(data));
         await font.load();
       }
-      final regular = FontLoader('MiSans')
-        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+      final regular = FontLoader('Noto Sans SC')
+        ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
       await regular.load();
       final icons = FontLoader('MaterialIcons')
         ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
@@ -734,7 +734,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(brightness: Brightness.dark, fontFamily: 'MiSans'),
+        theme: ThemeData(brightness: Brightness.dark, fontFamily: 'Noto Sans SC'),
         home: Scaffold(
           body: RepaintBoundary(
             key: capture,
@@ -800,7 +800,7 @@ F(x)=\frac{x^2+1}{2}+\frac{x^3+2}{3}+\int_0^x t^2\,dt+\frac{x^4+3}{4}+x^5+x^6
       await tester.binding.setSurfaceSize(Size(width, 820));
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData(brightness: Brightness.dark, fontFamily: 'MiSans'),
+          theme: ThemeData(brightness: Brightness.dark, fontFamily: 'Noto Sans SC'),
           home: Scaffold(
             body: RepaintBoundary(
               key: capture,

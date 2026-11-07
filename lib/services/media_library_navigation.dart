@@ -68,21 +68,20 @@ class MediaLibraryNavigation {
   static MediaLibraryRootEntry firstRunDefault({
     required bool hasExistingLibraryContent,
   }) {
-    // New install: land on 最近添加. Existing libraries keep 文件夹 on first
-    // upgrade so the previous browsing surface is unchanged.
-    return hasExistingLibraryContent
-        ? MediaLibraryRootEntry.folders
-        : MediaLibraryRootEntry.recent;
+    return foldersFallback;
   }
 
   static MediaLibraryRootEntry displayedEntry({
     required MediaLibraryRootEntry preferred,
     required Set<MediaLibraryRootEntry> availableEntries,
   }) {
+    if (!preferred.isAvailable) {
+      return foldersFallback;
+    }
     if (availableEntries.contains(preferred)) return preferred;
     if (availableEntries.contains(foldersFallback)) return foldersFallback;
-    if (availableEntries.isEmpty) return foldersFallback;
-    return availableEntries.first;
+    return availableEntries.where((entry) => entry.isAvailable).firstOrNull ??
+        foldersFallback;
   }
 
   /// Walk recycled/missing folders toward the nearest living ancestor.
@@ -112,15 +111,16 @@ class MediaLibraryNavigation {
     required bool returnToSearchResults,
     required bool Function(String id) isActiveFolder,
     required String? Function(String id) parentIdOf,
-    bool restoreLastPage = true,
+    bool restoreLastPage = false,
     String startupEntry = '',
   }) {
     final locateHome = revealItemId != null || returnToSearchResults;
-    final parsedStored = MediaLibraryRootEntryX.tryParse(storedEntry);
+    final stored = MediaLibraryRootEntryX.tryParse(storedEntry);
+    final parsedStored = stored?.isAvailable == true ? stored : null;
     final MediaLibraryRootEntry preferred;
     if (!restoreLastPage) {
-      preferred =
-          MediaLibraryRootEntryX.tryParse(startupEntry) ?? foldersFallback;
+      final startup = MediaLibraryRootEntryX.tryParse(startupEntry);
+      preferred = startup?.isAvailable == true ? startup! : foldersFallback;
     } else if (userChosen && parsedStored != null) {
       preferred = parsedStored;
     } else if (parsedStored != null && libraryInitialized) {

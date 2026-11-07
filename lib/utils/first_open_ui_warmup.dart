@@ -276,11 +276,11 @@ class _WarmupAlertDialog extends StatelessWidget {
           ),
           title: const Text(
             '重命名',
-            style: TextStyle(color: Colors.white, fontFamily: 'MiSans'),
+            style: TextStyle(color: Colors.white, fontFamily: 'Noto Sans SC'),
           ),
           content: const Text(
             '输入新名称 睡眠定时 搜索媒体库',
-            style: TextStyle(color: Colors.white70, fontFamily: 'MiSans'),
+            style: TextStyle(color: Colors.white70, fontFamily: 'Noto Sans SC'),
           ),
           actions: const <Widget>[
             DesktopButtonClickRegion(
@@ -393,7 +393,7 @@ class _WarmupBottomSheet extends StatelessWidget {
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontFamily: 'MiSans',
+                      fontFamily: 'Noto Sans SC',
                     ),
                   ),
                 ],
@@ -565,7 +565,7 @@ class _WarmupControls extends StatelessWidget {
   }
 }
 
-enum _FirstOpenWarmupPhase { primitives, fontsMiSans, fontsNoto, fontsInter }
+enum _FirstOpenWarmupPhase { primitives, fontsNoto, fontsInter }
 
 /// Canvas-level warmup so Skia/Impeller compile draw ops even if widget
 /// capture is skipped on a given platform.
@@ -582,17 +582,6 @@ class _FirstOpenShaderWarmUp extends ShaderWarmUp {
     switch (phase) {
       case _FirstOpenWarmupPhase.primitives:
         _drawPrimitives(canvas);
-      case _FirstOpenWarmupPhase.fontsMiSans:
-        _drawFont(
-          canvas,
-          family: 'MiSans',
-          weights: <FontWeight>[
-            FontWeight.w300,
-            FontWeight.w400,
-            FontWeight.w500,
-            FontWeight.w600,
-          ],
-        );
       case _FirstOpenWarmupPhase.fontsNoto:
         _drawFont(
           canvas,
@@ -601,6 +590,7 @@ class _FirstOpenShaderWarmUp extends ShaderWarmUp {
             FontWeight.w300,
             FontWeight.w400,
             FontWeight.w500,
+            FontWeight.w600,
             FontWeight.w700,
           ],
         );

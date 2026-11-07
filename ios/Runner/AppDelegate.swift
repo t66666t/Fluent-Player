@@ -148,7 +148,7 @@ private final class ModelResourceBridge: NSObject, FlutterStreamHandler {
       GeneratedPluginRegistrant.register(with: registry)
     }
     WorkmanagerPlugin.registerPeriodicTask(
-      withIdentifier: "com.example.video_player_app.podcasts.refresh",
+      withIdentifier: (Bundle.main.bundleIdentifier ?? "cn.teezy.fluentplayer.standard") + ".podcasts.refresh",
       earliestBeginInSeconds: NSNumber(value: 15 * 60)
     )
     UNUserNotificationCenter.current().delegate = self

@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'subtitle_font_settings_page.dart';
 import '../services/subtitle_debug_session.dart';
 import 'subtitle_debug_panel.dart';
@@ -169,7 +170,10 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([
       SubtitleDebugSession.instance,
       SettingsService().defaultSettingsTrial,
@@ -184,7 +188,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
     final presetSession = SubtitleDebugSession.instance;
     if (presetSession.catalogVisible) {
       return Material(
-        color: const Color(0xFF1E1E1E),
+        color: AppSettingsTheme.background,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final chrome = SubtitlePresetChrome.of(constraints);
@@ -301,7 +305,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
     final double titleFontSize = isSmallScreen ? 11 : 12;
 
     return Material(
-      color: const Color(0xFF1E1E1E), // 深色背景
+      color: AppSettingsTheme.background, // 深色背景
       child: Column(
         children: [
           // Header
@@ -420,7 +424,6 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                                 value: syncAudioSubtitleStyleWithVideo,
                                 onChanged:
                                     onSyncAudioSubtitleStyleWithVideoChanged,
-                                activeThumbColor: Colors.blueAccent,
                               ),
                             ),
                           ],
@@ -469,12 +472,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   ),
                 if (SubtitleDebugSession.instance.preset == null) ...[
                   // Ordinary layout settings are shared by both orientations.
-                  _buildSectionTitle(
-                    context,
-                    "大小与间距",
-                    Icons.format_size,
-                    color: Colors.orangeAccent,
-                  ),
+                  _buildSectionTitle(context, "大小与间距"),
                   Text(
                     isGhostMode
                         ? '幽灵大小 · 自动保持易读，换视频或调整边栏不变'
@@ -615,12 +613,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   const Divider(color: Colors.white10, height: 24),
 
                   // 2. Text Style Settings - 同步到横竖屏
-                  _buildSectionTitle(
-                    context,
-                    "文字样式",
-                    Icons.text_fields,
-                    color: Colors.greenAccent,
-                  ),
+                  _buildSectionTitle(context, "文字样式"),
 
                   ListTile(
                     key: const ValueKey('subtitle-font-settings'),
@@ -643,7 +636,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   const SizedBox(height: 8),
 
                   // 3. Font Style
-                  _buildSectionTitle(context, "样式", Icons.format_paint),
+                  _buildSectionTitle(context, "样式"),
                   Row(
                     children: [
                       _buildStyleToggle(
@@ -670,7 +663,7 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   const SizedBox(height: 16),
 
                   // 4. Text Color
-                  _buildSectionTitle(context, "文本颜色", Icons.color_lens),
+                  _buildSectionTitle(context, "文本颜色"),
                   _buildColorPicker(
                     context,
                     storageId: 'text',
@@ -911,35 +904,10 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
     );
   }
 
-  Widget _buildSectionTitle(
-    BuildContext context,
-    String text,
-    IconData icon, {
-    Color? color,
-  }) {
-    final isSmallScreen = _useCompactLayout(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: isSmallScreen ? 12 : 14,
-            color: (color ?? Colors.blueAccent).withValues(alpha: 0.8),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: color ?? Colors.white70,
-              fontSize: isSmallScreen ? 11 : 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildSectionTitle(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(text, style: AppSettingsTheme.heading),
+  );
 
   Widget _buildSlider(
     BuildContext context, {
@@ -1101,7 +1069,6 @@ class SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                 child: Switch(
                   value: value,
                   onChanged: onChanged,
-                  activeThumbColor: Colors.blueAccent,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),

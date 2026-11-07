@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:video_player_app/features/model_center/model_catalog.dart';
+import 'package:video_player_app/features/model_center/model_center_service.dart';
 import 'package:video_player_app/models/transcription_status.dart';
 import 'package:video_player_app/models/subtitle_output_path_strategy.dart';
 import 'package:video_player_app/services/gongyi_asr_service.dart';
@@ -16,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   for (final action in ['retry', 'start', 'all', 'persistedRetry', 'resume']) {
     test(
-      '$action resets failed remote IDs but preserves subtitle pieces',
+      '$action preserves remote IDs and completed subtitle pieces',
       () async {
         final root = await Directory.systemTemp.createTemp('retry-remote-');
         final oldPaths = PathProviderPlatform.instance;
@@ -60,7 +61,9 @@ void main() {
         );
         final file = File('${root.path}/transcription_slice_checkpoints.json');
         await file.writeAsString(book.encode());
-        final manager = TranscriptionManager();
+        final center = _CheckpointInspectionCenter();
+        addTearDown(center.dispose);
+        final manager = TranscriptionManager(modelCenter: center);
         await manager.initialize();
         addTearDown(manager.dispose);
         if (action == 'retry') {
@@ -75,15 +78,16 @@ void main() {
         }
         expect(manager.isQueueRunning, false);
         await manager.shutdown();
+        expect(center.captured, isTrue);
         final saved = TranscriptionCheckpointBook.decode(
           await file.readAsString(),
         ).tasks.values.single;
         expect(saved.pieces.single.lengthMs, 1000);
         expect(saved.remoteTasks.values.single.normalizeAudio, true);
-        expect(
-          saved.remoteTasks.values.single.taskId,
-          action == 'resume' ? 'stuck-task' : null,
-        );
+        expect(saved.remoteTasks.values.single.taskId, 'stuck-task');
+        expect(saved.remoteTasks.values.single.lastQueryFailure, {
+          'httpStatus': 500,
+        });
       },
     );
   }
@@ -150,174 +154,51 @@ void main() {
   );
 
   test(
-    'ASR streams chunks and recovers from commit code 139201 with alternate ETags',
+    'public ASR resumes a local-media checkpoint without preparing audio',
     () async {
-      final root = await Directory.systemTemp.createTemp('asr_stream_upload_');
-      addTearDown(() async {
-        if (await root.exists()) await root.delete(recursive: true);
-      });
-      final audio = File('${root.path}${Platform.pathSeparator}audio.m4a');
-      await audio.writeAsBytes(List<int>.generate(16, (index) => index));
-
       final dio = Dio();
-      Uint8List? uploadedChunk;
-      final committedEtags = <Object?>[];
+      var requests = 0, prepared = 0;
       dio.interceptors.add(
         InterceptorsWrapper(
           onRequest: (options, handler) {
-            Object data;
-            var headers = Headers();
-            if (options.method == 'PUT') {
-              uploadedChunk = options.data as Uint8List;
-              data = <String, Object?>{};
-              headers = Headers.fromMap({
-                'etag': ['"test-etag"'],
-              });
-            } else if (options.path.endsWith('/resource/create/complete')) {
-              final requestData = options.data as Map<String, dynamic>;
-              committedEtags.add(requestData['Etags']);
-              data = committedEtags.length == 1
-                  ? {'code': 139201, 'message': '第三方服务异常'}
-                  : {
-                      'code': 0,
-                      'data': {'download_url': 'https://upload.test/audio'},
-                    };
-            } else if (options.path.endsWith('/resource/create')) {
-              data = {
-                'code': 0,
-                'data': {
-                  'upload_urls': ['https://upload.test/part'],
-                  'per_size': 16,
-                  'in_boss_key': 'boss',
-                  'resource_id': 'resource',
-                  'upload_id': 'upload',
-                },
-              };
-            } else if (options.path.endsWith('/task/result')) {
-              data = {
-                'data': {
-                  'state': 4,
-                  'result': jsonEncode({
-                    'utterances': [
-                      {'start_time': 0, 'end_time': 1000, 'transcript': 'ok'},
-                    ],
-                  }),
-                },
-              };
-            } else {
-              data = {
-                'code': 0,
-                'data': {'task_id': 'task'},
-              };
-            }
+            requests++;
+            expect(options.path, endsWith('/task/result'));
+            expect(options.queryParameters['task_id'], 'persisted-server-task');
             handler.resolve(
-              Response<Object>(
+              Response(
                 requestOptions: options,
-                data: data,
-                headers: headers,
                 statusCode: 200,
+                data: {
+                  'code': 0,
+                  'data': {
+                    'state': 4,
+                    'result': {
+                      'utterances': [
+                        {'start_time': 0, 'end_time': 1000, 'transcript': '完成'},
+                      ],
+                    },
+                  },
+                },
               ),
             );
           },
         ),
       );
-
-      final subtitles = await GongyiAsrService(
-        dio: dio,
-      ).transcribeAudio(audio.path);
-      expect(uploadedChunk, orderedEquals(List<int>.generate(16, (i) => i)));
-      expect(committedEtags, ['test-etag', '["test-etag"]']);
-      expect(subtitles.single.text, 'ok');
-    },
-  );
-
-  test(
-    'a dropped result query is retried without uploading the audio again',
-    () async {
-      final root = await Directory.systemTemp.createTemp('asr_poll_retry_');
-      addTearDown(() async {
-        if (await root.exists()) await root.delete(recursive: true);
-      });
-      final audio = File('${root.path}${Platform.pathSeparator}audio.m4a');
-      await audio.writeAsBytes(const [1, 2, 3, 4]);
-
-      final dio = Dio();
-      var resultQueries = 0;
-      var taskCreates = 0;
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            Object data = {
-              'code': 0,
-              'data': {'task_id': 'task'},
-            };
-            var headers = Headers();
-            if (options.method == 'PUT') {
-              data = <String, Object?>{};
-              headers = Headers.fromMap({
-                'etag': ['"etag"'],
-              });
-            } else if (options.path.endsWith('/resource/create/complete')) {
-              data = {
-                'code': 0,
-                'data': {'download_url': 'https://upload.test/audio'},
-              };
-            } else if (options.path.endsWith('/resource/create')) {
-              data = {
-                'code': 0,
-                'data': {
-                  'upload_urls': ['https://upload.test/part'],
-                  'per_size': 4,
-                  'in_boss_key': 'boss',
-                  'resource_id': 'resource',
-                  'upload_id': 'upload',
-                },
-              };
-            } else if (options.path.endsWith('/task/result')) {
-              resultQueries++;
-              if (resultQueries == 1) {
-                handler.reject(
-                  DioException(
-                    requestOptions: options,
-                    type: DioExceptionType.connectionError,
-                    error: const SocketException('blip'),
-                  ),
-                );
-                return;
-              }
-              data = {
-                'code': 0,
-                'data': {
-                  'state': 4,
-                  'result': jsonEncode({
-                    'utterances': [
-                      {'start_time': 0, 'end_time': 500, 'transcript': '继续'},
-                      {'start_time': null, 'transcript': '坏数据'},
-                    ],
-                  }),
-                },
-              };
-            } else if (options.path.endsWith('/task')) {
-              taskCreates++;
-            }
-            handler.resolve(
-              Response<Object>(
-                requestOptions: options,
-                data: data,
-                headers: headers,
-                statusCode: 200,
-              ),
-            );
+      try {
+        final result = await GongyiAsrService(dio: dio).transcribeAudio(
+          'owned.m4a',
+          checkpoint: GongyiAsrTaskCheckpoint(taskId: 'persisted-server-task'),
+          prepareAudio: () async {
+            prepared++;
+            return 'owned.m4a';
           },
-        ),
-      );
-
-      final subtitles = await GongyiAsrService(
-        dio: dio,
-      ).transcribeAudio(audio.path);
-      expect(taskCreates, 1);
-      expect(resultQueries, 2);
-      expect(subtitles.single.text, '继续');
+        );
+        expect(result.single.text, '完成');
+        expect(requests, 1);
+        expect(prepared, 0);
+      } finally {
+        dio.close(force: true);
+      }
     },
   );
 
@@ -364,26 +245,19 @@ void main() {
     },
   );
 
-  test(
-    'ASR exits immediately when cancellation was already requested',
-    () async {
-      final cancelToken = CancelToken()..cancel('test cancellation');
+  test('public ASR exits before upload when already cancelled', () async {
+    final cancelToken = CancelToken()..cancel('test cancellation');
 
-      await expectLater(
-        GongyiAsrService().transcribeAudio(
-          r'D:\does-not-need-to-exist.m4a',
-          cancelToken: cancelToken,
-        ),
-        throwsA(
-          isA<DioException>().having(
-            (error) => CancelToken.isCancel(error),
-            'is cancellation',
-            isTrue,
-          ),
-        ),
-      );
-    },
-  );
+    await expectLater(
+      GongyiAsrService().transcribeAudio(
+        r'D:\does-not-need-to-exist.m4a',
+        cancelToken: cancelToken,
+      ),
+      throwsA(
+        isA<DioException>().having(CancelToken.isCancel, 'cancelled', true),
+      ),
+    );
+  });
 
   test(
     'pausing individual running and waiting tasks leaves others scheduled',
@@ -756,6 +630,18 @@ void main() {
       restoredManager.dispose();
     },
   );
+}
+
+class _CheckpointInspectionCenter extends ModelCenterService {
+  bool captured = false;
+
+  @override
+  Future<ModelJobSpec> captureTranscription() async {
+    captured = true;
+    throw StateError(
+      'Stop after checkpoint recovery, before media or network work',
+    );
+  }
 }
 
 class _FakePathProvider extends PathProviderPlatform {

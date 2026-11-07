@@ -6,10 +6,12 @@ import '../features/model_center/model_transcription.dart';
 import '../features/model_center/asr_enhancement_processing.dart';
 import '../models/subtitle_model.dart';
 import '../models/subtitle_punctuation.dart';
+import '../models/transcription_progress.dart';
 import 'ai_subtitle_api_settings.dart';
 import 'streaming_subtitle_store.dart';
 import 'subtitle_translate_settings.dart';
 import 'subtitle_translation_service.dart';
+import 'subtitle_optimization.dart';
 
 typedef _PreparedSubtitleCommit = ({
   Future<void> Function()? commit,
@@ -17,7 +19,14 @@ typedef _PreparedSubtitleCommit = ({
   StackTrace? stack,
 });
 
-/// Ordered publication, with at most two network-translation blocks in flight.
+typedef _OptimizedSubtitleBatch = ({
+  StableAsrBatch? batch,
+  Object? error,
+  StackTrace? stack,
+});
+
+/// Ordered publication, with at most two subtitle blocks in flight. When both
+/// stages are enabled, optimization runs ahead of ordered translation/commit.
 /// Local translation borrows ASR's reservation; its runner bounds text batches
 /// and drains native stages before changing model residency.
 class LocalTranscriptionStream {
@@ -32,6 +41,12 @@ class LocalTranscriptionStream {
     required this.onActivity,
     required this.onFailure,
     this.endpoint,
+    this.optimization = const SubtitleOptimizationChoice.off(),
+    this.optimizationEndpoint,
+    this.optimizer,
+    this.onOptimizing,
+    this.onOptimizationProgress,
+    this.sourceTotal,
     this.recognitionLanguage = 'auto',
     this.punctuation = SubtitlePunctuation.preserve,
   });
@@ -40,6 +55,12 @@ class LocalTranscriptionStream {
   final ModelCenterService center;
   final SubtitleTranslationService translator;
   final AiSubtitleApiSettings? endpoint;
+  final SubtitleOptimizationChoice optimization;
+  final AiSubtitleApiSettings? optimizationEndpoint;
+  final SubtitleOptimizer? optimizer;
+  final void Function()? onOptimizing;
+  final void Function(SubtitleOptimizationProgress)? onOptimizationProgress;
+  final int? sourceTotal;
   final String recognitionLanguage;
   final SubtitlePunctuation punctuation;
   final Future<void> cancelSignal;
@@ -56,26 +77,59 @@ class LocalTranscriptionStream {
   bool get hasLocalModel => _localSession.hasModel;
   final List<Future<void>> _pending = [];
   Future<void> _tail = Future<void>.value();
+  Future<void> _optimizationTail = Future<void>.value();
+  Object? _optimizationFailure;
+  StackTrace? _optimizationFailureStack;
+  List<String>? _optimizationContext;
   Future<StreamingSubtitleStore>? _bingStore;
   int _bingScheduledThrough = 0;
+  int _recognizedThrough = 0;
+
+  void _reportOptimization(
+    StreamingSubtitleStore store, {
+    bool finalTotal = false,
+  }) {
+    if (!optimization.enabled) return;
+    final committed = store.primary.snapshot.length;
+    final pending = store.pendingOptimizations.keys
+        .where((id) => id > committed)
+        .length;
+    final processed = committed + pending;
+    final total =
+        sourceTotal ??
+        (_recognizedThrough > processed ? _recognizedThrough : processed);
+    onOptimizationProgress?.call(
+      SubtitleOptimizationProgress(
+        processed: processed,
+        total: total,
+        totalIsFinal: sourceTotal != null || finalTotal,
+      ),
+    );
+  }
+
   Object? failure;
   StackTrace? _failureStack;
 
   Future<void> accept(StableAsrBatch batch) async {
     checkCancelled();
     if (failure != null) Error.throwWithStackTrace(failure!, _failureStack!);
+    if (optimization.enabled) {
+      await _acceptOptimizedBatch(batch);
+      return;
+    }
     // The native pipeline supplies backpressure for AI translation without
     // adding another queue; its runner keeps network waits outside the native
     // barrier. Bing retains its existing bounded network preparation queue.
     if ((batch.nativePipeline &&
             choice.provider != SubtitleTranslateProvider.bing) ||
-        !choice.enabled ||
+        (!choice.enabled && !optimization.enabled) ||
         choice.provider == SubtitleTranslateProvider.local) {
       await _publish(batch);
       return;
     }
     final Future<void> task;
-    if (choice.provider == SubtitleTranslateProvider.bing) {
+    if (choice.provider == SubtitleTranslateProvider.bing ||
+        optimization.enabled) {
       // Prepare at most two blocks concurrently; the Bing client shares its
       // four-request budget across both. Consume preparation failures in commit
       // order so a later block cannot discard an earlier successful block.
@@ -118,28 +172,212 @@ class LocalTranscriptionStream {
     }
   }
 
-  Future<void> _publish(StableAsrBatch batch) async {
-    final commit = await _prepare(batch);
-    await commit();
+  Future<void> _acceptOptimizedBatch(StableAsrBatch batch) async {
+    if (batch.cues.isNotEmpty && batch.cues.last.index > _recognizedThrough) {
+      _recognizedThrough = batch.cues.last.index;
+    }
+    var at = 0;
+    while (at < batch.cues.length) {
+      checkCancelled();
+      if (failure != null) Error.throwWithStackTrace(failure!, _failureStack!);
+      var end = at, chars = 0;
+      while (end < batch.cues.length &&
+          end - at < SubtitleOptimizer.batchSize) {
+        final next = batch.cues[end].text.length;
+        if (end > at && chars + next > SubtitleOptimizer.characterBudget) break;
+        chars += next;
+        end++;
+      }
+      final block = StableAsrBatch(
+        batch.cues.sublist(at, end),
+        end == batch.cues.length
+            ? batch.processedThrough
+            : batch.cues[end - 1].endTime,
+        batch.reservation,
+        retainConsumerModels: batch.retainConsumerModels,
+        nativePipeline: batch.nativePipeline,
+      );
+      // Each stage is ordered independently: translating this block never
+      // delays optimizing the next one. Keep only one block of lookahead.
+      final optimized = _optimizationTail
+          .then((_) async {
+            checkCancelled();
+            if (failure != null) {
+              Error.throwWithStackTrace(failure!, _failureStack!);
+            }
+            if (_optimizationFailure != null) {
+              Error.throwWithStackTrace(
+                _optimizationFailure!,
+                _optimizationFailureStack!,
+              );
+            }
+            return _optimizeBatch(block);
+          })
+          .then<_OptimizedSubtitleBatch>(
+            (value) => (batch: value, error: null, stack: null),
+            onError: (Object error, StackTrace stack) {
+              _optimizationFailure ??= error;
+              _optimizationFailureStack ??= stack;
+              return (batch: null, error: error, stack: stack);
+            },
+          );
+      _optimizationTail = optimized.then((_) {});
+      final task = _tail.then((_) async {
+        final result = await optimized;
+        if (failure != null) return;
+        try {
+          if (result.error != null) {
+            Error.throwWithStackTrace(result.error!, result.stack!);
+          }
+          await _publish(result.batch!, alreadyOptimized: true);
+        } catch (error, stack) {
+          failure = error;
+          _failureStack = stack;
+          onFailure();
+        }
+      });
+      _tail = task;
+      _pending.add(task);
+      if (_pending.length >= 2) {
+        await _pending.removeAt(0);
+        if (failure != null) {
+          Error.throwWithStackTrace(failure!, _failureStack!);
+        }
+      }
+      at = end;
+    }
+    // A native consumer cannot let work escape the reservation/residency
+    // boundary. Its sub-batches still overlap network optimization with the
+    // preceding translation, and its caller retains the existing backlog.
+    if (choice.enabled &&
+        (batch.nativePipeline ||
+            choice.provider == SubtitleTranslateProvider.local &&
+                batch.reservation != null)) {
+      await _tail;
+      if (failure != null) Error.throwWithStackTrace(failure!, _failureStack!);
+    }
   }
 
-  Future<Future<void> Function()> _prepare(StableAsrBatch batch) async {
-    checkCancelled();
-    final store = await (choice.provider == SubtitleTranslateProvider.bing
-        ? _bingStore ??= openStore()
-        : openStore());
+  Future<StableAsrBatch> _optimizeBatch(StableAsrBatch batch) async {
+    final store = await (_bingStore ??= openStore());
     final count = store.primaryComplete
         ? store.secondary.snapshot.length
         : store.primary.snapshot.length;
-    final scheduled =
-        choice.provider == SubtitleTranslateProvider.bing &&
-            _bingScheduledThrough > count
+    final scheduled = _bingScheduledThrough > count
         ? _bingScheduledThrough
         : count;
     final cues = batch.cues.where((cue) => cue.index > scheduled).toList();
+    _reportOptimization(store);
+    if (cues.isEmpty) {
+      return StableAsrBatch(const [], batch.processedThrough, null);
+    }
+    _bingScheduledThrough = cues.last.index;
+    _optimizationContext ??= List.of(store.precedingSource);
+    final corrected = await _optimizeCues(
+      store,
+      cues,
+      precedingContext: _optimizationContext!.join('\n'),
+    );
+    checkCancelled();
+    final context = [
+      ..._optimizationContext!,
+      ...corrected.map((cue) => cue.text),
+    ];
+    _optimizationContext = context
+        .skip((context.length - 2).clamp(0, context.length))
+        .toList();
+    return StableAsrBatch(
+      corrected,
+      batch.processedThrough,
+      batch.reservation,
+      retainConsumerModels: batch.retainConsumerModels,
+      nativePipeline: batch.nativePipeline,
+    );
+  }
+
+  Future<List<SubtitleItem>> _optimizeCues(
+    StreamingSubtitleStore store,
+    List<SubtitleItem> cues, {
+    required String precedingContext,
+  }) async {
+    onOptimizing?.call();
+    final missing = cues
+        .where((cue) => !store.pendingOptimizations.containsKey(cue.index))
+        .toList();
+    if (missing.isNotEmpty) {
+      if (optimizationEndpoint == null) throw StateError('字幕优化接口未配置');
+      await (optimizer ?? SubtitleOptimizer()).optimize(
+        cues: missing,
+        choice: optimization,
+        endpoint: optimizationEndpoint!,
+        cancelSignal: cancelSignal,
+        precedingContext: precedingContext,
+        onOptimized: (output, warning) async {
+          await store.rememberOptimizations({
+            for (final cue in output) cue.index: cue.text,
+          }, warning: warning);
+          _reportOptimization(store);
+        },
+      );
+      checkCancelled();
+    }
+    return [
+      for (final cue in cues)
+        if (store.pendingOptimizations[cue.index] == cue.text)
+          cue
+        else
+          cue.copyWith(
+            text: store.pendingOptimizations[cue.index]!,
+            timedSpans: const [],
+          ),
+    ];
+  }
+
+  Future<void> _publish(
+    StableAsrBatch batch, {
+    bool alreadyOptimized = false,
+  }) async {
+    final commit = await _prepare(batch, alreadyOptimized: alreadyOptimized);
+    await commit();
+  }
+
+  Future<Future<void> Function()> _prepare(
+    StableAsrBatch batch, {
+    bool alreadyOptimized = false,
+  }) async {
+    checkCancelled();
+    final store =
+        await (choice.provider == SubtitleTranslateProvider.bing ||
+                optimization.enabled
+            ? _bingStore ??= openStore()
+            : openStore());
+    final count = store.primaryComplete
+        ? store.secondary.snapshot.length
+        : store.primary.snapshot.length;
+    if (batch.cues.isNotEmpty && batch.cues.last.index > _recognizedThrough) {
+      _recognizedThrough = batch.cues.last.index;
+    }
+    _reportOptimization(store);
+    final scheduled =
+        !alreadyOptimized &&
+            (choice.provider == SubtitleTranslateProvider.bing ||
+                optimization.enabled) &&
+            _bingScheduledThrough > count
+        ? _bingScheduledThrough
+        : count;
+    var cues = batch.cues.where((cue) => cue.index > scheduled).toList();
     if (cues.isEmpty) return () async {};
-    if (choice.provider == SubtitleTranslateProvider.bing) {
+    if (!alreadyOptimized &&
+        (choice.provider == SubtitleTranslateProvider.bing ||
+            optimization.enabled)) {
       _bingScheduledThrough = cues.last.index;
+    }
+    if (optimization.enabled && !alreadyOptimized) {
+      cues = await _optimizeCues(
+        store,
+        cues,
+        precedingContext: store.precedingSource.join('\n'),
+      );
     }
     final translations = <SubtitleItem>[];
     if (choice.enabled) {
@@ -264,7 +502,11 @@ class LocalTranscriptionStream {
 
   Future<void> drain() async {
     await _tail;
+    await _optimizationTail;
     if (failure != null) Error.throwWithStackTrace(failure!, _failureStack!);
+    if (optimization.enabled && _bingStore != null) {
+      _reportOptimization(await _bingStore!, finalTotal: true);
+    }
   }
 
   /// Called at a drained ASR handoff, before recognition starts again.
@@ -272,6 +514,7 @@ class LocalTranscriptionStream {
 
   Future<void> close() async {
     await _tail;
+    await _optimizationTail;
     await _localSession.release();
   }
 }

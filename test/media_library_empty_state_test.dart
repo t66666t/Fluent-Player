@@ -114,7 +114,7 @@ void main() {
       theme: ThemeData(
         brightness: Brightness.dark,
         useMaterial3: true,
-        fontFamily: 'MiSans',
+        fontFamily: 'Noto Sans SC',
         scaffoldBackgroundColor: AppTokens.bgBase,
       ),
       builder: capture == null
@@ -162,7 +162,7 @@ void main() {
         );
         expect(
           find.byType(VideoActionButtons),
-          page == 'home' ? findsOneWidget : findsNothing,
+          page == 'search' ? findsNothing : findsOneWidget,
         );
         final message = find.descendant(
           of: find.byType(MediaLibraryEmptyState).hitTestable(),
@@ -182,13 +182,20 @@ void main() {
     }
   }
 
-  testWidgets('floating actions follow folder content as it changes', (
+  testWidgets('floating actions stay mounted as folder content changes', (
     tester,
   ) async {
     setSize(tester, const Size(390, 844));
     await tester.pumpWidget(harness(CollectionScreen(collectionId: folder.id)));
     await tester.pumpAndSettle();
-    expect(find.byType(VideoActionButtons), findsNothing);
+    expect(find.byType(VideoActionButtons), findsOneWidget);
+    final actions = tester.state(find.byType(VideoActionButtons));
+    final toggle = find.byKey(const ValueKey('action-button-disc-toggle'));
+    final initiallyCollapsed = settings.isActionButtonsCollapsed;
+    expect(toggle.hitTestable(), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(settings.isActionButtonsCollapsed, !initiallyCollapsed);
 
     library.seedVideoForTesting(clip());
     folder.childrenIds.add('clip');
@@ -196,12 +203,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MediaLibraryEmptyState), findsNothing);
     expect(find.byType(VideoActionButtons), findsOneWidget);
+    expect(tester.state(find.byType(VideoActionButtons)), same(actions));
 
     folder.childrenIds.clear();
     library.notifyListeners();
     await tester.pumpAndSettle();
     expect(find.byType(MediaLibraryEmptyState), findsOneWidget);
-    expect(find.byType(VideoActionButtons), findsNothing);
+    expect(find.byType(VideoActionButtons), findsOneWidget);
+    expect(tester.state(find.byType(VideoActionButtons)), same(actions));
+    expect(toggle.hitTestable(), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(settings.isActionButtonsCollapsed, initiallyCollapsed);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -236,7 +249,7 @@ void main() {
           harness(CollectionScreen(collectionId: folder.id)),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(VideoActionButtons), findsNothing);
+        expect(find.byType(VideoActionButtons), findsOneWidget);
         expect(find.text('导入视频或音频'), findsNothing);
 
         Finder menu() => size.width < 600
@@ -248,7 +261,17 @@ void main() {
         await tester.tap(menu());
         await tester.pumpAndSettle();
         expect(find.text('导入视频或音频'), findsOneWidget);
-        expect(find.text('浏览器导入'), findsOneWidget);
+        expect(find.text('批量导入').hitTestable(), findsOneWidget);
+        expect(find.text('语音转录').hitTestable(), findsOneWidget);
+        for (final label in [
+          '浏览器导入',
+          '网站与链接收藏',
+          'B站官方播放',
+          'YouTube 官方播放',
+          '缓存管理',
+        ]) {
+          expect(find.text(label), findsNothing);
+        }
         await tester.tap(find.text('导入视频或音频'));
         await tester.pumpAndSettle();
         expect(find.textContaining('从文件管理导入'), findsWidgets);
@@ -257,7 +280,7 @@ void main() {
 
         await tester.tap(menu());
         await tester.pumpAndSettle();
-        await tester.tap(find.text('新建合集'));
+        await tester.tap(find.text('新建合集').hitTestable());
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), '子文件夹');
         await tester.tap(find.text('创建'));
@@ -301,9 +324,9 @@ void main() {
     (tester) async {
       await tester.runAsync(() async {
         await (FontLoader(
-          'MiSans',
-        )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
-        await (FontLoader('Noto Sans SC')..addFont(
+          'Noto Sans SC',
+        )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
+        await (FontLoader('Noto Sans CJK Fallback')..addFont(
               rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'),
             ))
             .load();

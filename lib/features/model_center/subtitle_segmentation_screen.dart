@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/subtitle_model.dart';
+import 'asr_enhancement_options.dart';
 import 'model_center_service.dart';
 import 'model_center_widgets.dart';
 import 'subtitle_segmentation.dart';
@@ -154,9 +155,11 @@ class SubtitleSegmentationScreen extends StatelessWidget {
                             style: Theme.of(context).textTheme.labelLarge,
                           ),
                         ),
-                        for (final cue in segmentAsrSubtitles([
-                          sample.$2,
-                        ], options))
+                        for (final cue in segmentAsrSubtitles(
+                          [sample.$2],
+                          options,
+                          textProcessingVersion: currentAsrTextProcessingVersion,
+                        ))
                           Card(
                             margin: const EdgeInsets.symmetric(vertical: 4),
                             child: Padding(

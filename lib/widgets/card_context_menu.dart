@@ -7,6 +7,18 @@ class CardContextMenu extends StatefulWidget {
   final Widget Function(BuildContext, VoidCallback) builder;
   final VoidCallback? onFallback;
 
+  /// Keyboard menu keys must never invoke the secondary-click fallback, which
+  /// can enter selection mode when a card has no visible overflow button.
+  static bool openVisibleTarget(BuildContext context) {
+    final owner = context
+        .getInheritedWidgetOfExactType<_CardMenuScope>()
+        ?.owner;
+    final target = owner?.target;
+    if (target == null || !target.mounted) return false;
+    target.widget.onOpen();
+    return true;
+  }
+
   @override
   State<CardContextMenu> createState() => _CardContextMenuState();
 }

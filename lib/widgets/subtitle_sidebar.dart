@@ -17,6 +17,7 @@ import '../services/settings_service.dart';
 import '../services/subtitle_timeline_resolver.dart';
 import '../models/subtitle_copy_format.dart';
 import '../models/subtitle_model.dart';
+import '../models/transcript_typography.dart';
 import '../utils/subtitle_copy_formatter.dart';
 import '../utils/subtitle_display_resolver.dart';
 import '../utils/desktop_player_shortcuts.dart';
@@ -28,6 +29,7 @@ import 'subtitle_generation_footer.dart';
 import 'transcript_viewport_motion.dart';
 import 'transcript_scroll_motion.dart';
 import 'transcript_text_cache.dart';
+import 'transcript_display_settings.dart';
 import 'subtitle_active_range_builder.dart';
 import 'panel_swipe_region.dart';
 import '../features/subtitle_article/article_document.dart';
@@ -112,7 +114,13 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
   // bool _isAutoScroll = false; // Moved to SettingsService
   double _fontSizeScale = 1.0; // 字体缩放比例
   bool _showFontSettings = false; // 是否显示字体设置
-  bool _showTimestamps = true;
+  bool _toolbarExpanded = true;
+  bool _toolbarResizeInProgress = false;
+  int _toolbarExpansionRevision = 0;
+  bool _showTimestamps = false;
+  double _transcriptFontWeight = TranscriptTypography.defaultFontWeight;
+  double _savedTranscriptFontWeight = TranscriptTypography.defaultFontWeight;
+  bool _showListDividers = false;
   double _timeColumnRatio = 0.18;
   int _locatePositionPercent = 30;
   bool? _listFitsViewport;
@@ -908,6 +916,11 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
 
   void _loadOrientationDisplaySettings() {
     final settings = SettingsService();
+    _toolbarExpanded = widget.isPortrait
+        ? settings.portraitSidebarToolbarExpanded
+        : settings.landscapeSidebarToolbarExpanded;
+    _toolbarResizeInProgress = false;
+    _toolbarExpansionRevision++;
     if (widget.isPortrait) {
       _fontSizeScale = _clampFontSizeScale(
         settings.portraitSidebarFontSizeScale,
@@ -947,6 +960,9 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
       _maxArticleChunkSize,
     );
     _articleParagraphModeEnabled = settings.subtitleArticleParagraphModeEnabled;
+    _transcriptFontWeight = settings.transcriptFontWeight;
+    _savedTranscriptFontWeight = settings.transcriptFontWeight;
+    _showListDividers = settings.transcriptShowDividers;
     _loadOrientationDisplaySettings();
     _lastKnownIsPlaying = _playbackIsPlaying;
     _lastSubtitleOffsetMs = settings.subtitleOffset.inMilliseconds;
@@ -1308,6 +1324,14 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
     final Size nextSize = Size(constraints.maxWidth, constraints.maxHeight);
     final Size? previousSize = _lastScrollableViewportSize;
     _lastScrollableViewportSize = nextSize;
+    // The indexed viewport already follows its anchor as the toolbar changes
+    // height. Repeated repair jumps would interrupt that continuous movement.
+    if (_toolbarResizeInProgress &&
+        !_repairRequestPending &&
+        previousSize != null &&
+        (previousSize.width - nextSize.width).abs() < 0.5) {
+      return;
+    }
     if (widget.preserveReadingPositionWhenNotFollowing &&
         !_repairRequestPending) {
       return;
@@ -2441,6 +2465,30 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
   void _handleSubtitleOffsetChanged() {
     _copyFormatPopoverEntry?.markNeedsBuild();
     final settings = SettingsService();
+    final weightChanged =
+        _savedTranscriptFontWeight != settings.transcriptFontWeight;
+    if (mounted &&
+        (weightChanged ||
+            _showListDividers != settings.transcriptShowDividers)) {
+      setState(() {
+        if (weightChanged) {
+          _savedTranscriptFontWeight = settings.transcriptFontWeight;
+          _transcriptFontWeight = settings.transcriptFontWeight;
+        }
+        _showListDividers = settings.transcriptShowDividers;
+      });
+    }
+    final toolbarExpanded = widget.isPortrait
+        ? settings.portraitSidebarToolbarExpanded
+        : settings.landscapeSidebarToolbarExpanded;
+    if (mounted && toolbarExpanded != _toolbarExpanded) {
+      setState(() {
+        _toolbarExpanded = toolbarExpanded;
+        _toolbarResizeInProgress = true;
+        _toolbarExpansionRevision++;
+        if (!toolbarExpanded) _showFontSettings = false;
+      });
+    }
     final bool nextParagraphMode = settings.subtitleArticleParagraphModeEnabled;
     if (nextParagraphMode != _articleParagraphModeEnabled && mounted) {
       _clearTextSelection(resumeAutoFollow: false);
@@ -3101,7 +3149,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
     }
   }
 
-  /// 把全局坐标反查成字幕行号；落在行间空隙或列表之外时返回 null。
+  /// 把全局坐标反查成字幕行号。列表行的范围包含相邻间距的一半。
   ///
   /// [ItemPosition] 的 leading/trailing edge 是相对视口主轴长度的比例，所以
   /// 先把坐标换算进 [_listViewportKey] 对应的视口，再按比例查表。
@@ -3810,7 +3858,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
       return position.animateTo(
         trajectory.to,
         duration: trajectory.duration,
-        curve: Curves.linear,
+        curve: trajectory.curve,
       );
     }
     final activity = _TranscriptScrollActivity.simulation(
@@ -4078,158 +4126,139 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
               onPointerMove: _onPointerMove,
               onPointerUp: _onPointerUpOrCancel,
               onPointerCancel: _onPointerUpOrCancel,
-              child: Column(
-                children: [
-                  // Ink paints on its Material, not the button's boundary.
-                  // Keep toolbar feedback out of the surrounding player.
-                  RepaintBoundary(
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: _buildToolbar(settings),
-                    ),
-                  ),
-
-                  // 2. 内容区。设置面板悬浮在文稿之上，不参与高度分配。
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _displaySubtitles.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      widget.showEmbeddedLoadingMessage
-                                          ? "已识别到内嵌字幕，\n正在提取中..."
-                                          : (Provider.of<MediaPlaybackService?>(
-                                                  context,
-                                                )?.cloudDriveSubtitleStatus ??
-                                                "暂无字幕"),
-                                      style: const TextStyle(
-                                        color: Colors.white54,
+              child: _buildToolbar(
+                settings,
+                content: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _displaySubtitles.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  widget.showEmbeddedLoadingMessage
+                                      ? "已识别到内嵌字幕，\n正在提取中..."
+                                      : (Provider.of<MediaPlaybackService?>(
+                                              context,
+                                            )?.cloudDriveSubtitleStatus ??
+                                            "暂无字幕"),
+                                  style: const TextStyle(color: Colors.white54),
+                                  textAlign: TextAlign.center,
+                                ),
+                                if (widget.onOpenSubtitleManager != null) ...[
+                                  const SizedBox(height: 16),
+                                  InkWell(
+                                    canRequestFocus: false,
+                                    onTap: widget.onOpenSubtitleManager,
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
                                       ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    if (widget.onOpenSubtitleManager !=
-                                        null) ...[
-                                      const SizedBox(height: 16),
-                                      InkWell(
-                                        canRequestFocus: false,
-                                        onTap: widget.onOpenSubtitleManager,
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color: Colors.purpleAccent
-                                                  .withValues(alpha: 0.5),
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            color: Colors.purpleAccent
-                                                .withValues(alpha: 0.1),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              Icon(
-                                                Icons.subtitles,
-                                                size: 18,
-                                                color: Colors.purpleAccent,
-                                              ),
-                                              SizedBox(width: 8),
-                                              Text(
-                                                "查看字幕管理",
-                                                style: TextStyle(
-                                                  color: Colors.purpleAccent,
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: Colors.purpleAccent.withValues(
+                                            alpha: 0.5,
                                           ),
                                         ),
+                                        borderRadius: BorderRadius.circular(4),
+                                        color: Colors.purpleAccent.withValues(
+                                          alpha: 0.1,
+                                        ),
                                       ),
-                                    ],
-                                  ],
-                                ),
-                              )
-                            // 只给字幕列表区再套一层指针登记：顶部工具栏按钮上的
-                            // 手指既不能充当双击的锚点，也不会被当成候选轻点。
-                            : Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Listener(
-                                    behavior: HitTestBehavior.translucent,
-                                    onPointerDown:
-                                        _onTranscriptContextMenuPointer,
-                                    child: SelectionArea(
-                                      key: _textSelectionKey,
-                                      focusNode: _textSelectionFocusNode,
-                                      contextMenuBuilder:
-                                          _buildTextSelectionContextMenu,
-                                      onSelectionChanged:
-                                          _handleTextSelectionChanged,
-                                      child: SelectionContainer(
-                                        delegate: _scrollSelectionDelegate,
-                                        child: _SelectionStatusObserver(
-                                          onStatusChanged:
-                                              _handleSelectionRegionStatusChanged,
-                                          child: PanelSwipeRegion(
-                                            child: Listener(
-                                              behavior:
-                                                  HitTestBehavior.translucent,
-                                              onPointerDown:
-                                                  _onListAreaPointerDown,
-                                              child: Opacity(
-                                                opacity: _readingViewportReady
-                                                    ? 1
-                                                    : 0,
-                                                child: TranscriptViewportMotion(
-                                                  key: _viewportMotionKey,
-                                                  onSettle: _settleReadingJump,
-                                                  onActivityChanged:
-                                                      _handleDistantMotionActivity,
-                                                  enabled:
-                                                      widget.isVisible &&
-                                                      _isSubtitleSidebarRouteCurrent &&
-                                                      _readingViewportReady &&
-                                                      !_hasTextSelection,
-                                                  child: _isArticleMode
-                                                      ? _buildArticleView(
-                                                          isSmallScreen,
-                                                        )
-                                                      : _buildListView(
-                                                          isSmallScreen,
-                                                        ),
-                                                ),
-                                              ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: const [
+                                          Icon(
+                                            Icons.subtitles,
+                                            size: 18,
+                                            color: Colors.purpleAccent,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            "查看字幕管理",
+                                            style: TextStyle(
+                                              color: Colors.purpleAccent,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          )
+                        // 只给字幕列表区再套一层指针登记：顶部工具栏按钮上的
+                        // 手指既不能充当双击的锚点，也不会被当成候选轻点。
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Listener(
+                                behavior: HitTestBehavior.translucent,
+                                onPointerDown: _onTranscriptContextMenuPointer,
+                                child: SelectionArea(
+                                  key: _textSelectionKey,
+                                  focusNode: _textSelectionFocusNode,
+                                  contextMenuBuilder:
+                                      _buildTextSelectionContextMenu,
+                                  onSelectionChanged:
+                                      _handleTextSelectionChanged,
+                                  child: SelectionContainer(
+                                    delegate: _scrollSelectionDelegate,
+                                    child: _SelectionStatusObserver(
+                                      onStatusChanged:
+                                          _handleSelectionRegionStatusChanged,
+                                      child: PanelSwipeRegion(
+                                        child: Listener(
+                                          behavior: HitTestBehavior.translucent,
+                                          onPointerDown: _onListAreaPointerDown,
+                                          child: Opacity(
+                                            opacity: _readingViewportReady
+                                                ? 1
+                                                : 0,
+                                            child: TranscriptViewportMotion(
+                                              key: _viewportMotionKey,
+                                              onSettle: _settleReadingJump,
+                                              onActivityChanged:
+                                                  _handleDistantMotionActivity,
+                                              enabled:
+                                                  widget.isVisible &&
+                                                  _isSubtitleSidebarRouteCurrent &&
+                                                  _readingViewportReady &&
+                                                  !_hasTextSelection,
+                                              child: _isArticleMode
+                                                  ? _buildArticleView(
+                                                      isSmallScreen,
+                                                    )
+                                                  : _buildListView(
+                                                      isSmallScreen,
+                                                    ),
                                             ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                  if (_hasTextSelection)
-                                    _buildSelectionPreservingScrollShield(),
-                                ],
+                                ),
                               ),
-                        if (_showFontSettings)
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            child: _buildFloatingDisplaySettings(),
+                              if (_hasTextSelection)
+                                _buildSelectionPreservingScrollShield(),
+                            ],
                           ),
-                      ],
-                    ),
-                  ),
-                ],
+                    if (_showFontSettings)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: _buildFloatingDisplaySettings(),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -4239,391 +4268,233 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
   }
 
   Widget _buildFloatingDisplaySettings() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          Colors.white.withValues(alpha: 0.05),
-          AppTokens.bgPlayerSidebar,
+    final isPortrait = widget.isPortrait;
+    return TranscriptDisplaySettings(
+      key: ValueKey(
+        'subtitle-display-settings-${isPortrait ? 'portrait' : 'landscape'}',
+      ),
+      fontSizeScale: _fontSizeScale,
+      onFontSizeChanged: (value) => setState(() => _fontSizeScale = value),
+      onFontSizeCommitted: (value) => SettingsService().updateSetting(
+        isPortrait
+            ? 'portraitSidebarFontSizeScale'
+            : 'landscapeSidebarFontSizeScale',
+        value,
+      ),
+      fontWeight: _transcriptFontWeight,
+      onFontWeightChanged: (value) =>
+          setState(() => _transcriptFontWeight = value),
+      onFontWeightCommitted: (value) =>
+          SettingsService().updateSetting('transcriptFontWeight', value),
+      locatePositionEditor: _LocatePositionInputWidget(
+        key: ValueKey(
+          'subtitle-locate-position-editor-${isPortrait ? 'portrait' : 'landscape'}',
         ),
-        border: const Border(bottom: BorderSide(color: Colors.white10)),
+        value: _locatePositionPercent,
+        onChanged: _updateLocatePositionPercent,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isVeryNarrow = constraints.maxWidth < 180;
-          final labelWidth = isVeryNarrow ? 24.0 : 52.0;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 28,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: labelWidth,
-                      child: Text(
-                        isVeryNarrow ? "字" : "字体",
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: _FontSizeSliderWidget(
-                        fontSizeScale: _fontSizeScale,
-                        showValue: !isVeryNarrow,
-                        onChanged: (nextScale) {
-                          setState(() => _fontSizeScale = nextScale);
-                        },
-                        onCommit: (nextScale) {
-                          final key = widget.isPortrait
-                              ? 'portraitSidebarFontSizeScale'
-                              : 'landscapeSidebarFontSizeScale';
-                          SettingsService().updateSetting(key, nextScale);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                height: 28,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: labelWidth,
-                      child: Text(
-                        isVeryNarrow ? "定位" : "定位位置",
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: _LocatePositionInputWidget(
-                        key: ValueKey(
-                          'subtitle-locate-position-editor-${widget.isPortrait ? 'portrait' : 'landscape'}',
-                        ),
-                        value: _locatePositionPercent,
-                        onChanged: _updateLocatePositionPercent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_isArticleMode)
-                SizedBox(
-                  height: 32,
-                  child: Semantics(
-                    toggled: _articleParagraphModeEnabled,
-                    button: true,
-                    label: '段落模式',
-                    hint: '关闭后连续显示全部字幕',
-                    onTap: () => _updateArticleParagraphMode(
-                      !_articleParagraphModeEnabled,
-                    ),
-                    child: GestureDetector(
-                      key: const ValueKey('subtitle-paragraph-mode-control'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _updateArticleParagraphMode(
-                        !_articleParagraphModeEnabled,
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: labelWidth,
-                            child: Text(
-                              isVeryNarrow ? "段" : "段落模式",
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                          Tooltip(
-                            message: "关闭后连续显示全部字幕",
-                            child: SizedBox(
-                              width: 44,
-                              height: 30,
-                              child: FittedBox(
-                                fit: BoxFit.contain,
-                                child: Switch(
-                                  key: const ValueKey(
-                                    'subtitle-paragraph-mode-switch',
-                                  ),
-                                  value: _articleParagraphModeEnabled,
-                                  onChanged: _updateArticleParagraphMode,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (!isVeryNarrow)
-                            const Expanded(
-                              child: Text(
-                                "关闭后连续显示全部字幕",
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              if (_isArticleMode)
-                SizedBox(
-                  height: 28,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: labelWidth,
-                        child: Text(
-                          isVeryNarrow ? "句" : "每段",
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: IgnorePointer(
-                          ignoring: !_articleParagraphModeEnabled,
-                          child: Opacity(
-                            opacity: _articleParagraphModeEnabled ? 1 : 0.45,
-                            child: _SentenceCountInputWidget(
-                              value: _articleChunkSize,
-                              min: _minArticleChunkSize,
-                              max: _maxArticleChunkSize,
-                              onChanged: _updateArticleChunkSize,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (!_isArticleMode)
-                SizedBox(
-                  height: 28,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: labelWidth,
-                        child: Text(
-                          isVeryNarrow ? "时" : "时间",
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ),
-                      Tooltip(
-                        message: _showTimestamps ? "隐藏时间" : "显示时间",
-                        child: InkWell(
-                          key: const ValueKey('subtitle-show-time-switch'),
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () {
-                            final value = !_showTimestamps;
-                            unawaited(
-                              AppHaptics.selectionClick(SettingsService()),
-                            );
-                            setState(() => _showTimestamps = value);
-                            final key = widget.isPortrait
-                                ? 'portraitSidebarShowTimestamps'
-                                : 'landscapeSidebarShowTimestamps';
-                            SettingsService().updateSetting(key, value);
-                          },
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: Icon(
-                              _showTimestamps
-                                  ? Icons.circle
-                                  : Icons.circle_outlined,
-                              size: 12,
-                              color: _showTimestamps
-                                  ? Colors.blueAccent
-                                  : Colors.white38,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_showTimestamps) ...[
-                        const SizedBox(width: 4),
-                        if (!isVeryNarrow)
-                          const SizedBox(
-                            width: 36,
-                            child: Text(
-                              "宽度",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                        Expanded(
-                          child: _TimeColumnRatioSliderWidget(
-                            ratio: _timeColumnRatio,
-                            showValue: !isVeryNarrow,
-                            onChanged: (nextRatio) {
-                              setState(() => _timeColumnRatio = nextRatio);
-                            },
-                            onCommit: (nextRatio) {
-                              final key = widget.isPortrait
-                                  ? 'portraitSidebarTimeColumnRatio'
-                                  : 'landscapeSidebarTimeColumnRatio';
-                              SettingsService().updateSetting(key, nextRatio);
-                            },
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
+      isArticleMode: _isArticleMode,
+      paragraphModeEnabled: _articleParagraphModeEnabled,
+      onParagraphModeChanged: _updateArticleParagraphMode,
+      sentenceCountEditor: _SentenceCountInputWidget(
+        value: _articleChunkSize,
+        min: _minArticleChunkSize,
+        max: _maxArticleChunkSize,
+        onChanged: _updateArticleChunkSize,
       ),
+      showTimestamps: _showTimestamps,
+      onShowTimestampsChanged: (value) {
+        unawaited(AppHaptics.selectionClick(SettingsService()));
+        setState(() => _showTimestamps = value);
+        SettingsService().updateSetting(
+          isPortrait
+              ? 'portraitSidebarShowTimestamps'
+              : 'landscapeSidebarShowTimestamps',
+          value,
+        );
+      },
+      timeColumnRatio: _timeColumnRatio,
+      onTimeColumnRatioChanged: (value) =>
+          setState(() => _timeColumnRatio = value),
+      onTimeColumnRatioCommitted: (value) => SettingsService().updateSetting(
+        isPortrait
+            ? 'portraitSidebarTimeColumnRatio'
+            : 'landscapeSidebarTimeColumnRatio',
+        value,
+      ),
+      showDividers: _showListDividers,
+      onShowDividersChanged: (value) {
+        unawaited(AppHaptics.selectionClick(SettingsService()));
+        setState(() => _showListDividers = value);
+        SettingsService().updateSetting('transcriptShowDividers', value);
+      },
     );
   }
 
-  Widget _buildToolbar(SettingsService settings) => SubtitleToolbar(
-    onOpenSettings: widget.onOpenSettings,
-    actions: [
-      if (widget.onOpenAiChat != null)
-        SubtitleToolbarAction(
-          icon: Icons.auto_awesome_outlined,
-          tooltip: hoverAwareShortcutTooltip(
-            'AI 对话',
-            DesktopPlayerShortcuts.primaryBinding(
-              DesktopPlayerShortcutAction.toggleAiChat,
-            ).logicalKey,
-            context: context,
+  Widget _buildToolbar(SettingsService settings, {required Widget content}) =>
+      ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) => SubtitleToolbar(
+          key: ValueKey(
+            'subtitle-toolbar-${widget.isPortrait ? 'portrait' : 'landscape'}',
           ),
-          onTap: widget.onOpenAiChat,
-        ),
-      for (var index = 0; index < 2; index++)
-        SubtitleToolbarAction(
-          icon: index == 0 ? Icons.list : Icons.article,
-          group: SubtitleToolbarGroup.view,
-          tooltip: index == 0 ? '切换列表/文章视图' : '文章视图',
-          selected: _isArticleMode == (index == 1),
-          onTap: () {
-            final isArticle = index == 1;
-            if (_isArticleMode != isArticle) {
-              unawaited(AppHaptics.selectionClick(settings));
-            }
-            _invalidateLocateRequests();
-            _cancelPendingAutoScroll();
-            _clearTextSelection(resumeAutoFollow: false);
-            setState(() {
-              _isArticleMode = isArticle;
-              if (!_isContinuousArticleMode) _pauseContinuousArticleLayout();
-            });
-            SettingsService().updateSetting(
-              'subtitleViewMode',
-              isArticle ? 1 : 0,
+          content: content,
+          expanded: _toolbarExpanded,
+          isPortrait: widget.isPortrait,
+          isLeftHanded: settings.isLeftHandedMode,
+          onToggleExpanded: () {
+            unawaited(AppHaptics.selectionClick(settings));
+            unawaited(
+              settings.updateSetting(
+                widget.isPortrait
+                    ? 'portraitSidebarToolbarExpanded'
+                    : 'landscapeSidebarToolbarExpanded',
+                !_toolbarExpanded,
+              ),
             );
-            _triggerLocateButtonAfterModeSwitch();
           },
-        ),
-      for (var index = 0; index < 3; index++)
-        SubtitleToolbarAction(
-          label: const ['双', '1', '2'][index],
-          group: SubtitleToolbarGroup.language,
-          tooltip: const ['双语显示', '仅显示第一行', '仅显示第二行'][index],
-          selected: _lineFilterMode == index,
-          onTap: () {
-            if (_lineFilterMode != index) {
-              unawaited(AppHaptics.selectionClick(settings));
-            }
-            _invalidateLocateRequests();
-            _cancelPendingAutoScroll();
-            _clearTextSelection(resumeAutoFollow: false);
-            setState(() {
-              _lineFilterMode = index;
-              _invalidateDisplaySubtitlesCache();
+          onExpansionEnd: () {
+            final revision = _toolbarExpansionRevision;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && revision == _toolbarExpansionRevision) {
+                _toolbarResizeInProgress = false;
+              }
             });
-            _rebuildTimelineResolver();
-            _triggerLocateButtonAfterModeSwitch();
           },
+          onOpenSettings: widget.onOpenSettings,
+          actions: [
+            if (widget.onOpenAiChat != null)
+              SubtitleToolbarAction(
+                icon: Icons.auto_awesome_outlined,
+                tooltip: hoverAwareShortcutTooltip(
+                  'AI 对话',
+                  DesktopPlayerShortcuts.primaryBinding(
+                    DesktopPlayerShortcutAction.toggleAiChat,
+                  ).logicalKey,
+                  context: context,
+                ),
+                onTap: widget.onOpenAiChat,
+              ),
+            for (var index = 0; index < 2; index++)
+              SubtitleToolbarAction(
+                icon: index == 0 ? Icons.list : Icons.article,
+                group: SubtitleToolbarGroup.view,
+                tooltip: index == 0 ? '切换列表/文章视图' : '文章视图',
+                selected: _isArticleMode == (index == 1),
+                onTap: () {
+                  final isArticle = index == 1;
+                  if (_isArticleMode != isArticle) {
+                    unawaited(AppHaptics.selectionClick(settings));
+                  }
+                  _invalidateLocateRequests();
+                  _cancelPendingAutoScroll();
+                  _clearTextSelection(resumeAutoFollow: false);
+                  setState(() {
+                    _isArticleMode = isArticle;
+                    if (!_isContinuousArticleMode) {
+                      _pauseContinuousArticleLayout();
+                    }
+                  });
+                  SettingsService().updateSetting(
+                    'subtitleViewMode',
+                    isArticle ? 1 : 0,
+                  );
+                  _triggerLocateButtonAfterModeSwitch();
+                },
+              ),
+            for (var index = 0; index < 3; index++)
+              SubtitleToolbarAction(
+                label: const ['双', '1', '2'][index],
+                group: SubtitleToolbarGroup.language,
+                tooltip: const ['双语显示', '仅显示第一行', '仅显示第二行'][index],
+                selected: _lineFilterMode == index,
+                onTap: () {
+                  if (_lineFilterMode != index) {
+                    unawaited(AppHaptics.selectionClick(settings));
+                  }
+                  _invalidateLocateRequests();
+                  _cancelPendingAutoScroll();
+                  _clearTextSelection(resumeAutoFollow: false);
+                  setState(() {
+                    _lineFilterMode = index;
+                    _invalidateDisplaySubtitlesCache();
+                  });
+                  _rebuildTimelineResolver();
+                  _triggerLocateButtonAfterModeSwitch();
+                },
+              ),
+            SubtitleToolbarAction(
+              icon: Icons.format_size,
+              tooltip: '文稿显示设置',
+              selected: _showFontSettings,
+              onTap: () {
+                unawaited(AppHaptics.lightTap(settings));
+                setState(() => _showFontSettings = !_showFontSettings);
+              },
+            ),
+            SubtitleToolbarAction(
+              icon: settings.autoScrollSubtitles
+                  ? Icons.gps_fixed
+                  : Icons.gps_not_fixed,
+              tooltip: '自动跟随字幕',
+              selected: settings.autoScrollSubtitles,
+              selectedBadge: 'A',
+              onTap: () async {
+                final newValue = !settings.autoScrollSubtitles;
+                unawaited(AppHaptics.selectionClick(settings));
+                await settings.updateSetting('autoScrollSubtitles', newValue);
+                if (!mounted) return;
+                setState(() {});
+                if (newValue && settings.autoScrollSubtitles) {
+                  _scrollToActiveIndex();
+                }
+              },
+            ),
+            SubtitleToolbarAction(
+              icon: Icons.my_location,
+              tooltip: '定位到当前字幕',
+              onTap: () {
+                unawaited(AppHaptics.lightTap(settings));
+                _clearTextSelection(resumeAutoFollow: false);
+                _invalidateLocateRequests();
+                _cancelPendingAutoScroll();
+                _markManualLocateAutoFollowCooldown();
+                _scrollToActiveIndex();
+              },
+            ),
+            if (widget.onOpenSubtitleManager != null)
+              SubtitleToolbarAction(
+                icon: Icons.subtitles_outlined,
+                tooltip: '字幕管理 (AI/导入/列表)',
+                onTap: widget.onOpenSubtitleManager,
+              ),
+            if (widget.isPortrait)
+              SubtitleToolbarAction(
+                icon: Icons.style_outlined,
+                tooltip: '字幕样式设置',
+                onTap: widget.onOpenSubtitleStyle,
+              ),
+            if (widget.isPortrait && widget.onOpenSubtitleEditor != null)
+              SubtitleToolbarAction(
+                icon: Icons.edit_note,
+                tooltip: '字幕编辑',
+                onTap: widget.onOpenSubtitleEditor,
+              ),
+            if (widget.isPortrait && widget.onOpenVideoCompose != null)
+              SubtitleToolbarAction(
+                icon: Icons.movie_creation_outlined,
+                tooltip: '合成视频',
+                onTap: widget.onOpenVideoCompose,
+              ),
+            if (widget.isPortrait)
+              SubtitleToolbarAction(
+                icon: Icons.document_scanner_outlined,
+                tooltip: '识别画面字幕（OCR）',
+                onTap: widget.onOpenOcrSubtitle ?? _explainOcrUnavailable,
+              ),
+          ],
         ),
-      SubtitleToolbarAction(
-        icon: Icons.format_size,
-        tooltip: '文稿显示设置',
-        selected: _showFontSettings,
-        onTap: () {
-          unawaited(AppHaptics.lightTap(settings));
-          setState(() => _showFontSettings = !_showFontSettings);
-        },
-      ),
-      SubtitleToolbarAction(
-        icon: settings.autoScrollSubtitles
-            ? Icons.gps_fixed
-            : Icons.gps_not_fixed,
-        tooltip: '自动跟随字幕',
-        selected: settings.autoScrollSubtitles,
-        selectedBadge: 'A',
-        onTap: () async {
-          final newValue = !settings.autoScrollSubtitles;
-          unawaited(AppHaptics.selectionClick(settings));
-          await settings.updateSetting('autoScrollSubtitles', newValue);
-          if (!mounted) return;
-          setState(() {});
-          if (newValue && settings.autoScrollSubtitles) _scrollToActiveIndex();
-        },
-      ),
-      SubtitleToolbarAction(
-        icon: Icons.my_location,
-        tooltip: '定位到当前字幕',
-        onTap: () {
-          unawaited(AppHaptics.lightTap(settings));
-          _clearTextSelection(resumeAutoFollow: false);
-          _invalidateLocateRequests();
-          _cancelPendingAutoScroll();
-          _markManualLocateAutoFollowCooldown();
-          _scrollToActiveIndex();
-        },
-      ),
-      if (widget.onOpenSubtitleManager != null)
-        SubtitleToolbarAction(
-          icon: Icons.subtitles_outlined,
-          tooltip: '字幕管理 (AI/导入/列表)',
-          onTap: widget.onOpenSubtitleManager,
-        ),
-      if (widget.isPortrait)
-        SubtitleToolbarAction(
-          icon: Icons.style_outlined,
-          tooltip: '字幕样式设置',
-          onTap: widget.onOpenSubtitleStyle,
-        ),
-      if (widget.isPortrait && widget.onOpenSubtitleEditor != null)
-        SubtitleToolbarAction(
-          icon: Icons.edit_note,
-          tooltip: '字幕编辑',
-          onTap: widget.onOpenSubtitleEditor,
-        ),
-      if (widget.isPortrait && widget.onOpenVideoCompose != null)
-        SubtitleToolbarAction(
-          icon: Icons.movie_creation_outlined,
-          tooltip: '合成视频',
-          onTap: widget.onOpenVideoCompose,
-        ),
-      if (widget.isPortrait)
-        SubtitleToolbarAction(
-          icon: Icons.document_scanner_outlined,
-          tooltip: '识别画面字幕（OCR）',
-          onTap: widget.onOpenOcrSubtitle ?? _explainOcrUnavailable,
-        ),
-    ],
-  );
+      );
 
   void _explainOcrUnavailable() {
     showDialog<void>(
@@ -4712,6 +4583,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
       maxHeight,
       isSmallScreen,
       _fontSizeScale,
+      _transcriptFontWeight,
       _articleChunkSize,
       defaultTextStyle,
       MediaQuery.textScalerOf(context),
@@ -4727,11 +4599,9 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
     }
     _paragraphFitKey = fitKey;
     _paragraphFitCount = _displaySubtitles.length;
-    final TextStyle articleTextStyle = const TextStyle().copyWith(
-      fontSize: fontSize,
-      height: 1.6,
-      fontWeight: FontWeight.normal,
-    );
+    final TextStyle articleTextStyle = TranscriptTypography.style(
+      _transcriptFontWeight,
+    ).copyWith(fontSize: fontSize, height: 1.6);
     final StrutStyle strutStyle = StrutStyle(
       fontSize: fontSize,
       height: 1.6,
@@ -4816,7 +4686,9 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
     final double innerH = (isSmallScreen ? 6 : 8) * scale; // 内部水平间距
     final double innerV = (isSmallScreen ? 4 : 6) * scale; // 内部垂直间距
     final double itemGap = (isSmallScreen ? 2 : 4) * scale; // 列表项间距
+    final double halfItemGap = itemGap / 2;
     final double timeGap = (isSmallScreen ? 6 : 8) * scale; // 时间戳和文本的间距
+    const double dividerThickness = 0.5;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4864,6 +4736,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                   : null,
               itemBuilder: (context, index) {
                 if (index == displaySubtitles.length) return footer!;
+                final isLast = index == displaySubtitles.length - 1;
                 final item = displaySubtitles[index];
                 final timeText = _formatDuration(item.startTime);
                 final subtitleText =
@@ -4881,6 +4754,9 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                       timeText,
                       isSmallScreen,
                       _fontSizeScale,
+                      _transcriptFontWeight,
+                      _showListDividers,
+                      isLast,
                       _showTimestamps,
                       _timeColumnRatio,
                       _hasSelectableTextAfter(index),
@@ -4888,12 +4764,10 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                     builder: (context, activeIndices, _) {
                       final isCurrent = activeIndices.contains(index);
 
-                      return RepaintBoundary(
+                      final row = RepaintBoundary(
                         child: Padding(
-                          padding: EdgeInsets.only(
-                            left: isSmallScreen ? 2 : 6,
-                            right: isSmallScreen ? 2 : 6,
-                            bottom: itemGap,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmallScreen ? 2 : 6,
                           ),
                           child: InkWell(
                             // 不能用 onTapDown：按住约 100ms 就会触发，长按/
@@ -4901,130 +4775,169 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                             onTap: () => _completeSubtitleTap(index),
                             canRequestFocus: false,
                             borderRadius: BorderRadius.circular(4),
-                            child: Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: innerH,
-                                vertical: innerV,
+                            child: Padding(
+                              // 相邻两行各接管一半间距，高亮框仍只包住卡片。
+                              padding: EdgeInsets.only(
+                                top: index == 0 ? 0 : halfItemGap,
+                                bottom: isLast ? itemGap : halfItemGap,
                               ),
-                              decoration: BoxDecoration(
-                                color: isCurrent
-                                    ? Colors.blueAccent.withValues(alpha: 0.15)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: isCurrent
-                                      ? Colors.blueAccent.withValues(alpha: 0.3)
-                                      : Colors.transparent,
+                              child: Container(
+                                key: ValueKey('subtitle-list-card-$index'),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: innerH,
+                                  vertical: innerV,
                                 ),
-                              ),
-                              child: LayoutBuilder(
-                                builder: (context, itemConstraints) {
-                                  final timeColumnWidth =
-                                      itemConstraints.maxWidth *
-                                      _timeColumnRatio;
-                                  return Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (_showTimestamps)
-                                        SelectionContainer.disabled(
-                                          child: SizedBox(
-                                            key: ValueKey(
-                                              'subtitle-time-column-$index',
-                                            ),
-                                            width: timeColumnWidth,
-                                            child: Padding(
-                                              padding: EdgeInsets.only(
-                                                top: 2 * scale,
-                                                right: timeGap,
+                                decoration: BoxDecoration(
+                                  color: isCurrent
+                                      ? Colors.blueAccent.withValues(
+                                          alpha: 0.15,
+                                        )
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: isCurrent
+                                        ? Colors.blueAccent.withValues(
+                                            alpha: 0.3,
+                                          )
+                                        : Colors.transparent,
+                                  ),
+                                ),
+                                child: LayoutBuilder(
+                                  builder: (context, itemConstraints) {
+                                    final timeColumnWidth =
+                                        itemConstraints.maxWidth *
+                                        _timeColumnRatio;
+                                    return Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (_showTimestamps)
+                                          SelectionContainer.disabled(
+                                            child: SizedBox(
+                                              key: ValueKey(
+                                                'subtitle-time-column-$index',
                                               ),
-                                              child: Align(
-                                                alignment: Alignment.topLeft,
-                                                child: FittedBox(
-                                                  fit: BoxFit.scaleDown,
+                                              width: timeColumnWidth,
+                                              child: Padding(
+                                                padding: EdgeInsets.only(
+                                                  top: 2 * scale,
+                                                  right: timeGap,
+                                                ),
+                                                child: Align(
                                                   alignment: Alignment.topLeft,
-                                                  child: Text(
-                                                    timeText,
-                                                    key: ValueKey(
-                                                      'subtitle-time-$index',
-                                                    ),
-                                                    maxLines: 1,
-                                                    style: TextStyle(
-                                                      color: isCurrent
-                                                          ? Colors.blueAccent
-                                                          : Colors.white30,
-                                                      fontSize:
-                                                          (isSmallScreen
-                                                              ? 10
-                                                              : 11) *
-                                                          _fontSizeScale,
-                                                      fontFamily: 'monospace',
+                                                  child: FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment:
+                                                        Alignment.topLeft,
+                                                    child: Text(
+                                                      timeText,
+                                                      key: ValueKey(
+                                                        'subtitle-time-$index',
+                                                      ),
+                                                      maxLines: 1,
+                                                      style: TextStyle(
+                                                        color: isCurrent
+                                                            ? Colors.blueAccent
+                                                            : Colors.white30,
+                                                        fontSize:
+                                                            (isSmallScreen
+                                                                ? 10
+                                                                : 11) *
+                                                            _fontSizeScale,
+                                                        fontFamily: 'monospace',
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      Expanded(
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            Text(
-                                              subtitleText,
-                                              strutStyle: StrutStyle(
-                                                fontSize: _subtitleTextFontSize(
-                                                  isSmallScreen,
+                                        Expanded(
+                                          child: Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              Text(
+                                                subtitleText,
+                                                strutStyle: StrutStyle(
+                                                  fontSize:
+                                                      _subtitleTextFontSize(
+                                                        isSmallScreen,
+                                                      ),
+                                                  height: 1.3,
+                                                  forceStrutHeight: true,
                                                 ),
-                                                height: 1.3,
-                                                forceStrutHeight: true,
+                                                style:
+                                                    TranscriptTypography.style(
+                                                      _transcriptFontWeight,
+                                                    ).copyWith(
+                                                      color: isCurrent
+                                                          ? Colors.white
+                                                          : Colors.white70,
+                                                      fontSize:
+                                                          _subtitleTextFontSize(
+                                                            isSmallScreen,
+                                                          ),
+                                                      height: 1.3,
+                                                    ),
                                               ),
-                                              style: TextStyle(
-                                                color: isCurrent
-                                                    ? Colors.white
-                                                    : Colors.white70,
-                                                fontSize: _subtitleTextFontSize(
-                                                  isSmallScreen,
-                                                ),
-                                                height: 1.3,
-                                                fontWeight: FontWeight.normal,
-                                              ),
-                                            ),
-                                            if (_hasSelectableTextAfter(index))
-                                              Positioned(
-                                                right: 0,
-                                                bottom: 0,
-                                                child: Text(
-                                                  ' ',
-                                                  key: ValueKey(
-                                                    'subtitle-separator-$index',
+                                              if (_hasSelectableTextAfter(
+                                                index,
+                                              ))
+                                                Positioned(
+                                                  right: 0,
+                                                  bottom: 0,
+                                                  child: Text(
+                                                    ' ',
+                                                    key: ValueKey(
+                                                      'subtitle-separator-$index',
+                                                    ),
+                                                    // This selectable spacer keeps
+                                                    // copied cues separated without
+                                                    // painting an isolated blue
+                                                    // selection bar at the far edge
+                                                    // of the row.
+                                                    selectionColor:
+                                                        Colors.transparent,
+                                                    style: TextStyle(
+                                                      fontSize:
+                                                          _subtitleTextFontSize(
+                                                            isSmallScreen,
+                                                          ),
+                                                      height: 1.3,
+                                                    ),
                                                   ),
-                                                  // This selectable spacer keeps
-                                                  // copied cues separated without
-                                                  // painting an isolated blue
-                                                  // selection bar at the far edge
-                                                  // of the row.
-                                                  selectionColor:
-                                                      Colors.transparent,
-                                                  style: TextStyle(
-                                                    fontSize:
-                                                        _subtitleTextFontSize(
-                                                          isSmallScreen,
-                                                        ),
-                                                    height: 1.3,
-                                                  ),
                                                 ),
-                                              ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  );
-                                },
+                                      ],
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      );
+                      return Stack(
+                        fit: StackFit.passthrough,
+                        clipBehavior: Clip.none,
+                        children: [
+                          row,
+                          if (_showListDividers && !isLast)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: -dividerThickness / 2,
+                              height: dividerThickness,
+                              child: IgnorePointer(
+                                child: ColoredBox(
+                                  key: ValueKey('subtitle-list-divider-$index'),
+                                  color: Colors.white10,
+                                ),
+                              ),
+                            ),
+                        ],
                       );
                     },
                   ),
@@ -5114,6 +5027,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                       _readingTextRevision,
                       isSmallScreen,
                       _fontSizeScale,
+                      _transcriptFontWeight,
                       verticalInset,
                       chunkIndex == chunkCount - 1,
                       _hasSelectableTextAfter(endIndex - 1),
@@ -5138,6 +5052,7 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
                             endIndex: endIndex,
                             activeIndices: activeIndices.toSet(),
                             fontSizeScale: _fontSizeScale,
+                            fontWeight: _transcriptFontWeight,
                             onSubtitleTap: _completeSubtitleTap,
                             isSmallScreen: isSmallScreen,
                             lineFilterMode: _lineFilterMode,
@@ -5175,12 +5090,9 @@ class SubtitleSidebarState extends State<SubtitleSidebar> {
         );
         final double contentWidth = constraints.maxWidth - horizontalInset * 2;
         final double fontSize = (isSmallScreen ? 12 : 13) * _fontSizeScale;
-        final TextStyle style = DefaultTextStyle.of(context).style.copyWith(
-          color: Colors.white70,
-          fontSize: fontSize,
-          height: 1.6,
-          fontWeight: FontWeight.normal,
-        );
+        final TextStyle style = DefaultTextStyle.of(context).style
+            .merge(TranscriptTypography.style(_transcriptFontWeight))
+            .copyWith(color: Colors.white70, fontSize: fontSize, height: 1.6);
         final document = _continuousArticleDocument;
         if (document == null) return _continuousArticlePreparing();
 
@@ -5597,6 +5509,7 @@ class SubtitleArticleChunk extends StatefulWidget {
   final int endIndex;
   final Set<int> activeIndices;
   final double fontSizeScale;
+  final double fontWeight;
   final ValueChanged<int>? onSubtitleTap;
   final bool isSmallScreen;
   final int lineFilterMode;
@@ -5613,6 +5526,7 @@ class SubtitleArticleChunk extends StatefulWidget {
     required this.endIndex,
     required this.activeIndices,
     required this.fontSizeScale,
+    this.fontWeight = TranscriptTypography.defaultFontWeight,
     this.onSubtitleTap,
     required this.isSmallScreen,
     required this.lineFilterMode,
@@ -5729,15 +5643,14 @@ class _SubtitleArticleChunkState extends State<SubtitleArticleChunk> {
       final TextSpan span = TextSpan(
         text: text,
         recognizer: _recognizers[i],
-        style: TextStyle(
+        style: TranscriptTypography.style(widget.fontWeight).copyWith(
           color: isCurrent ? Colors.blueAccent : Colors.white70,
           backgroundColor: isCurrent
               ? Colors.blueAccent.withValues(alpha: 0.1)
               : Colors.transparent,
           fontSize: (widget.isSmallScreen ? 12 : 13) * widget.fontSizeScale,
           height: 1.6,
-          // Keep weight stable in article mode to avoid paragraph reflow.
-          fontWeight: FontWeight.normal,
+          // Active highlighting changes color only, preserving paragraph layout.
         ),
       );
       _spanSubtitleIndex[span] = i;
@@ -6118,197 +6031,3 @@ class _SentenceCountInputWidgetState extends State<_SentenceCountInputWidget> {
 ///
 /// 将 Slider 提取为独立 StatefulWidget，拖动过程中仅自身内部重建，
 /// 不触发父级 SubtitleSidebar 的完整 build，降低大列表场景下的帧率抖动。
-class _FontSizeSliderWidget extends StatefulWidget {
-  /// 当前字体缩放比例（由父级传入，用于外部同步时刷新）
-  final double fontSizeScale;
-
-  /// 拖动过程中实时回调
-  final ValueChanged<double> onChanged;
-
-  /// 拖动结束后的持久化回调
-  final ValueChanged<double> onCommit;
-  final bool showValue;
-
-  const _FontSizeSliderWidget({
-    required this.fontSizeScale,
-    required this.onChanged,
-    required this.onCommit,
-    this.showValue = true,
-  });
-
-  @override
-  State<_FontSizeSliderWidget> createState() => _FontSizeSliderWidgetState();
-}
-
-class _FontSizeSliderWidgetState extends State<_FontSizeSliderWidget> {
-  double? _hapticStartValue;
-
-  /// 拖动中的临时滑块值（仅影响 Slider 显示）
-  double? _dragValue;
-
-  // 字体缩放比例与滑块值的转换（与父级保持一致）
-  double _fontScaleToSliderValue(double scale) {
-    final double clamped = scale.clamp(0.5, 3.0).toDouble();
-    if (clamped <= 0.7) {
-      return ((clamped - 0.5) / 0.2) * 10.0;
-    }
-    if (clamped <= 1.0) {
-      return 10.0 + ((clamped - 0.7) / 0.3) * 60.0;
-    }
-    return 70.0 + ((clamped - 1.0) / 2.0) * 30.0;
-  }
-
-  double _sliderValueToFontScale(double sliderValue) {
-    final double clamped = sliderValue.clamp(0.0, 100.0).toDouble();
-    if (clamped <= 10.0) {
-      return 0.5 + (clamped / 10.0) * 0.2;
-    }
-    if (clamped <= 70.0) {
-      return 0.7 + ((clamped - 10.0) / 60.0) * 0.3;
-    }
-    return 1.0 + ((clamped - 70.0) / 30.0) * 2.0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final displayScale = _dragValue != null
-        ? _sliderValueToFontScale(_dragValue!)
-        : widget.fontSizeScale;
-
-    return SizedBox(
-      height: 28,
-      child: Row(
-        children: [
-          Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 9),
-                showValueIndicator: ShowValueIndicator.never,
-              ),
-              child: Slider(
-                key: const ValueKey('subtitle-font-size-slider'),
-                value: _fontScaleToSliderValue(displayScale),
-                min: 0.0,
-                max: 100.0,
-                activeColor: Colors.blueAccent,
-                inactiveColor: Colors.white24,
-                onChangeStart: (value) {
-                  _hapticStartValue = value;
-                  unawaited(AppHaptics.dragStarted(SettingsService()));
-                  setState(() => _dragValue = value);
-                },
-                onChanged: (value) {
-                  setState(() => _dragValue = value);
-                  widget.onChanged(_sliderValueToFontScale(value));
-                },
-                onChangeEnd: (value) {
-                  if (_hapticStartValue != null && value != _hapticStartValue) {
-                    unawaited(AppHaptics.dragCommitted(SettingsService()));
-                  }
-                  _hapticStartValue = null;
-                  setState(() => _dragValue = null);
-                  widget.onCommit(_sliderValueToFontScale(value));
-                },
-              ),
-            ),
-          ),
-          if (widget.showValue)
-            SizedBox(
-              width: 34,
-              child: Text(
-                "${(displayScale * 100).round()}%",
-                style: const TextStyle(fontSize: 10, color: Colors.white60),
-                textAlign: TextAlign.right,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 独立的时间列比例滑块，拖动期间仅重建滑块自身。
-class _TimeColumnRatioSliderWidget extends StatefulWidget {
-  final double ratio;
-  final ValueChanged<double> onChanged;
-  final ValueChanged<double> onCommit;
-  final bool showValue;
-
-  const _TimeColumnRatioSliderWidget({
-    required this.ratio,
-    required this.onChanged,
-    required this.onCommit,
-    this.showValue = true,
-  });
-
-  @override
-  State<_TimeColumnRatioSliderWidget> createState() =>
-      _TimeColumnRatioSliderWidgetState();
-}
-
-class _TimeColumnRatioSliderWidgetState
-    extends State<_TimeColumnRatioSliderWidget> {
-  double? _dragValue;
-  double? _hapticStartValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final displayRatio = (_dragValue ?? widget.ratio)
-        .clamp(0.05, 0.30)
-        .toDouble();
-
-    return SizedBox(
-      height: 28,
-      child: Row(
-        children: [
-          Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 9),
-                showValueIndicator: ShowValueIndicator.never,
-              ),
-              child: Slider(
-                key: const ValueKey('subtitle-time-column-slider'),
-                value: displayRatio,
-                min: 0.05,
-                max: 0.30,
-                activeColor: Colors.blueAccent,
-                inactiveColor: Colors.white24,
-                onChangeStart: (value) {
-                  _hapticStartValue = value;
-                  unawaited(AppHaptics.dragStarted(SettingsService()));
-                  setState(() => _dragValue = value);
-                },
-                onChanged: (value) {
-                  setState(() => _dragValue = value);
-                  widget.onChanged(value);
-                },
-                onChangeEnd: (value) {
-                  if (_hapticStartValue != null && value != _hapticStartValue) {
-                    unawaited(AppHaptics.dragCommitted(SettingsService()));
-                  }
-                  _hapticStartValue = null;
-                  setState(() => _dragValue = null);
-                  widget.onCommit(value);
-                },
-              ),
-            ),
-          ),
-          if (widget.showValue)
-            SizedBox(
-              width: 34,
-              child: Text(
-                "${(displayRatio * 100).round()}%",
-                style: const TextStyle(fontSize: 10, color: Colors.white60),
-                textAlign: TextAlign.right,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}

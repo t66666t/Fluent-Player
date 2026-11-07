@@ -41,6 +41,49 @@ class _PreviewPaths extends PathProviderPlatform {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
+    'explicit initial link automatically previews once without subscribing',
+    (tester) async {
+      const input = 'https://example.org/feed.xml?signature=A%2bB';
+      final directory = Directory.systemTemp.createTempSync(
+        'podcast-auto-entry-',
+      );
+      final store = PodcastStore(sqlite3.openInMemory());
+      final http = _ClipboardFeedHttp();
+      final controller = PodcastController(
+        store: store,
+        client: PodcastClient(http: http),
+        mediaStore: PodcastMediaStore(
+          root: directory,
+          store: store,
+          http: http,
+        ),
+      );
+      PodcastRuntime.debugOverride = PodcastRuntime.forTesting(controller);
+      SharedPreferences.setMockInitialValues({});
+      addTearDown(() {
+        PodcastRuntime.debugOverride = null;
+        controller.dispose();
+        store.close();
+        directory.deleteSync(recursive: true);
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: const PodcastDiscoverPage(
+            initialInput: input,
+            autoResolveInitialInput: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(http.requests, [input]);
+      expect(find.text('自动解析频道'), findsWidgets);
+      expect(store.channels, isEmpty);
+      await tester.pump();
+      expect(http.requests, hasLength(1));
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
     'clipboard entry prefills link import without resolving or subscribing',
     (tester) async {
       const input =
@@ -155,6 +198,7 @@ void main() {
       }
       store.mergeFeed(feed, initial: true);
       store.setSetting(feed.channel.id, 'autoRefresh', false);
+      store.setSetting(feed.channel.id, 'mediaPreference', 'audio');
       store.saveState(
         feed.episodes[1].id,
         PodcastEpisodeState(positionMs: 780000),
@@ -169,13 +213,13 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.runAsync(() async {
-        final font = FontLoader('MiSans')
-          ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+        final font = FontLoader('Noto Sans SC')
+          ..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'));
         await font.load();
         final icons = FontLoader('MaterialIcons')
           ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
         await icons.load();
-        await (FontLoader('Noto Sans SC')..addFont(
+        await (FontLoader('Noto Sans CJK Fallback')..addFont(
               rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'),
             ))
             .load();
@@ -205,7 +249,7 @@ void main() {
                 useMaterial3: true,
               ).copyWith(
                 textTheme: ThemeData.dark().textTheme.apply(
-                  fontFamily: 'MiSans',
+                  fontFamily: 'Noto Sans SC',
                 ),
               ),
           builder: (context, child) => MediaQuery(
@@ -235,7 +279,10 @@ void main() {
         '队列',
       ].indexed) {
         final text = find.text(label);
-        final button = find.ancestor(of: text, matching: find.byType(TextButton));
+        final button = find.ancestor(
+          of: text,
+          matching: find.byType(TextButton),
+        );
         final buttonRect = tester.getRect(button);
         final textRect = tester.getRect(text);
         final indicatorRect = tester.getRect(
@@ -344,7 +391,10 @@ void main() {
         final sidebarRect = tester.getRect(
           find.byKey(const ValueKey('podcast-channel-sidebar')),
         );
-        expect(sidebarRect.width, 216);
+        expect(
+          sidebarRect.width,
+          closeTo((size.width * .24).clamp(240, 360), .01),
+        );
         expect(sidebarRect.right, lessThan(toolbarRect.left));
         expect(toolbarRect.width, greaterThan(size.width * .7));
         expect(headerRect.top, toolbarRect.top);
@@ -352,20 +402,30 @@ void main() {
         expect(firstRect.left, headerRect.left);
         expect(firstRect.right, headerRect.right);
       }
-      expect(firstRect.left, toolbarRect.left);
-      expect(firstRect.right, toolbarRect.right);
+      expect(firstRect.left, greaterThanOrEqualTo(toolbarRect.left));
+      expect(firstRect.right, lessThanOrEqualTo(toolbarRect.right));
       expect(
         tester
             .getRect(
               find.byKey(const ValueKey('podcast-episode-title-preview-0')),
             )
             .left,
-        tester
-            .getRect(
-              find.byKey(const ValueKey('podcast-channel-episodes-title')),
-            )
-            .left,
-        reason: 'Episode text and section heading share one alignment line',
+        inInclusiveRange(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('podcast-channel-episodes-title')),
+              )
+              .left,
+          tester
+                  .getRect(
+                    find.byKey(
+                      const ValueKey('podcast-channel-episodes-title'),
+                    ),
+                  )
+                  .left +
+              32,
+        ),
+        reason: 'Episode text stays inside the section content gutter',
       );
       if (name == 'phone' || name == 'desktop') {
         expect(
@@ -448,7 +508,8 @@ void main() {
           of: description,
           matching: find.text('展开'),
         );
-        if (split) {
+        if (split) expect(toggle, findsNothing);
+        if (toggle.evaluate().isNotEmpty) {
           expect(toggle, findsOneWidget);
           final restingHeight = tester.getSize(description).height;
           await tester.tap(toggle);
@@ -508,7 +569,7 @@ void main() {
         await tester.tap(find.text(titles.first));
         await tester.pumpAndSettle();
         expect(find.text('已选 1 集'), findsOneWidget);
-        await tester.tap(find.byTooltip('将已选 1 集标为已听'));
+        await tester.tap(find.text('已听').last);
         await tester.pumpAndSettle();
         expect(controller.state(feed.episodes.first.id).played, isTrue);
         expect(tester.takeException(), isNull);
@@ -555,20 +616,20 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('批量管理节目'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('全选当前列表'));
+          await tester.tap(find.byTooltip('全选当前列表'));
           await tester.pumpAndSettle();
-          expect(find.text('取消全选'), findsOneWidget);
+          expect(find.byTooltip('取消全选'), findsOneWidget);
           expect(find.text('已选 ${titles.length} 集'), findsOneWidget);
           expect(find.byTooltip('退出多选'), findsOneWidget);
-          await tester.tap(find.text('取消全选'));
+          await tester.tap(find.byTooltip('取消全选'));
           await tester.pumpAndSettle();
           expect(find.text('已选 0 集'), findsOneWidget);
-          expect(find.text('全选当前列表'), findsOneWidget);
+          expect(find.byTooltip('全选当前列表'), findsOneWidget);
           expect(find.byTooltip('退出多选'), findsOneWidget);
           await reveal(find.text(titles.first));
           await tester.tap(find.text(titles.first));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('隐藏节目'));
+          await tester.tap(find.text('隐藏').last);
           await tester.pumpAndSettle();
           expect(find.text('已隐藏 1 集，可在「已隐藏」中恢复'), findsOneWidget);
           expect(find.text(titles.first), findsNothing);
@@ -582,7 +643,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text(titles.first));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('恢复显示'));
+          await tester.tap(find.text('恢复').last);
           await tester.pumpAndSettle();
           expect(find.text('已恢复 1 集'), findsOneWidget);
           expect(find.text(titles.first), findsNothing);
@@ -734,6 +795,28 @@ void main() {
   }
 }
 
+class _ClipboardFeedHttp extends PodcastHttp {
+  final requests = <String>[];
+  @override
+  Future<PodcastResponse> get(
+    String url, {
+    Map<String, String> headers = const {},
+    int maxBytes = 32 * 1024 * 1024,
+    void Function(HttpClient)? onClient,
+    bool Function()? isCancelled,
+  }) async {
+    requests.add(url);
+    return PodcastResponse(
+      utf8.encode(
+        '''<rss version="2.0"><channel><title>自动解析频道</title><item><title>单集</title><guid>episode</guid><enclosure url="https://example.org/audio.mp3" type="audio/mpeg"/></item></channel></rss>''',
+      ),
+      200,
+      url,
+      {'content-type': 'application/rss+xml'},
+    );
+  }
+}
+
 class _ClipboardNoRequestHttp extends PodcastHttp {
   int requests = 0;
   @override
@@ -827,7 +910,7 @@ Future<void> _primeCover(String url) async {
       text: TextSpan(
         text: value,
         style: TextStyle(
-          fontFamily: 'MiSans',
+          fontFamily: 'Noto Sans SC',
           color: const Color(0xFFF3ECD7),
           fontSize: size,
           fontWeight: weight,

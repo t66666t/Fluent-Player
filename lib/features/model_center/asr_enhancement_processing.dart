@@ -95,7 +95,7 @@ String asrAlignmentModelId(
     language,
     textProcessingVersion: textProcessingVersion,
   );
-  if (textProcessingVersion == 2 &&
+  if ((textProcessingVersion ?? 0) >= 2 &&
       recognitionEngine == 'qwen3-asr' &&
       resolved == 'en' &&
       availableModels.contains(AsrEnhancementOptions.alignmentEnglishId)) {
@@ -133,7 +133,7 @@ int asrAlignmentWorkingSetBytes(
     (id == AsrEnhancementOptions.alignmentQwenId
         ? qwenAudioWorkingSetBytes(weightBytes, gpu: gpu)
         : weightBytes * 3) +
-    (textProcessingVersion == 2 &&
+    ((textProcessingVersion ?? 0) >= 2 &&
             recognitionEngine == 'qwen3-asr' &&
             id == AsrEnhancementOptions.alignmentEnglishId
         ? 128 * 1024 * 1024
@@ -378,6 +378,55 @@ SubtitleItem trimAsrSilence(SubtitleItem cue, Float32List audio) {
     endTime: end,
     timedSpans: cue.shiftedSpans(Duration.zero, start, end),
   );
+}
+
+/// Internal low-energy gaps, not a second model. Segmentation can snap a
+/// sentence cut onto a real pause when the recognizer has no word times.
+SubtitleItem attachAsrPauseAnchors(SubtitleItem cue, Float32List audio) {
+  final from = (cue.startTime.inMicroseconds * 16000 ~/ 1000000).clamp(
+    0,
+    audio.length,
+  );
+  final to = (cue.endTime.inMicroseconds * 16000 ~/ 1000000).clamp(
+    from,
+    audio.length,
+  );
+  if (to - from < 16000) return cue;
+  final energies = <double>[];
+  for (var at = from; at < to; at += 320) {
+    var sum = 0.0;
+    final end = math.min(to, at + 320);
+    for (var i = at; i < end; i++) {
+      sum += audio[i] * audio[i];
+    }
+    energies.add(math.sqrt(sum / math.max(1, end - at)));
+  }
+  if (energies.length < 16) return cue;
+  final sorted = [...energies]..sort();
+  final peak = sorted.last;
+  if (peak < .00005) return cue;
+  final threshold = math.min(
+    peak * .12,
+    math.max(.0003, sorted[sorted.length ~/ 10] * 2),
+  );
+  final pauses = <List<int>>[];
+  var run = 0;
+  for (var i = 0; i < energies.length; i++) {
+    final edge = i < 10 || i >= energies.length - 10;
+    if (!edge && energies[i] < threshold) {
+      run++;
+      continue;
+    }
+    if (run >= 6) {
+      final startFrame = i - run;
+      final startUs = ((from + startFrame * 320) * 1000000 / 16000).round();
+      final endUs = ((from + i * 320) * 1000000 / 16000).round();
+      if (endUs > startUs) pauses.add([startUs, endUs]);
+    }
+    run = 0;
+  }
+  if (pauses.isEmpty) return cue;
+  return cue.copyWith(asrInfo: cue.asrInfo.copyWith(pauses: pauses));
 }
 
 /// Validate that hotwords have a path through the model vocabulary. The native

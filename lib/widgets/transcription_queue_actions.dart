@@ -6,6 +6,7 @@ import '../features/cloud_drive/services/cloud_drive_runtime.dart';
 import '../theme/app_tokens.dart';
 import 'desktop_button_click_region.dart';
 import 'media_library_tooltip.dart';
+import 'media_library_shell.dart';
 
 export '../services/transcription_media_selection.dart'
     show TranscriptionMediaSelection;
@@ -82,7 +83,8 @@ Future<void> openTranscriptionQueue(
   BuildContext context,
   TranscriptionMediaSelection selection, {
   CloudDriveRuntime? cloudRuntime,
-}) => Navigator.of(context).push<void>(
+}) => pushAboveMediaLibrary<void>(
+  context,
   MaterialPageRoute(
     settings: const RouteSettings(name: '/transcription_queue'),
     builder: (_) => BatchSubtitleScreen(

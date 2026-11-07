@@ -1,3 +1,4 @@
+import '../utils/app_branding.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -199,8 +200,8 @@ class DesktopMediaSessionService {
               'mediaType': item?.type.name ?? '',
               'title': item?.title ?? '',
               'subtitle': item?.type.name == 'audio'
-                  ? '音频 · Fluent Player'
-                  : '视频 · Fluent Player',
+                  ? '音频 · $kAppDisplayName'
+                  : '视频 · $kAppDisplayName',
               'artworkPath': _artworkPath ?? '',
               'artworkUri': _artworkPath == null
                   ? ''

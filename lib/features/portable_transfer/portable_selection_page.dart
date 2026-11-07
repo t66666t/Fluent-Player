@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:video_player_app/theme/app_page_transitions.dart';
 
+import '../../services/app_haptics.dart';
 import '../../services/library_service.dart';
 import '../../utils/android_hardware_input_bridge.dart';
 import '../../utils/batch_tool_shortcuts.dart';
@@ -216,7 +217,10 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
                       PortableSelectionShortcutAction.toggleExpand,
                     ),
                     onPressed: tree.nodes.values.any((node) => node.isFolder)
-                        ? () => setState(_toggleExpandAll)
+                        ? AppHaptics.wrap(
+                            () => setState(_toggleExpandAll),
+                            light: true,
+                          )
                         : null,
                     icon: Icon(
                       _allFoldersExpanded(tree)
@@ -233,13 +237,16 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
                   ),
                   onPressed: visibleIds.isEmpty
                       ? null
-                      : () => setState(() {
-                          _selection.setAll(
-                            tree,
-                            visibleIds,
-                            !allVisibleSelected,
-                          );
-                        }),
+                      : AppHaptics.wrap(
+                          () => setState(() {
+                            _selection.setAll(
+                              tree,
+                              visibleIds,
+                              !allVisibleSelected,
+                            );
+                          }),
+                          light: true,
+                        ),
                   icon: Icon(
                     allVisibleSelected
                         ? Icons.deselect_rounded
@@ -304,7 +311,10 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
             minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: DesktopButtonClickRegion(
               child: FilledButton.icon(
-                onPressed: _selection.isEmpty ? null : _continue,
+                onPressed: AppHaptics.wrap(
+                  _selection.isEmpty ? null : _continue,
+                  light: true,
+                ),
                 icon: const Icon(Icons.arrow_forward_rounded),
                 label: Text(
                   _selection.isEmpty
@@ -407,15 +417,18 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
           borderRadius: BorderRadius.circular(13),
-          onTap: () => setState(() {
-            if (isFolder && !row.searching) {
-              if (!_expanded.add(node.id)) {
-                _expanded.remove(node.id);
+          onTap: () {
+            AppHaptics.pulse();
+            setState(() {
+              if (isFolder && !row.searching) {
+                if (!_expanded.add(node.id)) {
+                  _expanded.remove(node.id);
+                }
+              } else {
+                _selection.setChecked(tree, node.id, !checked);
               }
-            } else {
-              _selection.setChecked(tree, node.id, !checked);
-            }
-          }),
+            });
+          },
           child: Padding(
             padding: EdgeInsets.fromLTRB(4.0 + row.depth * 16.0, 6, 4, 6),
             child: Row(
@@ -427,11 +440,14 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
                           child: IconButton(
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
-                            onPressed: () => setState(() {
-                              if (!_expanded.add(node.id)) {
-                                _expanded.remove(node.id);
-                              }
-                            }),
+                            onPressed: AppHaptics.wrap(
+                              () => setState(() {
+                                if (!_expanded.add(node.id)) {
+                                  _expanded.remove(node.id);
+                                }
+                              }),
+                              light: true,
+                            ),
                             icon: Icon(
                               _expanded.contains(node.id)
                                   ? Icons.expand_more_rounded
@@ -474,12 +490,14 @@ class _PortableSelectionPageState extends State<PortableSelectionPage> {
                 Checkbox(
                   tristate: isFolder,
                   value: value,
-                  onChanged: (_) => setState(() {
-                    _selection.setChecked(
-                      tree,
-                      node.id,
-                      state != PortableCheckState.checked,
-                    );
+                  onChanged: AppHaptics.wrapValue((_) {
+                    setState(() {
+                      _selection.setChecked(
+                        tree,
+                        node.id,
+                        state != PortableCheckState.checked,
+                      );
+                    });
                   }),
                 ),
               ],

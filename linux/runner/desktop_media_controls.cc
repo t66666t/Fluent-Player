@@ -67,7 +67,7 @@ struct LinuxDesktopMedia {
     const std::string key(name);
     if (g_str_equal(interface, kRoot)) {
       if (key == "Identity") return g_variant_new_string("Fluent Player");
-      if (key == "DesktopEntry") return g_variant_new_string("io.github.t66666t.FluentPlayer");
+      if (key == "DesktopEntry") return g_variant_new_string(APPLICATION_ID);
       if (key == "SupportedUriSchemes" || key == "SupportedMimeTypes") return g_variant_new_strv(nullptr, 0);
       return g_variant_new_boolean(key == "CanRaise");
     }
@@ -111,7 +111,7 @@ struct LinuxDesktopMedia {
   void update() {
     if (!bus || !registration[0] || !registration[1]) return;
     if (enabled() && !owner) {
-      const auto name = "org.mpris.MediaPlayer2.fluent_player.instance" + std::to_string(getpid());
+      const auto name = std::string("org.mpris.MediaPlayer2.") + APPLICATION_ID + ".instance" + std::to_string(getpid());
       owner = g_bus_own_name_on_connection(bus, name.c_str(), G_BUS_NAME_OWNER_FLAGS_NONE, nullptr, nullptr, nullptr, nullptr);
     } else if (!enabled() && owner) { g_bus_unown_name(owner); owner = 0; }
     GVariantBuilder changed;

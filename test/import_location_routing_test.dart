@@ -64,13 +64,13 @@ void main() {
   );
 
   test(
-    'every acquisition entry defaults to root even when opened from a folder',
+    'manual imports follow the folder and download entries default to root',
     () async {
       final folder = await library.createCollection('project', null);
       for (final feature in ImportCardFeature.values) {
         expect(
           await resolve(feature, folder.id),
-          isNull,
+          feature.usesPlacementRules ? isNull : folder.id,
           reason: feature.label,
         );
       }
@@ -155,7 +155,7 @@ void main() {
   );
 
   test(
-    'restoring a browser discovery preserves its captured placement',
+    'retired browser discoveries stay inactive and retain their saved placement',
     () async {
       final folder = await library.createCollection('original-context', null);
       await settings.updateSetting('importCardPlacement', 'currentFolder');
@@ -182,14 +182,15 @@ void main() {
       );
       try {
         await queue.loadSettings();
-        final restored = queue.nativeTasks.single;
-        expect(restored.importPlacement.folderId, folder.id);
+        expect(queue.nativeTasks, isEmpty);
+        final saved = await WebMediaQueueStore(root).read();
+        final discovery = (saved!['discoveries'] as List).single as Map;
+        final restored = ImportPlacementRequest.fromJson(
+          discovery['importPlacement'],
+        )!;
+        expect(restored.folderId, folder.id);
         expect(
-          await resolve(
-            ImportCardFeature.webMedia,
-            null,
-            request: restored.importPlacement,
-          ),
+          await resolve(ImportCardFeature.webMedia, null, request: restored),
           folder.id,
         );
       } finally {
@@ -319,18 +320,12 @@ void main() {
   );
 
   test(
-    'ask rule chooses once for a batch, and cancellation keeps source files',
+    'an explicit ask request chooses once per batch and cancellation keeps files',
     () async {
       final target = await library.createCollection('chosen', null);
-      await settings.saveImportPlacement(
-        ImportCardPlacement.libraryRoot,
-        ImportPlacementRules(
-          overrides: {
-            ImportCardFeature.localFile.storageValue: const ImportPlacementRule(
-              ImportCardPlacement.askEveryTime,
-            ),
-          },
-        ),
+      ImportPlacementRequest request() => ImportPlacementRequest(
+        feature: ImportCardFeature.localFile,
+        placement: ImportCardPlacement.askEveryTime,
       );
       var prompts = 0;
       library.importPlacementPicker = (feature, initial) async {
@@ -343,6 +338,7 @@ void main() {
         [first.path, second.path],
         null,
         useOriginalPath: true,
+        importPlacement: request(),
       );
       expect(prompts, 1);
       expect(
@@ -358,6 +354,7 @@ void main() {
           [cancelled.path],
           null,
           useOriginalPath: true,
+          importPlacement: request(),
         ),
         throwsA(isA<ImportPlacementException>()),
       );

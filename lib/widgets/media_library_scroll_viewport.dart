@@ -13,6 +13,7 @@ import '../utils/page_shortcut_keys.dart';
 import 'media_library_layout_profile.dart';
 import 'media_library_shell.dart';
 import 'playback_source_viewport.dart';
+import 'media_library_keyboard_navigation.dart';
 
 /// Shared browsing frame. The gutters stay reserved when the content fits,
 /// so adding or removing a row never shifts the cards sideways.
@@ -42,17 +43,8 @@ class MediaLibraryScrollViewport extends StatefulWidget {
   }) {
     final cards = settings.homeCardStyleFor(screenSize);
     final rows = settings.listStyleFor(screenSize);
-    final layoutIdentity = settings.mediaLibraryViewMode == 1
-        ? (
-            1,
-            rows.crossAxisCount,
-            rows.heightScale,
-            rows.titleScale,
-            rows.mainSpacingScale,
-            rows.crossSpacingScale,
-            rows.showThumbnail,
-            rows.showIndex,
-          )
+    final layoutIdentity = settings.mediaLibraryUsesRowPipeline
+        ? (1, rows.layoutIdentity)
         : (
             0,
             cards.crossAxisCount,
@@ -96,9 +88,16 @@ class MediaLibraryScrollViewport extends StatefulWidget {
     Size screenSize, {
     bool? useList,
   }) {
-    final list = useList ?? settings.mediaLibraryViewMode == 1;
+    final list = useList ?? settings.mediaLibraryUsesRowPipeline;
     final cards = settings.homeCardStyleFor(screenSize);
     final rows = settings.listStyleFor(screenSize);
+    // Pixel row styles carry their own padding instead of a width fraction.
+    final rowPadding = rows.outerPadding;
+    if (list && rowPadding != null) {
+      return screenSize.width <= 0
+          ? 0
+          : (rowPadding / screenSize.width).clamp(0.0, .45);
+    }
     return MediaLibraryLayoutDefaults.distributeWidth(
       availableWidth: 1,
       columns: list ? rows.crossAxisCount : cards.crossAxisCount,
@@ -236,6 +235,13 @@ class _MediaLibraryScrollViewportState
             (hasBlockingKeyboardModifier() ||
                 HardwareKeyboard.instance.isShiftPressed)) ||
         isEditableTextFocused()) {
+      return KeyEventResult.ignored;
+    }
+    // The viewport's early handler otherwise runs before a focused card can
+    // move to its neighbour, or before a control can use its own arrow keys.
+    if (MediaLibraryKeyboardItem.hasPrimaryFocus ||
+        MediaLibraryKeyboardItem.interactiveControlHasFocus ||
+        MediaLibraryKeyboardRegion.primaryFocusContainsCards) {
       return KeyEventResult.ignored;
     }
     // Preserve arrow-key adjustments on the mini player's seek/volume sliders.

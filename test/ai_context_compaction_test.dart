@@ -913,8 +913,8 @@ void main() {
       (tester) async {
         await tester.runAsync(() async {
           await seed();
-          await (FontLoader('MiSans')
-                ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf')))
+          await (FontLoader('Noto Sans SC')
+                ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
               .load();
           await (FontLoader('MaterialIcons')
                 ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
@@ -929,7 +929,7 @@ void main() {
             key: const ValueKey('compaction-preview'),
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
-              theme: ThemeData(fontFamily: 'MiSans'),
+              theme: ThemeData(fontFamily: 'Noto Sans SC'),
               home: Builder(
                 builder: (context) => Scaffold(
                   body: TextButton(

@@ -129,9 +129,9 @@ void main() {
   setUpAll(() async {
     if (previews) {
       for (final entry in {
-        'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Regular.otf',
+        'Noto Sans CJK Fallback': 'assets/fonts/NotoSansCJKsc-Regular.otf',
         'Inter': 'assets/fonts/Inter-ExtraBold.otf',
-        'MiSans': 'assets/fonts/MiSans-Regular.otf',
+        'Noto Sans SC': 'assets/fonts/NotoSansSC-Variable.ttf',
       }.entries) {
         await (FontLoader(
           entry.key,

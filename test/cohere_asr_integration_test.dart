@@ -106,6 +106,7 @@ void main() {
         expect(spec.asrEnhancements!.denoise, isFalse);
         expect(center.asrDownloadComponents(model).map((m) => m.id), [
           model.id,
+          asrVadModelId,
         ]);
         expect(spec.asrTokenTiming, 'parakeet-ja-ctc-80ms-gap-recovery-v1');
         expect(

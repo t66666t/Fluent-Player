@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/services/experimental_layout.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/media_library_settings_sheet.dart';
-import 'package:video_player_app/widgets/categorized_settings_page.dart';
+import 'package:video_player_app/widgets/media_library_settings_page.dart';
 
 void main() {
   setUp(() {
@@ -41,7 +41,8 @@ void main() {
       );
       await tester.tap(find.text('打开设置'));
       await tester.pumpAndSettle();
-      for (final label in ['卡片与列表样式', '显示迷你播放卡片', '隐私与联网说明']) {
+      expect(find.text('卡片与列表样式'), findsNothing);
+      for (final label in ['模型中心', '显示迷你播放卡片', '隐私与联网说明']) {
         await tester.ensureVisible(find.text(label));
         await tester.pumpAndSettle();
         expect(find.text(label).hitTestable(), findsOneWidget);
@@ -73,7 +74,8 @@ void main() {
     );
     await tester.tap(find.text('打开设置'));
     await tester.pumpAndSettle();
-    expect(find.byType(CategorizedSettingsPage), findsOneWidget);
+    expect(find.byType(MediaLibrarySettingsPage), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('首页布局实验室'));
     await tester.tap(find.byTooltip('首页布局实验室'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('体验新布局'));
@@ -87,7 +89,8 @@ void main() {
     );
     await tester.tap(find.text('打开设置'));
     await tester.pumpAndSettle();
-    expect(find.byType(CategorizedSettingsPage), findsOneWidget);
+    expect(find.byType(MediaLibrarySettingsPage), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('首页布局实验室'));
     await tester.tap(find.byTooltip('首页布局实验室'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('恢复原布局'));
@@ -102,6 +105,6 @@ void main() {
     await tester.tap(find.text('打开设置'));
     await tester.pumpAndSettle();
     expect(find.text('媒体库设置'), findsOneWidget);
-    expect(find.byType(CategorizedSettingsPage), findsOneWidget);
+    expect(find.byType(MediaLibrarySettingsPage), findsOneWidget);
   });
 }

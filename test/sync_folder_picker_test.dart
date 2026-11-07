@@ -57,7 +57,7 @@ void main() {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark(useMaterial3: true).copyWith(
-            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
@@ -317,8 +317,8 @@ void main() {
   testWidgets('render folder picker previews', (tester) async {
     if (Platform.environment['SYNC_FOLDER_PICKER_PREVIEW'] != '1') return;
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();

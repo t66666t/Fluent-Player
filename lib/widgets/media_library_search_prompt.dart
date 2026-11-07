@@ -1,22 +1,12 @@
 import 'dart:io';
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:video_player_app/theme/app_page_transitions.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'keyboard_inset_padding.dart';
-import 'home_search_scope_menu.dart';
 import '../models/home_search_request.dart';
-import '../services/home_search_preferences.dart';
-import '../features/cloud_drive/services/cloud_drive_runtime.dart';
-import '../features/cloud_drive/models/cloud_drive_models.dart';
-import '../features/cloud_drive/services/cloud_drive_account_repository.dart';
-import '../features/cloud_drive/services/cloud_drive_startup.dart';
+import '../services/app_haptics.dart';
 import '../utils/page_shortcut_keys.dart';
-import '../features/cloud_drive/presentation/cloud_drive_screen.dart'
-    show CloudDriveLoginRoute;
-import 'operation_status.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 const _searchFontFamily = 'Noto Sans SC';
@@ -25,28 +15,11 @@ const _searchFontFamily = 'Noto Sans SC';
 Future<String?> showMediaLibrarySearchPrompt(BuildContext context) async =>
     (await _showSearchPrompt(context))?.query;
 
-/// Home search restores its scope before painting the dialog so the icon
-/// and label never flash the default scope on a warm or cold opening.
-Future<HomeSearchRequest?> showHomeSearchPrompt(BuildContext context) async {
-  HomeSearchPreferences? preferences;
-  try {
-    preferences = HomeSearchPreferences(await SharedPreferences.getInstance());
-  } catch (error) {
-    debugPrint('Unable to read home search scope: $error');
-  }
-  if (!context.mounted) return null;
-  return _showSearchPrompt(
-    context,
-    preferences: preferences,
-    enableScopeChooser: true,
-  );
-}
+/// Home search always searches the local media library.
+Future<HomeSearchRequest?> showHomeSearchPrompt(BuildContext context) =>
+    _showSearchPrompt(context);
 
-Future<HomeSearchRequest?> _showSearchPrompt(
-  BuildContext context, {
-  bool enableScopeChooser = false,
-  HomeSearchPreferences? preferences,
-}) {
+Future<HomeSearchRequest?> _showSearchPrompt(BuildContext context) {
   return showGeneralDialog<HomeSearchRequest>(
     context: context,
     barrierDismissible: true,
@@ -56,10 +29,7 @@ Future<HomeSearchRequest?> _showSearchPrompt(
         ? Duration.zero
         : const Duration(milliseconds: 240),
     pageBuilder: (context, animation, secondaryAnimation) {
-      return _MediaLibrarySearchPrompt(
-        enableScopeChooser: enableScopeChooser,
-        preferences: preferences,
-      );
+      return const _MediaLibrarySearchPrompt();
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {
       final eased = CurvedAnimation(
@@ -102,13 +72,7 @@ ThemeData mediaLibrarySearchResultsTheme(ThemeData base) {
 }
 
 class _MediaLibrarySearchPrompt extends StatefulWidget {
-  const _MediaLibrarySearchPrompt({
-    required this.enableScopeChooser,
-    this.preferences,
-  });
-
-  final bool enableScopeChooser;
-  final HomeSearchPreferences? preferences;
+  const _MediaLibrarySearchPrompt();
 
   @override
   State<_MediaLibrarySearchPrompt> createState() =>
@@ -119,125 +83,16 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode(debugLabel: 'MediaSearchInput');
   bool _canSubmit = false;
-  HomeSearchScope _scope = HomeSearchScope.library;
-  bool _scopeMenuOpen = false;
-  final GlobalKey _scopeAnchor = GlobalKey();
-  CloudDriveAccountRepository? _accounts;
   bool _submitted = false;
-  bool _loggingIn = false;
-  String? _scopeError;
-  Object? _scopeDiagnostic;
-
-  bool get _cloudUnavailable =>
-      _scope.isCloud &&
-      (_accounts == null || !_signedInProviders.contains(_scope.name));
-
-  Set<String> get _signedInProviders =>
-      _accounts?.accounts
-          .where((a) => a.authState != CloudDriveAuthState.needsLogin)
-          .map((a) => a.providerId)
-          .toSet() ??
-      <String>{};
-
-  void _bindAccounts() {
-    if (!mounted || !widget.enableScopeChooser) return;
-    final accounts = CloudDriveRuntime.instance?.accounts;
-    if (!identical(accounts, _accounts)) {
-      _accounts?.sessionChanges.removeListener(_accountsChanged);
-      _accounts = accounts;
-      accounts?.sessionChanges.addListener(_accountsChanged);
-    }
-    // An expired account must never silently change what the user searches.
-  }
-
-  void _accountsChanged() {
-    if (mounted) setState(_bindAccounts);
-  }
-
-  Future<void> _loginScope() async {
-    if (_loggingIn || !_scope.isCloud) return;
-    final scope = _scope;
-    setState(() {
-      _loggingIn = true;
-      _scopeError = null;
-      _scopeDiagnostic = null;
-    });
-    try {
-      final runtime = await CloudDriveRuntime.ensureInstalled();
-      final provider = runtime.providers[scope.name];
-      if (provider == null) throw StateError('搜索服务尚未就绪');
-      if (!mounted) return;
-      await Navigator.of(context).push<CloudDriveAccount>(
-        CloudDriveLoginRoute(provider: provider, accounts: runtime.accounts),
-      );
-      if (mounted) {
-        setState(_bindAccounts);
-        _inputFocusNode.requestFocus();
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _scopeError = '暂时无法打开网盘登录，请稍后重试。';
-          _scopeDiagnostic = error;
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _loggingIn = false);
-    }
-  }
-
-  Future<void> _rememberScope(HomeSearchScope scope) async {
-    try {
-      await widget.preferences?.select(scope);
-    } catch (error) {
-      debugPrint('Unable to save home search scope: $error');
-    }
-  }
-
-  Future<void> _chooseScope({bool keyboardNavigation = false}) async {
-    if (_scopeMenuOpen) return;
-    final box = _scopeAnchor.currentContext!.findRenderObject()! as RenderBox;
-    final anchor = box.localToGlobal(Offset.zero) & box.size;
-    setState(() => _scopeMenuOpen = true);
-    final scope = await showHomeSearchScopeMenu(
-      context,
-      anchor: anchor,
-      selected: _scope,
-      signedInProviders: _signedInProviders,
-      keyboardNavigation: keyboardNavigation,
-    );
-    if (!mounted) return;
-    setState(() {
-      _scopeMenuOpen = false;
-      if (scope != null) _scope = scope;
-      _scopeError = null;
-      _scopeDiagnostic = null;
-      _bindAccounts();
-    });
-    if (scope != null) {
-      unawaited(_rememberScope(_scope));
-    }
-    _inputFocusNode.requestFocus();
-  }
 
   @override
   void initState() {
     super.initState();
-    _scope = widget.preferences?.scope ?? HomeSearchScope.library;
-    _bindAccounts();
-    if (widget.enableScopeChooser && _accounts == null) {
-      unawaited(
-        CloudDriveStartup.pending?.then<void>((_) {
-          if (mounted) setState(_bindAccounts);
-        }, onError: (Object _, StackTrace _) {}),
-      );
-    }
     _controller.addListener(_handleTextChanged);
   }
 
   @override
   void dispose() {
-    _accounts?.sessionChanges.removeListener(_accountsChanged);
     _controller.removeListener(_handleTextChanged);
     _controller.dispose();
     _inputFocusNode.dispose();
@@ -255,10 +110,12 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
     final composing = _controller.value.composing;
     if (composing.isValid && !composing.isCollapsed) return;
     final query = _controller.text.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-    if (query.isEmpty || _submitted || _cloudUnavailable) return;
+    if (query.isEmpty || _submitted) return;
     _submitted = true;
     _inputFocusNode.unfocus();
-    Navigator.of(context).pop(HomeSearchRequest(scope: _scope, query: query));
+    Navigator.of(
+      context,
+    ).pop(HomeSearchRequest(scope: HomeSearchScope.library, query: query));
   }
 
   bool get _isDesktop =>
@@ -284,11 +141,6 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
       data: searchTheme,
       child: CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
-          if (widget.enableScopeChooser)
-            _OpenScopeActivator(
-              () => !_scopeMenuOpen && !isEditableTextComposing(),
-            ): () =>
-                unawaited(_chooseScope(keyboardNavigation: true)),
           const SingleActivator(LogicalKeyboardKey.escape): () {
             if (isEditableTextComposing()) return;
             Navigator.of(context).maybePop();
@@ -346,9 +198,7 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
                                     bottom: 10,
                                   ),
                                   child: Text(
-                                    widget.enableScopeChooser
-                                        ? '${_scope.label} · 搜索'
-                                        : '搜索媒体库',
+                                    '搜索媒体库',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontFamily: _searchFontFamily,
@@ -391,166 +241,31 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
                                             height: 1.45,
                                           ),
                                           decoration: InputDecoration(
-                                            hintText: _scope.hint,
+                                            hintText:
+                                                HomeSearchScope.library.hint,
                                             hintStyle: const TextStyle(
                                               color: Colors.white38,
                                               fontFamily: _searchFontFamily,
                                             ),
-                                            prefixIcon:
-                                                widget.enableScopeChooser
-                                                ? Tooltip(
-                                                    message:
-                                                        '选择搜索范围：${_scope.label}',
-                                                    child: Semantics(
-                                                      expanded: _scopeMenuOpen,
-                                                      child: DesktopButtonClickRegion(
-                                                        child: IconButton(
-                                                          key: _scopeAnchor,
-                                                          onPressed:
-                                                              _chooseScope,
-                                                          style: IconButton.styleFrom(
-                                                            minimumSize:
-                                                                const Size(
-                                                                  40,
-                                                                  36,
-                                                                ),
-                                                            fixedSize:
-                                                                const Size(
-                                                                  40,
-                                                                  36,
-                                                                ),
-                                                            padding:
-                                                                EdgeInsets.zero,
-                                                            visualDensity:
-                                                                VisualDensity
-                                                                    .standard,
-                                                            tapTargetSize:
-                                                                MaterialTapTargetSize
-                                                                    .padded,
-                                                            hoverColor: Colors
-                                                                .white
-                                                                .withValues(
-                                                                  alpha: 0.04,
-                                                                ),
-                                                            focusColor:
-                                                                const Color(
-                                                                  0x1A88BEFF,
-                                                                ),
-                                                            highlightColor:
-                                                                Colors.white
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.08,
-                                                                    ),
-                                                            shape: RoundedRectangleBorder(
-                                                              borderRadius:
-                                                                  BorderRadius.circular(
-                                                                    10,
-                                                                  ),
-                                                            ),
-                                                            foregroundColor:
-                                                                _scopeMenuOpen
-                                                                ? const Color(
-                                                                    0xFF88BEFF,
-                                                                  )
-                                                                : Colors
-                                                                      .white60,
-                                                          ),
-                                                          icon: SizedBox(
-                                                            width: 40,
-                                                            height: 36,
-                                                            // Center the type icon itself; the disclosure
-                                                            // indicator must not affect its alignment.
-                                                            child: Stack(
-                                                              alignment:
-                                                                  Alignment
-                                                                      .center,
-                                                              children: [
-                                                                AnimatedSwitcher(
-                                                                  duration:
-                                                                      MediaQuery.disableAnimationsOf(
-                                                                        context,
-                                                                      )
-                                                                      ? Duration
-                                                                            .zero
-                                                                      : const Duration(
-                                                                          milliseconds:
-                                                                              160,
-                                                                        ),
-                                                                  child: Icon(
-                                                                    _scope ==
-                                                                            HomeSearchScope.library
-                                                                        ? Icons
-                                                                              .search_rounded
-                                                                        : _scope
-                                                                              .icon,
-                                                                    key: ValueKey(
-                                                                      _scope,
-                                                                    ),
-                                                                    size: 20,
-                                                                  ),
-                                                                ),
-                                                                Positioned(
-                                                                  right: 0,
-                                                                  top: 0,
-                                                                  bottom: 0,
-                                                                  child: Center(
-                                                                    child: AnimatedRotation(
-                                                                      turns:
-                                                                          _scopeMenuOpen
-                                                                          ? .5
-                                                                          : 0,
-                                                                      duration:
-                                                                          MediaQuery.disableAnimationsOf(
-                                                                            context,
-                                                                          )
-                                                                          ? Duration.zero
-                                                                          : const Duration(
-                                                                              milliseconds: 200,
-                                                                            ),
-                                                                      curve: Curves
-                                                                          .easeOutCubic,
-                                                                      child: const Icon(
-                                                                        key: ValueKey(
-                                                                          'home-search-scope-chevron',
-                                                                        ),
-                                                                        Icons
-                                                                            .expand_more_rounded,
-                                                                        size:
-                                                                            10,
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  )
-                                                : const Padding(
-                                                    padding: EdgeInsets.only(
-                                                      left: 10,
-                                                      right: 6,
-                                                    ),
-                                                    child: Center(
-                                                      child: SizedBox.square(
-                                                        dimension: 22,
-                                                        child: Icon(
-                                                          Icons.search_rounded,
-                                                          size: 22,
-                                                          color: Colors.white54,
-                                                        ),
-                                                      ),
-                                                    ),
+                                            prefixIcon: const Padding(
+                                              padding: EdgeInsets.only(
+                                                left: 10,
+                                                right: 6,
+                                              ),
+                                              child: Center(
+                                                child: SizedBox.square(
+                                                  dimension: 22,
+                                                  child: Icon(
+                                                    Icons.search_rounded,
+                                                    size: 22,
+                                                    color: Colors.white54,
                                                   ),
+                                                ),
+                                              ),
+                                            ),
                                             prefixIconConstraints:
-                                                BoxConstraints.tightFor(
-                                                  width:
-                                                      widget.enableScopeChooser
-                                                      ? 48
-                                                      : 38,
+                                                const BoxConstraints.tightFor(
+                                                  width: 38,
                                                   height: 50,
                                                 ),
                                             filled: true,
@@ -608,10 +323,10 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
                                         dimension: 50,
                                         child: DesktopButtonClickRegion(
                                           child: IconButton.filled(
-                                            onPressed:
-                                                _canSubmit && !_cloudUnavailable
-                                                ? _submit
-                                                : null,
+                                            onPressed: AppHaptics.wrap(
+                                              _canSubmit ? _submit : null,
+                                              light: true,
+                                            ),
                                             tooltip: _isDesktop
                                                 ? '搜索（Enter）'
                                                 : '搜索',
@@ -638,37 +353,6 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
                                     ),
                                   ],
                                 ),
-                                if (_cloudUnavailable ||
-                                    _scopeError != null) ...[
-                                  const SizedBox(height: 14),
-                                  OperationStatus(
-                                    title:
-                                        _scopeError ??
-                                        (_loggingIn
-                                            ? '正在打开登录…'
-                                            : '${_scope.label}尚未登录'),
-                                    kind: _loggingIn
-                                        ? OperationStatusKind.progress
-                                        : _scopeError != null
-                                        ? OperationStatusKind.error
-                                        : OperationStatusKind.info,
-                                    details: _scopeDiagnostic?.toString(),
-                                    actions: [
-                                      DesktopButtonClickRegion(
-                                        child: TextButton.icon(
-                                          onPressed: _loggingIn
-                                              ? null
-                                              : _loginScope,
-                                          icon: const Icon(
-                                            Icons.login,
-                                            size: 18,
-                                          ),
-                                          label: Text('登录${_scope.label}'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
                               ],
                             ),
                           ),
@@ -684,17 +368,4 @@ class _MediaLibrarySearchPromptState extends State<_MediaLibrarySearchPrompt> {
       ),
     );
   }
-}
-
-/// Plain Down opens the scope picker while editing. Composition and modified
-/// arrows continue through to the input's own shortcuts.
-class _OpenScopeActivator extends SingleActivator {
-  _OpenScopeActivator(this.canOpen)
-    : super(LogicalKeyboardKey.arrowDown, includeRepeats: false);
-
-  final bool Function() canOpen;
-
-  @override
-  bool accepts(KeyEvent event, HardwareKeyboard state) =>
-      canOpen() && super.accepts(event, state);
 }

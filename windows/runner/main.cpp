@@ -51,7 +51,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Create window with calculated size and position
   Win32Window::Point origin(window_x, window_y);
   Win32Window::Size size(window_width, window_height);
-  if (!window.Create(L"Fluent Player Community", origin, size)) {
+  if (!window.Create(L"Fluent Player", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

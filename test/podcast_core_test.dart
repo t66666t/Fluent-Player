@@ -261,7 +261,7 @@ void main() {
     },
   );
   test(
-    'podcast cards serialize independently and online queue accepts their logical paths',
+    'podcast metadata serializes and the queue accepts typed RSS episodes',
     () {
       final collection = VideoCollection(
         id: 'channel',

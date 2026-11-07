@@ -1,5 +1,15 @@
 # 本地转录原生运行库兼容性
 
+## 社区版转录恢复（2026-11-03）
+
+社区版源代码不包含模型权重，原来的 VAD 资产读取因此失效。共享 VAD 改由 `asr_dependencies.json` 与现有下载队列准备，转录、模型检查和测速复用同一文件；原任务身份、模型版本、字幕和检查点保持不变。详细流程与复测命令见[模型集成](model-integration.md#社区版共享-vad-与按需准备)。
+
+Android 15 真机还复现了 `ModelTaskService` 的 `ForegroundServiceDidNotStartInTimeException`：短下载完成后直接 `stopService()`，可能在服务提升到前台之前结束服务。现在在 `onCreate()` 及时显示前台通知，空闲状态通过同一服务的有序 intent 处理，并用 `stopSelfResult(startId)` 避免旧的空闲请求停止新的识别任务。继续保留原来的通知、暂停操作、唤醒锁释放、服务类型和系统超时处理；没有新增后台引擎或自动重启。平台依据见 [前台服务异常](https://developer.android.com/develop/background-work/services/fgs/troubleshooting)和 [Service.stopSelfResult](https://developer.android.com/reference/android/app/Service#stopSelfResult(int))。
+
+本轮真实 CPU 测试在 Windows x64 与 Android 15 / API 35（23046RP50C）通过：SenseVoice Small、Dolphin Base 经生产队列安装固定权重和 VAD，完成短中文音频识别、时间轴检查、重复识别、取消后的资源释放，以及重建服务后的检查点恢复。Android 额外通过 8 轮快速下载/推理启停，未再发生上述前台服务崩溃。Windows 另通过 VAD 的模型中心真实推理检查。Android 使用独立 profile 包、临时测试数据及维护者本机提供的固定权重，不涉及用户媒体或完整版数据。
+
+上述结果验证这两个模型的 CPU 路径；本轮没有验收其他模型的真实推理、GPU 后端或 iOS/macOS/Linux 实机。全部模型仍共用修复后的依赖准备入口，其他平台仍需对应原生环境检查，不能把通过编译或通用回归当作实机推理。
+
 2026-10-20。适用固定的 `sherpa_onnx` 及五端 companion 1.12.12、`onnxruntime_v2` 1.23.2+2。
 
 ## Android：OrtGetApiBase 加载失败

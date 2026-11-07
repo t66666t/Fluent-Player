@@ -4,10 +4,12 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
+import '../../debug/developer_log.dart' as developer;
 import '../progress_sync/folder_transfer_disk_space.dart' as disk;
 import 'podcast_client.dart';
 import 'podcast_download_gate.dart';
 import 'podcast_models.dart';
+import 'podcast_source_policy.dart';
 import 'podcast_store.dart';
 import 'podcast_transfer.dart';
 import '../../services/network/recoverable_media_stream.dart';
@@ -20,11 +22,15 @@ class PodcastMediaStore {
     required this.store,
     required this.http,
     this.bodyIdleTimeout = PodcastTransferPolicy.bodyIdleTimeout,
+    this.playbackRequestTimeout = const Duration(seconds: 8),
   });
   final Directory root;
   final PodcastStore store;
   final PodcastHttp http;
   final Duration bodyIdleTimeout;
+  // Leave room inside native initialization's 20s budget for one reconnect.
+  // Download requests keep their existing, longer transport deadlines.
+  final Duration playbackRequestTimeout;
   late final _downloadGate = PodcastDownloadGate(store);
   final Set<String> protectedEpisodes = {};
   final Set<String> activeDownloads = {};
@@ -386,6 +392,7 @@ class PodcastMediaStore {
       await flight.deliver(data, 0);
       return data;
     }
+    requirePodcastRssMedia(episode, media);
     final client = _client(download: download);
     final start = index * podcastChunkBytes,
         end = start + podcastChunkBytes - 1;
@@ -396,6 +403,7 @@ class PodcastMediaStore {
       start,
       end,
       cancelSignal: flight.cancelled,
+      requestTimeout: download ? null : playbackRequestTimeout,
     );
     if (response.statusCode == 416) {
       throw const HttpException('媒体范围无效，请刷新节目后重试');
@@ -519,6 +527,7 @@ class PodcastMediaStore {
               nextStart,
               nextEnd ?? end,
               cancelSignal: flight.cancelled,
+              requestTimeout: download ? null : playbackRequestTimeout,
             ),
           ),
         ).listen(
@@ -661,7 +670,18 @@ class PodcastMediaStore {
     Uri uri,
     Map<String, String> headers, {
     Future<void>? cancelSignal,
+    Duration? timeout,
   }) async {
+    final elapsed = Stopwatch()..start();
+    Duration bounded(Duration cap) {
+      if (timeout == null) return cap;
+      final remaining = timeout - elapsed.elapsed;
+      if (remaining <= Duration.zero) {
+        throw TimeoutException('播客连接超时', timeout);
+      }
+      return remaining < cap ? remaining : cap;
+    }
+
     HttpClientRequest? active;
     var cancelled = false, settled = false;
     final cancellation = PodcastTransferException(
@@ -683,7 +703,7 @@ class PodcastMediaStore {
         opening,
         if (cancelSignal != null)
           cancelSignal.then<HttpClientRequest>((_) => throw cancellation),
-      ]).timeout(PodcastTransferPolicy.requestTimeout);
+      ]).timeout(bounded(PodcastTransferPolicy.requestTimeout));
       active = request;
       if (cancelled) {
         request.abort(cancellation);
@@ -691,7 +711,7 @@ class PodcastMediaStore {
       }
       headers.forEach(request.headers.set);
       final response = await request.close().timeout(
-        PodcastTransferPolicy.headerTimeout,
+        bounded(PodcastTransferPolicy.headerTimeout),
       );
       if (http.isConnectionFailure(response)) {
         await response.listen((_) {}).cancel();
@@ -717,22 +737,41 @@ class PodcastMediaStore {
     int start,
     int end, {
     Future<void>? cancelSignal,
+    Duration? requestTimeout,
   }) async {
-    try {
-      return await _openRangeBody(
-        client,
-        media,
-        manifest,
-        start,
-        end,
-        cancelSignal: cancelSignal,
-      );
-    } catch (error) {
-      http.connectionFailed(
-        Uri.parse(manifest['resolvedUrl'] as String? ?? media.url),
-        error,
-      );
-      rethrow;
+    var cancelled = false;
+    cancelSignal?.then((_) => cancelled = true);
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await _openRangeBody(
+          client,
+          media,
+          manifest,
+          start,
+          end,
+          cancelSignal: cancelSignal,
+          requestTimeout: requestTimeout,
+        );
+      } catch (error) {
+        if (_closed || cancelled) rethrow;
+        http.connectionFailed(
+          Uri.parse(manifest['resolvedUrl'] as String? ?? media.url),
+          error,
+        );
+        final transient =
+            error is SocketException ||
+            error is TimeoutException ||
+            error is HttpException && error is! PodcastTransferException;
+        if (attempt >= 1 || !transient) rethrow;
+        // Routing is evaluated for each request. Use the selected alternate
+        // now, rather than failing this open and requiring a second play tap.
+        // A configured route is retained and may reconnect once as well.
+        developer.log(
+          'Retrying interrupted podcast media connection',
+          name: 'PodcastMediaStore',
+          error: error,
+        );
+      }
     }
   }
 
@@ -743,6 +782,7 @@ class PodcastMediaStore {
     int start,
     int end, {
     Future<void>? cancelSignal,
+    Duration? requestTimeout,
   }) async {
     final resolved = manifest['resolvedUrl'] as String?;
     final fresh =
@@ -758,13 +798,19 @@ class PodcastMediaStore {
     for (var attempt = 0; ; attempt++) {
       final source = Uri.parse(attempt == 0 ? candidate : media.url);
       final validator = manifest['etag'] ?? manifest['modified'];
-      final response = await _request(client, source, {
-        'Range': 'bytes=$start-$end',
-        'Accept-Encoding': 'identity',
-        'User-Agent': 'FluentPlayer/1.0 Podcast',
-        if (validator is String && !validator.startsWith('W/'))
-          'If-Range': validator,
-      }, cancelSignal: cancelSignal);
+      final response = await _request(
+        client,
+        source,
+        {
+          'Range': 'bytes=$start-$end',
+          'Accept-Encoding': 'identity',
+          'User-Agent': 'FluentPlayer/1.0 Podcast',
+          if (validator is String && !validator.startsWith('W/'))
+            'If-Range': validator,
+        },
+        cancelSignal: cancelSignal,
+        timeout: requestTimeout,
+      );
       final actualStart = RegExp(
         r'^bytes (\d+)-',
       ).firstMatch(response.headers.value('content-range') ?? '')?.group(1);
@@ -821,12 +867,21 @@ class PodcastMediaStore {
     PodcastMedia media,
     _PodcastPlaybackRead read,
   ) async {
+    requirePodcastRssMedia(episode, media);
     final client = _client();
     HttpClientResponse? opened;
     try {
       read.attach(client);
       final resolved = manifest(episode.id, media.url);
-      final response = await _openRange(client, media, resolved, 0, 0);
+      final response = await _openRange(
+        client,
+        media,
+        resolved,
+        0,
+        0,
+        cancelSignal: read.stopped,
+        requestTimeout: playbackRequestTimeout,
+      );
       opened = response;
       read.check();
       if (response.statusCode != 200 && response.statusCode != 206) {
@@ -884,6 +939,7 @@ class PodcastMediaStore {
     Future<void>? cancelSignal,
     void Function(String message, bool rateLimited)? onWaiting,
   }) async {
+    requirePodcastRssMedia(episode, media);
     // Join any playback request that already owns a missing chunk instead of
     // fetching the same bytes again inside a larger download window.
     final prefix =
@@ -1384,24 +1440,26 @@ class PodcastMediaStore {
     void Function(int bytes)? onNetworkBytes,
     Future<void>? cancelSignal,
     void Function(String message, bool rateLimited)? onWaiting,
-  }) => _downloadGate.run(
-    _downloadSource(episode, media),
-    () => _fillSequential(
-      episode,
-      media,
-      onProgress: onProgress,
-      onNetworkBytes: onNetworkBytes,
+  }) async {
+    return _downloadGate.run(
+      _downloadSource(episode, media),
+      () => _fillSequential(
+        episode,
+        media,
+        onProgress: onProgress,
+        onNetworkBytes: onNetworkBytes,
+        cancelSignal: cancelSignal,
+      ),
+      shouldContinue: () =>
+          !_closed &&
+          onProgress(
+            cachedBytes(episode.id, media.url),
+            manifest(episode.id, media.url)['total'] as int? ?? media.length,
+          ),
       cancelSignal: cancelSignal,
-    ),
-    shouldContinue: () =>
-        !_closed &&
-        onProgress(
-          cachedBytes(episode.id, media.url),
-          manifest(episode.id, media.url)['total'] as int? ?? media.length,
-        ),
-    cancelSignal: cancelSignal,
-    onWaiting: onWaiting,
-  );
+      onWaiting: onWaiting,
+    );
+  }
 
   Future<HttpClientResponse> _openSequential(
     HttpClient client,
@@ -1579,6 +1637,9 @@ class PodcastMediaStore {
   }
 
   Future<Uri> playbackUri(PodcastEpisode episode, PodcastMedia media) async {
+    if (!isComplete(episode.id, media.url)) {
+      requirePodcastRssMedia(episode, media);
+    }
     if (media.isStreamManifest && !media.isHls) {
       throw const FormatException('暂不支持这个分段媒体来源，请选择音频文件或 MP4 版本');
     }
@@ -1721,10 +1782,21 @@ class PodcastMediaStore {
         if (data.length < podcastChunkBytes && end == null) break;
       }
       await response.close();
-    } catch (_) {
+    } catch (error) {
       if (read?.cancelled == true) return;
+      developer.log(
+        'Podcast playback read failed',
+        name: 'PodcastMediaStore',
+        error: error,
+      );
       try {
         response.statusCode = 502;
+        response.headers.removeAll('content-range');
+        response.contentLength = 0;
+      } catch (_) {
+        /* A response that already streamed bytes must finish as truncated. */
+      }
+      try {
         await response.close();
       } catch (_) {
         /* The player may have cancelled a seek. */
@@ -1758,7 +1830,16 @@ class PodcastMediaStore {
             ? 'application/vnd.apple.mpegurl'
             : '',
       );
-      return (await playbackUri(episode, next)).toString();
+      // Playlist descendants inherit the verified enclosure's feed evidence.
+      // Keep this derived list in memory; do not turn it into an imported show.
+      final descendant = PodcastEpisode.fromJson({
+        ...episode.toJson(),
+        'media': [
+          ...episode.media.map((value) => value.toJson()),
+          next.toJson(),
+        ],
+      });
+      return (await playbackUri(descendant, next)).toString();
     }
 
     final lines = <String>[];
@@ -2153,6 +2234,8 @@ class _PodcastPlaybackRead {
   _PodcastPlaybackRead(this.onCancel);
   final void Function() onCancel;
   final List<void Function()> _stops = [];
+  final _stopped = Completer<void>();
+  Future<void> get stopped => _stopped.future;
   bool cancelled = false;
   void check() {
     if (cancelled) throw const HttpException('播放位置已改变');
@@ -2171,6 +2254,7 @@ class _PodcastPlaybackRead {
   void cancel() {
     if (cancelled) return;
     cancelled = true;
+    _stopped.complete();
     for (final stop in _stops) {
       stop();
     }

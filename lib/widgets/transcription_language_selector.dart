@@ -52,10 +52,14 @@ class TranscriptionLanguageSelector extends StatefulWidget {
     required this.center,
     this.foregroundColor,
     this.buttonKey = const ValueKey('transcription-language-summary'),
+    this.compact = false,
+    this.controlHeight = 40,
   });
   final ModelCenterService center;
   final Color? foregroundColor;
   final Key buttonKey;
+  final bool compact;
+  final double controlHeight;
   @override
   State<TranscriptionLanguageSelector> createState() =>
       _TranscriptionLanguageSelectorState();
@@ -134,9 +138,22 @@ class _TranscriptionLanguageSelectorState
               disabledForegroundColor: widget.foregroundColor?.withValues(
                 alpha: .7,
               ),
-              minimumSize: const Size(0, 40),
+              minimumSize: Size(0, widget.controlHeight),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: widget.compact ? 0 : 6,
+              ),
+              shape: widget.compact
+                  ? RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outlineVariant.withValues(alpha: .65),
+                      ),
+                    )
+                  : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -145,10 +162,18 @@ class _TranscriptionLanguageSelectorState
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    _error != null ? '识别语言：点击重试' : '识别语言：$label',
-                    maxLines: 2,
+                    _error != null
+                        ? (widget.compact ? '点击重试' : '识别语言：点击重试')
+                        : widget.compact
+                        ? label
+                        : '识别语言：$label',
+                    maxLines: widget.compact ? 1 : 2,
+                    softWrap: !widget.compact,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: widget.compact ? 1.25 : null,
+                    ),
                   ),
                 ),
                 if (_ready && options.editable) ...[

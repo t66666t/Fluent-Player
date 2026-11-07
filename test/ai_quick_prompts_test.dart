@@ -128,6 +128,9 @@ void main() {
     for (final noun in ['视频', '音频', '播客']) {
       final media = AiChatMediaCopy(noun);
       expect(AiQuickPromptStore.defaults.first.nameFor(media), media.summarize);
+      expect(AiQuickPromptStore.defaults[1].id, 'explain');
+      expect(AiQuickPromptStore.defaults[1].nameFor(media), media.aboutContent);
+      expect(AiQuickPromptStore.defaults[1].textFor(media), '这个$noun讲了什么内容？');
       expect(
         AiQuickPromptStore.defaults.last.textFor(media),
         media.completeNotesPrompt,

@@ -3,14 +3,52 @@ import 'dart:async';
 /// A native model owner accepts one call at a time. Preparation and subtitle
 /// refinement can share this owner while recognition runs on another isolate.
 class ModelStageQueue {
-  Future<void> _tail = Future<void>.value();
-  Future<T> run<T>(Future<T> Function() action) {
-    final task = _tail.then((_) => action());
-    _tail = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return task;
+  final _pending = <_ModelStageTask>[];
+  Completer<void>? _drain;
+  bool _running = false;
+
+  /// Higher-priority waiting work starts first; equal priorities remain FIFO.
+  /// A task which has started is never interrupted or run concurrently.
+  Future<T> run<T>(Future<T> Function() action, {int priority = 0}) {
+    final result = Completer<T>();
+    _pending.add(
+      _ModelStageTask(priority, () async {
+        try {
+          result.complete(await action());
+        } catch (error, stack) {
+          result.completeError(error, stack);
+        }
+      }),
+    );
+    _drain ??= Completer<void>();
+    if (!_running) {
+      _running = true;
+      scheduleMicrotask(_pump);
+    }
+    return result.future;
   }
 
-  Future<void> get drained => _tail;
+  Future<void> _pump() async {
+    while (_pending.isNotEmpty) {
+      var selected = 0;
+      for (var i = 1; i < _pending.length; i++) {
+        if (_pending[i].priority > _pending[selected].priority) selected = i;
+      }
+      await _pending.removeAt(selected).run();
+    }
+    _running = false;
+    final drain = _drain;
+    _drain = null;
+    drain?.complete();
+  }
+
+  Future<void> get drained => _drain?.future ?? Future<void>.value();
+}
+
+class _ModelStageTask {
+  const _ModelStageTask(this.priority, this.run);
+  final int priority;
+  final Future<void> Function() run;
 }
 
 /// A slow consumer may hold at most two text batches, while other native stages

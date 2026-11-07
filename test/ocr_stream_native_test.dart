@@ -284,6 +284,7 @@ class _Library extends ChangeNotifier implements LibraryService {
     String? wordTimingPath,
     String? sourceAssetId,
     bool shareWithBilibiliPart = true,
+    bool generatedName = false,
   }) async => null;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

@@ -4,11 +4,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'app_branding.dart';
 
 /// Folder name under XDG data home for Linux fallbacks.
 ///
 /// Matches the GTK application ID; legacy directories are adopted by storage.
-const String kAppDataFolderName = 'io.github.t66666t.FluentPlayerCommunity';
+const String kAppDataFolderName = kApplicationId;
 
 /// Resolves a writable directory for app-owned data (library, batch cache, …).
 ///

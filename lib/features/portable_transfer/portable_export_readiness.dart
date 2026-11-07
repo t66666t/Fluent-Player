@@ -2,13 +2,15 @@ import 'dart:io';
 
 import '../../models/video_item.dart';
 import '../../services/library_service.dart';
-import '../media_cache/media_cache_models.dart';
+import '../../services/community_media_input.dart';
 import '../media_cache/media_cache_service.dart';
+import 'legacy_download_export_policy.dart';
 import 'portable_media_selection.dart';
 import 'sync_media_origin.dart';
 
-/// Checks actual complete files, never queued downloads or isolated tracks.
-/// The exporter must still acquire its own lease before reading the result.
+/// Legacy name retained for export/sync callers. Only actual local files can
+/// satisfy media readiness. RSS podcasts may be exported as references; this
+/// helper never discovers or acquires online caches.
 Future<List<VideoItem>> uncachedCloudExportItems(
   LibraryService library,
   Iterable<String> rootIds, {
@@ -18,34 +20,27 @@ Future<List<VideoItem>> uncachedCloudExportItems(
     rootIds,
   ).resolveAgainstLibrary(library);
   final missing = <VideoItem>[];
-  final service = cache ?? MediaCacheService.instance;
-  var initialized = false;
   for (final id in inclusion.videoIds) {
     final item = library.getVideo(id);
-    if (item == null || item.sourceRef?.cloudDrive == null) continue;
-    // A deliberately imported local download already carries the media bytes.
-    // A transient playbackPath is not proof of a completed download.
+    if (item == null || omitLegacyWebDownload(item, library)) continue;
+    if (!communityMediaIsLocal(item.path) &&
+        item.sourceRef?.podcast != null &&
+        communityMediaIsPlayable(item.path, source: item.sourceRef)) {
+      continue;
+    }
     final origin = await classifySyncMediaOrigin(path: item.path);
+    // Android provider files need their existing local URI grant. The exporter
+    // validates/streams that grant; no network cache can satisfy it.
+    if (origin.placement == SyncMediaPlacement.localContentUri) continue;
     if (origin.placement == SyncMediaPlacement.localFile) {
       try {
         final stat = await File(origin.localPath!).stat();
         if (stat.type == FileSystemEntityType.file && stat.size > 0) continue;
       } on FileSystemException {
-        // A removed or disconnected local file still gets the cache prompt.
+        // A removed or disconnected local file requires user relocation.
       }
     }
-    final source = CacheSource.fromItem(item);
-    if (service == null || source == null) {
-      missing.add(item);
-      continue;
-    }
-    if (!initialized) {
-      await service.initialize();
-      initialized = true;
-    }
-    await service.discoverMaterial(source);
-    await service.refreshAvailability(mediaKey: source.key);
-    if (service.completeExportVariant(item) == null) missing.add(item);
+    missing.add(item);
   }
   return missing;
 }

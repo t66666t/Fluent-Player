@@ -16,6 +16,7 @@ import 'package:video_player_app/features/model_center/model_token_timing.dart';
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
 import 'package:video_player_app/models/subtitle_asr_info.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 Float32List _readAudio(String path) {
   final bytes = File(path).readAsBytesSync();
@@ -53,7 +54,7 @@ List<({int start, int end})> _vad(Float32List audio, {int padding = 2560}) {
   final detector = sherpa.VoiceActivityDetector(
     config: sherpa.VadModelConfig(
       sileroVad: sherpa.SileroVadModelConfig(
-        model: p.absolute('assets/models/asr/silero_vad.onnx'),
+        model: asrProbeVadPath(),
         threshold: .5,
         minSilenceDuration: .15,
         minSpeechDuration: .18,
@@ -290,7 +291,7 @@ void main() {
             directory: p.absolute(
               '.artifacts/model-center/native/parakeet-ja-0.6b-q8',
             ),
-            vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+            vadPath: asrProbeVadPath(),
             language: 'ja',
             threads: 4,
             enhancements: const AsrEnhancementOptions(

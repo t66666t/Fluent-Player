@@ -1,18 +1,26 @@
+import 'dart:async';
+
 import 'ui_refresh_rate_scope.dart';
 import 'media_library_folder_route.dart';
+import 'media_library_folder_tree.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+import '../models/media_library_root_entry.dart';
 import '../services/media_playback_service.dart';
+import '../services/settings_service.dart';
 import '../services/playback_navigation_service.dart';
 import '../services/clipboard_detection_routes.dart';
+import '../services/library_service.dart';
 import '../utils/app_toast.dart';
 import '../utils/stable_system_ui_insets.dart';
 import '../theme/app_tokens.dart';
 import 'media_library_search_prompt.dart';
 import 'clipboard_detection_scope.dart';
+import 'media_library_view_defaults.dart';
 import 'mini_playback_card.dart';
+import 'media_library_keyboard_navigation.dart';
 import 'media_library_tooltip.dart';
 import 'playback_card_layout.dart';
 
@@ -22,11 +30,13 @@ import 'playback_card_layout.dart';
 MaterialPageRoute<T> buildMediaLibraryShellRoute<T>({
   required Widget home,
   RouteSettings? settings,
+  Widget Function(String folderId)? folderPageBuilder,
 }) {
   return MaterialPageRoute<T>(
     settings: settings,
     allowSnapshotting: false,
-    builder: (_) => MediaLibraryShell(home: home),
+    builder: (_) =>
+        MediaLibraryShell(home: home, folderPageBuilder: folderPageBuilder),
   );
 }
 
@@ -39,10 +49,19 @@ MaterialPageRoute<T> buildMediaLibraryShellRoute<T>({
 /// [pushAboveMediaLibrary], so it covers the mini player like it covers the
 /// library itself.
 class MediaLibraryShell extends StatefulWidget {
-  const MediaLibraryShell({super.key, required this.home});
+  const MediaLibraryShell({
+    super.key,
+    required this.home,
+    this.folderPageBuilder,
+  });
 
   /// First page of the frame's navigator.
   final Widget home;
+
+  /// Builds a folder page when the tree jumps to a route that is not on the
+  /// nested stack. The app shell supplies [CollectionScreen] so widgets do not
+  /// depend on screens.
+  final Widget Function(String folderId)? folderPageBuilder;
 
   /// The dimming laid over the mini player while files are dragged in.
   static const Key miniPlayerDropCoverKey = ValueKey<String>(
@@ -118,6 +137,14 @@ abstract class MediaLibraryShellController {
 
   /// The height last reported for [route], or zero when it has no bar.
   double selectionBarObstructionOfRoute(Route<dynamic> route);
+
+  /// Opens the slide-in folder tree when the tree style uses drawer mode
+  /// (pane width below [MediaLibraryViewDefaults.treeDockMinWidth]).
+  void openFolderTree();
+
+  /// True when the folder tree is docked beside the content rather than in a
+  /// drawer. False when tree mode is off or the window is narrow.
+  bool get folderTreeDocked;
 }
 
 /// The navigator for pages that must cover the media library and its mini
@@ -317,6 +344,144 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
   ModalRoute<dynamic>? _hostRoute;
   ClipboardDetectionRoutes? _clipboardRoutes;
   ClipboardDetectionNavigatorObserver? _clipboardObserver;
+  late final MediaLibraryFolderTreeController _folderTreeController =
+      MediaLibraryFolderTreeController();
+  bool _folderTreeDrawerOpen = false;
+  bool _folderTreeDrawerClosing = false;
+  double? _dragTreeSidebarWidth;
+
+  SettingsService? _maybeSettings({bool listen = false}) {
+    try {
+      return Provider.of<SettingsService>(context, listen: listen);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  LibraryService? _maybeLibrary({bool listen = false}) {
+    try {
+      return Provider.of<LibraryService>(context, listen: listen);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  bool _treeDockedForWidth(double width) =>
+      width >= MediaLibraryViewDefaults.treeDockMinWidth;
+
+  @override
+  bool get folderTreeDocked {
+    if (!mounted) return false;
+    final settings = _maybeSettings();
+    if (settings == null || !settings.mediaLibraryShowsFolderTree) {
+      return false;
+    }
+    return _treeDockedForWidth(MediaQuery.sizeOf(context).width);
+  }
+
+  @override
+  void openFolderTree() {
+    if (!mounted) return;
+    final settings = _maybeSettings();
+    if (settings == null || !settings.mediaLibraryShowsFolderTree) return;
+    if (folderTreeDocked) return;
+    setState(() => _folderTreeDrawerOpen = true);
+  }
+
+  void _closeFolderTreeDrawerIfNeeded() {
+    if (!_folderTreeDrawerOpen) return;
+    setState(() {
+      _folderTreeDrawerOpen = false;
+      _folderTreeDrawerClosing = !MediaQuery.disableAnimationsOf(context);
+    });
+  }
+
+  String? _selectedFolderFromRouteStack() {
+    final routes = _routeStack.routes.toList(growable: false);
+    for (var i = routes.length - 1; i >= 0; i--) {
+      final route = routes[i];
+      final id = mediaLibraryFolderIdFromRouteName(route.settings.name);
+      if (id != null) return id;
+      if (route.isFirst) return null;
+    }
+    return null;
+  }
+
+  void _syncFolderTreeFromRoutes() {
+    final settings = _maybeSettings();
+    final library = _maybeLibrary();
+    if (settings == null ||
+        library == null ||
+        !settings.mediaLibraryShowsFolderTree) {
+      return;
+    }
+    _folderTreeController.syncSelection(
+      _selectedFolderFromRouteStack(),
+      library,
+    );
+  }
+
+  Future<void> _openFolderFromTree(String? folderId) async {
+    final navigator = _navigatorKey.currentState;
+    final settings = _maybeSettings();
+    if (navigator == null || settings == null) return;
+    if (folderId == null) {
+      unawaited(
+        settings.updateSetting(
+          'mediaLibraryRootEntry',
+          MediaLibraryRootEntry.folders.storageValue,
+        ),
+      );
+      unawaited(
+        settings.updateSetting('mediaLibraryRootEntryUserChosen', true),
+      );
+      popMediaLibraryToFolder(navigator);
+    } else {
+      final found = popMediaLibraryToFolder(navigator, folderId: folderId);
+      if (!found) {
+        final builder = widget.folderPageBuilder;
+        if (builder == null) return;
+        navigator.push(
+          buildMediaLibraryFolderRoute<void>(
+            folderId: folderId,
+            restored: true,
+            builder: (_) => builder(folderId),
+          ),
+        );
+      }
+      unawaited(settings.saveMediaLibraryLastFolder(folderId));
+    }
+    _closeFolderTreeDrawerIfNeeded();
+  }
+
+  Future<void> _collapseTreeSidebar() async {
+    final settings = _maybeSettings();
+    if (settings == null) return;
+    await settings.updateSetting('mediaTreeSidebarCollapsed', true);
+  }
+
+  Future<void> _expandTreeSidebar() async {
+    final settings = _maybeSettings();
+    if (settings == null) return;
+    await settings.updateSetting('mediaTreeSidebarCollapsed', false);
+  }
+
+  double _resolvedTreeSidebarWidth(
+    SettingsService settings,
+    double windowWidth,
+  ) {
+    final base = _dragTreeSidebarWidth ?? settings.mediaTreeSidebarWidth;
+    return clampMediaLibraryTreeSidebarWidth(
+      width: base,
+      windowWidth: windowWidth,
+    );
+  }
+
+  Future<void> _persistTreeSidebarWidth(SettingsService settings) async {
+    final width = _dragTreeSidebarWidth ?? settings.mediaTreeSidebarWidth;
+    _dragTreeSidebarWidth = null;
+    await settings.updateSetting('mediaTreeSidebarWidth', width);
+  }
 
   @override
   ModalRoute<dynamic>? get hostRoute => mounted ? _hostRoute : null;
@@ -417,6 +582,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
     _selectionBarObstruction.removeWhere(
       (route, _) => !_routeStack.contains(route),
     );
+    _syncFolderTreeFromRoutes();
     _scheduleTopRouteSync();
     // The mini player sits at the top page's inset from the frame the page
     // opens or comes back, as it did when each page placed its own.
@@ -449,6 +615,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
     _pageInsets.dispose();
     _fileDropActive.dispose();
     _searchResultsOnTop.dispose();
+    _folderTreeController.dispose();
     super.dispose();
   }
 
@@ -480,6 +647,250 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
     );
   }
 
+  Widget _buildLibraryNavigator() {
+    return Navigator(
+      key: _navigatorKey,
+      observers: _observers,
+      onGenerateInitialRoutes: _initialRoutes,
+    );
+  }
+
+  Widget _buildPlaybackOverlays({
+    required double playbackCardBottom,
+    required double selectionBarHeight,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          key: MediaLibraryOverlayKeys.miniPlaybackCard,
+          left: 0,
+          right: 0,
+          bottom: playbackCardBottom,
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: _searchResultsOnTop,
+                builder: (context, searchOnTop, child) {
+                  return Theme(
+                    data: searchOnTop
+                        ? mediaLibrarySearchResultsTheme(Theme.of(context))
+                        : Theme.of(context),
+                    child: child!,
+                  );
+                },
+                child: Consumer<MediaPlaybackService>(
+                  builder: (context, playbackService, child) {
+                    return MediaLibraryKeyboardMiniPlayer(
+                      child: MiniPlaybackCard(
+                        isVisible: playbackService.shouldShowMiniPlaybackCard,
+                        onTap: () => _openPlayback(playbackService),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _fileDropActive,
+                    builder: (context, dropActive, child) {
+                      if (!dropActive) return const SizedBox.shrink();
+                      return Selector<MediaPlaybackService, bool>(
+                        selector: (_, playbackService) =>
+                            playbackService.shouldShowMiniPlaybackCard,
+                        builder: (context, isVisible, child) {
+                          if (!isVisible) return const SizedBox.shrink();
+                          return const DecoratedBox(
+                            key: MediaLibraryShell.miniPlayerDropCoverKey,
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(16.0),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          key: MediaLibraryOverlayKeys.playbackBottomFill,
+          left: 0,
+          right: 0,
+          bottom: selectionBarHeight,
+          child: Selector<MediaPlaybackService, bool>(
+            selector: (_, playbackService) =>
+                playbackService.shouldShowMiniPlaybackCard,
+            builder: (context, isVisible, child) {
+              if (!isVisible) return const SizedBox.shrink();
+              return IgnorePointer(
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _fileDropActive,
+                  builder: (context, dropActive, child) {
+                    return Container(
+                      height: playbackCardBottom - selectionBarHeight,
+                      color: dropActive ? _droppedFillColor : _fillColor,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLibraryContentStack({
+    required double playbackCardBottom,
+    required double selectionBarHeight,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildLibraryNavigator(),
+        _buildPlaybackOverlays(
+          playbackCardBottom: playbackCardBottom,
+          selectionBarHeight: selectionBarHeight,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDockedFolderTree({
+    required SettingsService settings,
+    required double sidebarWidth,
+    required Duration motion,
+  }) {
+    if (settings.mediaTreeSidebarCollapsed) {
+      return MediaLibraryFolderTreeExpandHandle(
+        onPressed: () => unawaited(_expandTreeSidebar()),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: MediaLibraryFolderTreePane(
+            controller: _folderTreeController,
+            showCounts: settings.mediaTreeShowCounts,
+            onFolderSelected: (id) => unawaited(_openFolderFromTree(id)),
+            onCollapseSidebar: () => unawaited(_collapseTreeSidebar()),
+          ),
+        ),
+        MediaLibraryFolderTreeResizeHandle(
+          onDragDelta: (delta) {
+            setState(() {
+              final current = _resolvedTreeSidebarWidth(
+                settings,
+                MediaQuery.sizeOf(context).width,
+              );
+              _dragTreeSidebarWidth = clampMediaLibraryTreeSidebarWidth(
+                width: current + delta,
+                windowWidth: MediaQuery.sizeOf(context).width,
+              );
+            });
+          },
+          onDragEnd: () => unawaited(_persistTreeSidebarWidth(settings)),
+          onResetWidth: () => unawaited(
+            settings.updateSetting(
+              'mediaTreeSidebarWidth',
+              MediaLibraryViewDefaults.treeSidebarWidth,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFolderTreeDrawer({
+    required SettingsService settings,
+    required double drawerWidth,
+    required Duration motion,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AnimatedOpacity(
+          opacity: _folderTreeDrawerOpen ? 1 : 0,
+          duration: motion,
+          child: IgnorePointer(
+            ignoring: !_folderTreeDrawerOpen,
+            child: GestureDetector(
+              onTap: _closeFolderTreeDrawerIfNeeded,
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.45)),
+            ),
+          ),
+        ),
+        IgnorePointer(
+          ignoring: !_folderTreeDrawerOpen,
+          // Stays mounted until the slide-out finishes so closing animates.
+          child: Offstage(
+            offstage: !_folderTreeDrawerOpen && !_folderTreeDrawerClosing,
+            child: AnimatedSlide(
+              offset: _folderTreeDrawerOpen ? Offset.zero : const Offset(-1, 0),
+              duration: motion,
+              curve: Curves.easeOutCubic,
+              onEnd: () {
+                if (_folderTreeDrawerClosing && mounted) {
+                  setState(() => _folderTreeDrawerClosing = false);
+                }
+              },
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: const BoxDecoration(
+                    color: AppTokens.bgRaised,
+                    borderRadius: BorderRadius.horizontal(
+                      right: Radius.circular(14),
+                    ),
+                    border: Border(
+                      right: BorderSide(color: AppTokens.lineSubtle, width: 1),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x66000000),
+                        blurRadius: 24,
+                        offset: Offset(6, 0),
+                      ),
+                    ],
+                  ),
+                  child: SizedBox(
+                    width: drawerWidth,
+                    child: MediaLibraryFolderTreePane(
+                      controller: _folderTreeController,
+                      showCounts: settings.mediaTreeShowCounts,
+                      onFolderSelected: (id) =>
+                          unawaited(_openFolderFromTree(id)),
+                      onCollapseSidebar: _closeFolderTreeDrawerIfNeeded,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _syncFolderTreeFromRoutes();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final stableBottomInset = _pageInsets.update(
@@ -503,6 +914,67 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
       stableBottomInset: stableBottomInset,
       selectionBarHeight: selectionBarHeight,
     );
+    final settings = _maybeSettings(listen: true);
+    final showsTree = settings?.mediaLibraryShowsFolderTree ?? false;
+    final windowWidth = MediaQuery.sizeOf(context).width;
+    final sidebarMotion = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 220);
+
+    Widget frame;
+    if (!showsTree || settings == null) {
+      frame = _buildLibraryContentStack(
+        playbackCardBottom: playbackCardBottom,
+        selectionBarHeight: selectionBarHeight,
+      );
+    } else {
+      final docked = _treeDockedForWidth(windowWidth);
+      final sidebarWidth = _resolvedTreeSidebarWidth(settings, windowWidth);
+      final drawerWidth = _resolvedTreeSidebarWidth(settings, windowWidth);
+      final content = Expanded(
+        child: _buildLibraryContentStack(
+          playbackCardBottom: playbackCardBottom,
+          selectionBarHeight: selectionBarHeight,
+        ),
+      );
+      if (docked) {
+        final paneWidth = settings.mediaTreeSidebarCollapsed
+            ? 28.0
+            : sidebarWidth;
+        frame = Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AnimatedContainer(
+              duration: sidebarMotion,
+              curve: Curves.easeOutCubic,
+              width: paneWidth,
+              child: _buildDockedFolderTree(
+                settings: settings,
+                sidebarWidth: sidebarWidth,
+                motion: sidebarMotion,
+              ),
+            ),
+            content,
+          ],
+        );
+      } else {
+        frame = Stack(
+          fit: StackFit.expand,
+          children: [
+            _buildLibraryContentStack(
+              playbackCardBottom: playbackCardBottom,
+              selectionBarHeight: selectionBarHeight,
+            ),
+            _buildFolderTreeDrawer(
+              settings: settings,
+              drawerWidth: drawerWidth,
+              motion: sidebarMotion,
+            ),
+          ],
+        );
+      }
+    }
+
     return UiRefreshRateScope(
       child: _MediaLibraryShellScope(
         controller: this,
@@ -512,102 +984,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
         hostIsCurrent: ModalRoute.isCurrentOf(context) ?? true,
         child: NavigatorPopHandler<Object?>(
           onPopWithResult: (_) => _navigatorKey.currentState?.maybePop(),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Navigator(
-                key: _navigatorKey,
-                observers: _observers,
-                onGenerateInitialRoutes: _initialRoutes,
-              ),
-              Positioned(
-                key: MediaLibraryOverlayKeys.miniPlaybackCard,
-                left: 0,
-                right: 0,
-                bottom: playbackCardBottom,
-                child: Stack(
-                  fit: StackFit.passthrough,
-                  children: [
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _searchResultsOnTop,
-                      builder: (context, searchOnTop, child) {
-                        return Theme(
-                          data: searchOnTop
-                              ? mediaLibrarySearchResultsTheme(
-                                  Theme.of(context),
-                                )
-                              : Theme.of(context),
-                          child: child!,
-                        );
-                      },
-                      child: Consumer<MediaPlaybackService>(
-                        builder: (context, playbackService, child) {
-                          return MiniPlaybackCard(
-                            isVisible:
-                                playbackService.shouldShowMiniPlaybackCard,
-                            onTap: () => _openPlayback(playbackService),
-                          );
-                        },
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: _fileDropActive,
-                          builder: (context, dropActive, child) {
-                            if (!dropActive) return const SizedBox.shrink();
-                            return Selector<MediaPlaybackService, bool>(
-                              selector: (_, playbackService) =>
-                                  playbackService.shouldShowMiniPlaybackCard,
-                              builder: (context, isVisible, child) {
-                                if (!isVisible) return const SizedBox.shrink();
-                                return const DecoratedBox(
-                                  key: MediaLibraryShell.miniPlayerDropCoverKey,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(16.0),
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Paint after the card so its downward shadow cannot darken the
-              // gap or system navigation area. The upward shadow stays visible.
-              Positioned(
-                key: MediaLibraryOverlayKeys.playbackBottomFill,
-                left: 0,
-                right: 0,
-                // Selection actions keep their own background below the card.
-                bottom: selectionBarHeight,
-                child: Selector<MediaPlaybackService, bool>(
-                  selector: (_, playbackService) =>
-                      playbackService.shouldShowMiniPlaybackCard,
-                  builder: (context, isVisible, child) {
-                    if (!isVisible) return const SizedBox.shrink();
-                    return IgnorePointer(
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: _fileDropActive,
-                        builder: (context, dropActive, child) {
-                          return Container(
-                            height: playbackCardBottom - selectionBarHeight,
-                            color: dropActive ? _droppedFillColor : _fillColor,
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+          child: MediaLibrarySpatialNavigation(child: frame),
         ),
       ),
     );

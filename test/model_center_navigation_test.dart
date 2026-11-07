@@ -20,9 +20,13 @@ class _Routes extends NavigatorObserver {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  for (final compact in [false, true]) {
+  for (final (compact, settingsRow) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
     testWidgets(
-      'shortcut covers nested navigator and retains edits ($compact)',
+      'shortcut covers nested navigator and retains edits ($compact, $settingsRow)',
       (tester) async {
         final rootRoutes = _Routes();
         final childRoutes = _Routes();
@@ -42,7 +46,11 @@ void main() {
                     body: Column(
                       children: [
                         TextField(controller: text),
-                        ModelCenterButton(compact: compact),
+                        ModelCenterButton(
+                          compact: compact,
+                          settingsRow: settingsRow,
+                          transcriptionOnly: settingsRow,
+                        ),
                       ],
                     ),
                   ),
@@ -55,7 +63,9 @@ void main() {
         final childHome = childRoutes.last;
         ModelCenterService.instance.selectedTab = 3;
         await tester.tap(
-          compact ? find.byTooltip('模型中心（转录与翻译）') : find.text('模型中心'),
+          compact
+              ? find.byTooltip('模型中心（转录、优化与翻译）')
+              : find.text(settingsRow ? '模型设置' : '模型中心'),
         );
         final route = rootRoutes.last! as MaterialPageRoute<void>;
         expect(route, isNot(same(rootHome)));
@@ -64,6 +74,7 @@ void main() {
             route.builder(tester.element(find.byType(ModelCenterButton)))
                 as ModelCenterScreen;
         expect(screen.initialTab, 0);
+        expect(screen.transcriptionOnly, settingsRow);
         expect(screen.translateSettings, same(settings));
         // Inspect the destination before mounting it: this test needs no native
         // inference runtime, device probes or real application storage.

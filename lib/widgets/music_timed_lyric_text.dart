@@ -8,6 +8,21 @@ import 'package:flutter/scheduler.dart';
 import '../models/subtitle_model.dart';
 import 'music_lyric_frame_coordinator.dart';
 
+TextSpan _tintedSpan(TextSpan span, Color color) {
+  final style = span.style?.copyWith(color: color);
+  final children = span.children;
+  if (children == null || children.isEmpty) {
+    return TextSpan(text: span.text, style: style);
+  }
+  return TextSpan(
+    style: style,
+    children: [
+      for (final child in children)
+        child is TextSpan ? _tintedSpan(child, color) : child,
+    ],
+  );
+}
+
 double musicTimedSpanProgress(SubtitleTimedSpan span, Duration position) {
   if (position <= span.startTime) return 0;
   if (position >= span.endTime) return 1;
@@ -149,6 +164,10 @@ class MusicTimedLyricText extends StatefulWidget {
   final String text;
   final List<SubtitleTimedSpan> spans;
   final TextStyle style;
+
+  /// Per-script faces for one lyric line. Null keeps a single style, which
+  /// timed slicing and the glyph atlas already expect.
+  final List<TextSpan>? fontRuns;
   final ValueListenable<Duration>? position;
   final Duration fallbackPosition;
   final TextAlign textAlign;
@@ -163,6 +182,7 @@ class MusicTimedLyricText extends StatefulWidget {
     required this.text,
     required this.spans,
     required this.style,
+    this.fontRuns,
     this.position,
     this.fallbackPosition = Duration.zero,
     this.textAlign = TextAlign.left,
@@ -292,6 +312,10 @@ class _MusicTimedLyricTextState extends State<MusicTimedLyricText>
     final direction = Directionality.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
+        final fontRunKey = Object.hashAll([
+          for (final run in widget.fontRuns ?? const <TextSpan>[])
+            (run.text, run.style),
+        ]);
         final key = (
           widget.text,
           layoutStyle,
@@ -300,7 +324,19 @@ class _MusicTimedLyricTextState extends State<MusicTimedLyricText>
           direction,
           Object.hashAll(widget.spans),
           widget.textAlign,
+          fontRunKey,
         );
+        final layoutRuns = widget.fontRuns == null
+            ? null
+            : [
+                for (final run in widget.fontRuns!)
+                  TextSpan(
+                    text: run.text,
+                    style: tintable
+                        ? run.style?.copyWith(color: Colors.white)
+                        : run.style,
+                  ),
+              ];
         if (_layoutKey != key) {
           _layout?.dispose();
           _raster.dispose();
@@ -313,6 +349,7 @@ class _MusicTimedLyricTextState extends State<MusicTimedLyricText>
             direction,
             widget.spans,
             widget.textAlign,
+            fontRuns: layoutRuns,
           );
           _layoutKey = key;
         }
@@ -716,14 +753,17 @@ class _TimedGlyphLayout {
     TextScaler scaler,
     TextDirection direction,
     List<SubtitleTimedSpan> spans,
-    TextAlign align,
-  ) : em = scaler.scale(style.fontSize ?? 24),
-      bright = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textDirection: direction,
-        textAlign: align,
-        textScaler: scaler,
-      ) {
+    TextAlign align, {
+    List<TextSpan>? fontRuns,
+  }) : em = scaler.scale(style.fontSize ?? 24),
+       bright = TextPainter(
+         text: fontRuns == null
+             ? TextSpan(text: text, style: style)
+             : TextSpan(style: style, children: fontRuns),
+         textDirection: direction,
+         textAlign: align,
+         textScaler: scaler,
+       ) {
     bright.layout(minWidth: width, maxWidth: width);
     for (var i = 0; i < spans.length; i++) {
       final span = spans[i];
@@ -840,10 +880,7 @@ class _TimedGlyphLayout {
       } else {
         final span = bright.text! as TextSpan;
         final painter = _vectorInk ??= TextPainter(
-          text: TextSpan(
-            text: span.text,
-            style: span.style!.copyWith(color: inkColor),
-          ),
+          text: _tintedSpan(span, inkColor),
           textDirection: bright.textDirection,
           textAlign: bright.textAlign,
           textScaler: bright.textScaler,

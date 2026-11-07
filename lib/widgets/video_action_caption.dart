@@ -46,10 +46,10 @@ class VideoActionCaption extends StatelessWidget {
           horizontal: VideoActionRailLayout.labelHorizontalPadding,
           vertical: VideoActionRailLayout.labelVerticalPadding,
         ),
-        // MiSans has asymmetric leading. Its CJK ink center is approximately
-        // 0.385 em above the baseline at these sizes. Align that center instead
-        // of moving the backplate or guessing a per-label pixel translation.
-        child: inherited.fontFamily == 'MiSans'
+        // Align the Noto CJK ink center instead of the font's line box, so
+        // captions remain visually centered at different text scales without
+        // moving the backplate or changing the hit target.
+        child: inherited.fontFamily == 'Noto Sans SC'
             ? SizedBox(
                 height: lineHeight,
                 child: Baseline(

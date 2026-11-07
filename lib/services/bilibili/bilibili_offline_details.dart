@@ -18,6 +18,7 @@ class BilibiliOfflineDetail {
     this.ownerName = '',
     this.ownerMid = 0,
     this.description = '',
+    this.tags = const [],
   });
 
   final String bvid;
@@ -25,12 +26,14 @@ class BilibiliOfflineDetail {
   final String ownerName;
   final int ownerMid;
   final String description;
+  final List<String> tags;
 
   Map<String, Object?> toJson(int seenAt) => <String, Object?>{
     't': title,
     'o': ownerName,
     'm': ownerMid,
     'd': description,
+    if (tags.isNotEmpty) 'tags': tags,
     'at': seenAt,
   };
 
@@ -44,6 +47,9 @@ class BilibiliOfflineDetail {
       ownerName: text('o'),
       ownerMid: mid is num ? mid.toInt() : int.tryParse('${mid ?? ''}') ?? 0,
       description: text('d'),
+      tags: raw['tags'] is List
+          ? (raw['tags'] as List).whereType<String>().toList()
+          : const [],
     );
   }
 }
@@ -104,6 +110,7 @@ class BilibiliOfflineDetails {
       ownerName: detail.owner.name,
       ownerMid: detail.owner.mid,
       description: detail.description,
+      tags: detail.tags,
     ),
   );
 
@@ -126,6 +133,7 @@ class BilibiliOfflineDetails {
     final description = detail.description.length > maxDescriptionLength
         ? detail.description.substring(0, maxDescriptionLength)
         : detail.description;
+    final previous = BilibiliOfflineDetail.fromJson(bvid, entries[bvid]);
     entries.remove(bvid);
     entries[bvid] = BilibiliOfflineDetail(
       bvid: bvid,
@@ -133,6 +141,9 @@ class BilibiliOfflineDetails {
       ownerName: detail.ownerName,
       ownerMid: detail.ownerMid,
       description: description,
+      tags: detail.tags.isEmpty
+          ? previous?.tags ?? const []
+          : detail.tags.take(12).toList(),
     ).toJson(DateTime.now().millisecondsSinceEpoch);
     while (entries.length > capacity) {
       entries.remove(entries.keys.first);

@@ -18,9 +18,13 @@ import 'package:video_player_app/features/podcasts/podcast_settings_page.dart';
 import 'package:video_player_app/features/podcasts/podcast_store.dart';
 import 'package:video_player_app/features/podcasts/podcast_widgets.dart';
 import 'package:video_player_app/models/video_item.dart';
+import 'package:video_player_app/screens/home_screen.dart';
+import 'package:video_player_app/services/batch_import_service.dart';
+import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/media_library_shell.dart';
+import 'package:video_player_app/widgets/media_library_scroll_viewport.dart';
 import 'package:video_player_app/widgets/mini_playback_card.dart';
 
 import 'podcast_core_test.dart' show podcastFixture;
@@ -41,6 +45,124 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
+  for (final size in const [
+    Size(390, 844),
+    Size(844, 390),
+    Size(768, 1024),
+    Size(1280, 800),
+  ]) {
+    testWidgets('empty podcast tabs center in the usable home area at $size', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsService()..resetForTest();
+      await settings.init();
+      await settings.saveMediaLibraryRootChoice('podcasts');
+      final library = LibraryService()..resetLibraryForTesting();
+      final playback = MediaPlaybackService();
+      await playback.stop();
+      final directory = Directory.systemTemp.createTempSync('podcast-empty-');
+      final store = PodcastStore(sqlite3.openInMemory());
+      final client = PodcastClient();
+      final controller = PodcastController(
+        store: store,
+        client: client,
+        mediaStore: PodcastMediaStore(
+          root: directory,
+          store: store,
+          http: client.http,
+        ),
+      );
+      PodcastRuntime.debugOverride = PodcastRuntime.forTesting(controller);
+      playback.publishRestoredSessionPreview(
+        VideoItem(
+          id: 'empty-test',
+          path: 'empty-test.mp4',
+          title: '示例视频',
+          durationMs: 120000,
+          lastUpdated: 0,
+        ),
+        Duration.zero,
+      );
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      tester.view.padding = const FakeViewPadding(bottom: 32);
+      tester.view.viewPadding = const FakeViewPadding(bottom: 32);
+      tester.view.systemGestureInsets = const FakeViewPadding(bottom: 32);
+      addTearDown(() async {
+        tester.view.reset();
+        PodcastRuntime.debugOverride = null;
+        await playback.stop();
+        settings.resetForTest();
+        library.resetLibraryForTesting();
+        await controller.close();
+        store.close();
+        directory.deleteSync(recursive: true);
+      });
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: settings),
+            ChangeNotifierProvider.value(value: library),
+            ChangeNotifierProvider.value(value: playback),
+            ChangeNotifierProvider.value(value: BatchImportService()),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: const MediaLibraryShell(home: HomeScreen()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final tab in ['订阅', '最新更新', '继续收听', '收藏', '下载', '队列']) {
+        final tabButton = find.ancestor(
+          of: find.text(tab),
+          matching: find.byType(TextButton),
+        );
+        await tester.ensureVisible(tabButton);
+        await tester.tap(tabButton);
+        for (final visible in [true, false, true]) {
+          unawaited(settings.updateSetting('showMiniPlaybackCard', visible));
+          await tester.pumpAndSettle();
+          final empty = find.byType(PodcastEmpty);
+          final viewport = tester.getRect(
+            find
+                .ancestor(
+                  of: empty,
+                  matching: find.byType(MediaLibraryScrollViewport),
+                )
+                .first,
+          );
+          final group = tester.getRect(
+            find.descendant(of: empty, matching: find.byType(Column)).first,
+          );
+          final bottom = visible
+              ? tester.getTopLeft(find.byType(MiniPlaybackCard)).dy
+              : size.height - 32;
+          if (group.height + 64 <= bottom - viewport.top) {
+            expect(
+              group.center.dy,
+              closeTo((viewport.top + bottom) / 2, 0.5),
+              reason: '$tab, player visible: $visible',
+            );
+          } else {
+            final action = find.descendant(
+              of: empty,
+              matching: find.byType(TextButton),
+            );
+            final last = action.evaluate().isNotEmpty
+                ? action.last
+                : find.descendant(of: empty, matching: find.byType(Text)).last;
+            await tester.ensureVisible(last);
+            await tester.pumpAndSettle();
+            expect(tester.getRect(last).bottom, lessThanOrEqualTo(bottom));
+          }
+          expect(tester.takeException(), isNull);
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
   for (final size in [
     const Size(390, 844),
     const Size(844, 390),

@@ -6,7 +6,7 @@ import os
 /// System-owned model downloads. Completed files remain staged until Dart
 /// verifies the immutable catalog hash and publishes an installed receipt.
 final class ModelDownloadBridge: NSObject, URLSessionDownloadDelegate {
-  static let prefix = "com.example.video_player_app.models."
+  static let prefix = (Bundle.main.bundleIdentifier ?? "cn.teezy.fluentplayer.standard") + ".models."
   private let defaultsKey = "modelBackgroundTransfers.v1"
   private var channel: FlutterMethodChannel?
   private var workChannel: FlutterMethodChannel?

@@ -8,6 +8,7 @@ import 'package:video_player_app/theme/app_page_transitions.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:video_player_app/screens/simple_video_preview_screen.dart';
 import 'package:video_player_app/screens/subtitle_preview_screen.dart';
@@ -21,12 +22,17 @@ import '../models/import_card_placement.dart';
 import '../models/video_item.dart';
 import '../models/video_item.dart' as vi;
 import '../utils/app_toast.dart';
+import '../services/batch_import_files.dart';
+import '../services/community_media_input.dart';
+import '../theme/app_tokens.dart';
+import '../utils/import_gallery_access.dart';
 import '../utils/android_hardware_input_bridge.dart';
 import '../utils/batch_tool_shortcuts.dart';
 import '../utils/hardware_keyboard_shortcuts.dart';
 import '../utils/page_shortcut_keys.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
-import 'package:video_player_app/widgets/button_aware_drag.dart';
+import '../widgets/batch_import_table.dart';
+import '../theme/app_interaction_theme.dart';
 
 class BatchImportScreen extends StatefulWidget {
   final String? folderId;
@@ -41,6 +47,24 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
   late ScrollController _videoController;
   late ScrollController _subtitleController;
   late ScrollController _actionController;
+  final _horizontalController = ScrollController();
+  Future<void> _fileImportQueue = Future.value();
+  final _addedArchives = <String>{};
+  int _pendingFileBatches = 0;
+  bool _dragging = false;
+  bool _committing = false;
+
+  bool get _desktop => switch (defaultTargetPlatform) {
+    TargetPlatform.windows ||
+    TargetPlatform.macOS ||
+    TargetPlatform.linux => true,
+    _ => false,
+  };
+
+  bool get _mobile => switch (defaultTargetPlatform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    _ => false,
+  };
   final FocusNode _shortcutFocusNode = FocusNode(
     debugLabel: 'BatchImportShortcutFocus',
   );
@@ -68,6 +92,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     _videoController.dispose();
     _subtitleController.dispose();
     _actionController.dispose();
+    _horizontalController.dispose();
     AndroidHardwareInputBridge.removeKeyListener(
       _handleAndroidHardwareKeyEvent,
     );
@@ -133,6 +158,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     }
     if (event is KeyRepeatEvent) return KeyEventResult.handled;
     if (event is! KeyDownEvent) return KeyEventResult.handled;
+    if (_committing) return KeyEventResult.handled;
     switch (action) {
       case BatchImportShortcutAction.back:
         Navigator.of(context).maybePop();
@@ -150,14 +176,17 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
   }
 
   Future<void> _pickVideos() async {
-    // 显示导入方式选择对话框
+    if (!_mobile) {
+      await _pickFiles(mediaOnly: true);
+      return;
+    }
     final importType = await _showImportTypeDialog();
     if (importType == null) return;
 
     if (importType == 'gallery') {
       await _pickFromGallery();
     } else {
-      await _pickFromFileManager();
+      await _pickFiles(mediaOnly: true);
     }
   }
 
@@ -165,37 +194,19 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2C2C2C),
-        title: const Text("选择导入方式", style: TextStyle(color: Colors.white)),
+        title: const Text('添加媒体'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(
-                Icons.photo_library,
-                color: Colors.blueAccent,
-              ),
-              title: const Text("从相册导入", style: TextStyle(color: Colors.white)),
-              subtitle: const Text(
-                "选择手机相册中的媒体文件",
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
+              leading: const Icon(Icons.photo_library),
+              title: const Text('相册'),
               onTap: () => Navigator.pop(context, 'gallery'),
             ),
-            const Divider(color: Colors.white24),
+            const Divider(),
             ListTile(
-              leading: const Icon(
-                Icons.folder_open,
-                color: Colors.orangeAccent,
-              ),
-              title: const Text(
-                "从文件管理器导入",
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: const Text(
-                "浏览文件系统选择媒体文件",
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
+              leading: const Icon(Icons.folder_open),
+              title: const Text('文件'),
               onTap: () => Navigator.pop(context, 'file_manager'),
             ),
           ],
@@ -204,7 +215,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           DesktopButtonClickRegion(
             child: TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("取消", style: TextStyle(color: Colors.white70)),
+              child: const Text('取消'),
             ),
           ),
         ],
@@ -212,51 +223,108 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     );
   }
 
-  Future<void> _pickFromFileManager() async {
-    FilePickerResult? result;
+  Future<void> _pickFiles({
+    bool mediaOnly = false,
+    bool subtitlesOnly = false,
+  }) async {
     try {
-      result = await FilePicker.platform.pickFiles(
+      final extensions = {
+        if (!subtitlesOnly) ...batchImportMediaExtensions,
+        if (!mediaOnly) ...batchImportSubtitleExtensions,
+        if (!mediaOnly) '.zip',
+      };
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: LibraryService.supportedMediaExtensions
+        allowedExtensions: extensions
             .map((extension) => extension.substring(1))
             .toList(),
         allowMultiple: true,
+        withData: false,
       );
-    } catch (e) {
-      debugPrint('文件选择器失败: $e');
+      if (result != null && mounted) {
+        await _enqueueFiles(result.paths.whereType<String>().toList());
+      }
+    } catch (error) {
       if (mounted) {
-        AppToast.show('文件选择失败: $e', type: AppToastType.error);
-      }
-      return;
-    }
-
-    if (result != null) {
-      final paths = result.paths.whereType<String>().toList();
-      // Filter out non-media files
-      final validPaths = paths
-          .where(LibraryService.isSupportedMediaPath)
-          .toList();
-
-      if (validPaths.length < paths.length) {
-        final skippedCount = paths.length - validPaths.length;
-        if (mounted) {
-          AppToast.show("已跳过 $skippedCount 个不支持的文件");
-        }
-      }
-
-      if (validPaths.isNotEmpty && mounted) {
-        context.read<BatchImportService>().addVideos(
-          widget.folderId,
-          validPaths,
+        debugPrint('Batch file picker: $error');
+        _showError(
+          '无法选择文件',
+          retry: () =>
+              _pickFiles(mediaOnly: mediaOnly, subtitlesOnly: subtitlesOnly),
         );
       }
     }
   }
 
+  // Serializing drops also makes consecutive mixed drops append in arrival order.
+  // The existing batch service retains ownership of saved lists and empty slots.
+  Future<void> _enqueueFiles(
+    List<String> paths, {
+    Map<String, String>? titles,
+  }) {
+    if (!mounted || paths.isEmpty || _committing) return Future.value();
+    final batch = context.read<BatchImportService>();
+    setState(() => _pendingFileBatches++);
+    final operation = _fileImportQueue
+        .then((_) async {
+          if (!mounted) return;
+          final files = await collectBatchImportFiles(
+            paths,
+            existingMedia: batch
+                .getVideoItems(widget.folderId)
+                .map((item) => item.path)
+                .whereType<String>(),
+            existingSubtitles: batch
+                .getSubtitleItems(widget.folderId)
+                .map((item) => item.path)
+                .whereType<String>(),
+            existingArchives: _addedArchives,
+            extractSubtitleArchive: (path) => compute(_extractZipWorker, path),
+          );
+          if (!mounted) return;
+          if (files.media.isNotEmpty) {
+            await batch.addVideos(
+              widget.folderId,
+              files.media,
+              titles: titles == null
+                  ? null
+                  : [
+                      for (final path in files.media)
+                        titles[path] ?? p.basename(path),
+                    ],
+            );
+          }
+          if (files.subtitles.isNotEmpty) {
+            await batch.addSubtitles(widget.folderId, files.subtitles);
+          }
+          _addedArchives.addAll(files.archives);
+          if (mounted && files.failedArchives > 0) {
+            _showError(
+              '${files.failedArchives} 个压缩包读取失败',
+              retry: () => _enqueueFiles(paths, titles: titles),
+            );
+          }
+        })
+        .catchError((Object error) {
+          if (mounted) {
+            debugPrint('Batch file selection: $error');
+            _showError(
+              '无法添加文件',
+              retry: () => _enqueueFiles(paths, titles: titles),
+            );
+          }
+        })
+        .whenComplete(() {
+          if (mounted) setState(() => _pendingFileBatches--);
+        });
+    _fileImportQueue = operation;
+    return operation;
+  }
+
   Future<void> _pickFromGallery() async {
     try {
-      final permission = await PhotoManager.requestPermissionExtend();
-      if (!permission.isAuth && !permission.isLimited) {
+      final requestType = await requestImportGalleryAccess();
+      if (requestType == null) {
         if (mounted) {
           AppToast.show("未获得相册权限，请在系统设置中开启", type: AppToastType.error);
         }
@@ -267,7 +335,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       final List<AssetEntity>? assets = await AssetPicker.pickAssets(
         context,
         pickerConfig: AssetPickerConfig(
-          requestType: RequestType.video | RequestType.audio,
+          requestType: requestType,
           maxAssets: 999,
         ),
       );
@@ -306,11 +374,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       }
 
       if (paths.isNotEmpty && mounted) {
-        context.read<BatchImportService>().addVideos(
-          widget.folderId,
-          paths,
-          titles: titles,
-        );
+        await _enqueueFiles(paths, titles: Map.fromIterables(paths, titles));
       }
     } catch (e) {
       debugPrint("Gallery import error: $e");
@@ -320,83 +384,15 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     }
   }
 
-  Future<void> _pickSubtitles() async {
-    FilePickerResult? result;
-    try {
-      result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: [
-          'srt',
-          'vtt',
-          'lrc',
-          'ass',
-          'ssa',
-          'sup',
-          'zip',
-          'sub',
-          'idx',
-          'scc',
-        ],
-        allowMultiple: true,
-      );
-    } catch (e) {
-      debugPrint('字幕选择器失败: $e');
-      if (mounted) {
-        AppToast.show('字幕选择失败: $e', type: AppToastType.error);
-      }
-      return;
-    }
-
-    if (result != null) {
-      List<String> finalPaths = [];
-      for (var path in result.paths.whereType<String>()) {
-        final ext = p.extension(path).toLowerCase();
-        if (ext == '.zip') {
-          final extracted = await _extractZip(path);
-          finalPaths.addAll(extracted);
-        } else if ([
-          '.srt',
-          '.vtt',
-          '.lrc',
-          '.ass',
-          '.ssa',
-          '.sup',
-          '.sub',
-          '.idx',
-          '.scc',
-        ].contains(ext)) {
-          finalPaths.add(path);
-        }
-      }
-
-      if (finalPaths.isNotEmpty && mounted) {
-        context.read<BatchImportService>().addSubtitles(
-          widget.folderId,
-          finalPaths,
-        );
-      }
-    }
-  }
-
-  Future<List<String>> _extractZip(String zipPath) async {
-    try {
-      // 在独立 isolate 中使用流式解压，避免将整个 ZIP 加载到内存导致 OOM 闪退
-      final result = await compute(_extractZipWorker, zipPath);
-      return result;
-    } catch (e) {
-      debugPrint("Error extracting zip: $e");
-      if (mounted) {
-        AppToast.show("解压失败: ${p.basename(zipPath)}", type: AppToastType.error);
-      }
-      return [];
-    }
-  }
+  Future<void> _pickSubtitles() => _pickFiles(subtitlesOnly: true);
 
   Future<void> _handleMerge(
     String videoPath,
     String? subtitlePath, {
     String? title,
   }) async {
+    requireCommunityLocalMedia(videoPath);
+    if (subtitlePath != null) requireCommunityLocalMedia(subtitlePath);
     final library = Provider.of<LibraryService>(context, listen: false);
     final batch = Provider.of<BatchImportService>(context, listen: false);
 
@@ -418,21 +414,20 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
 
     // 使用原始文件路径，不创建缓存副本
     final resultId = await library.addSingleVideo(item, useOriginalPath: true);
-    final actualId = resultId ?? id;
+    if (resultId == null) throw StateError('媒体未能导入，请重试');
+    final actualId = resultId;
 
     // Update Batch Service with new paths (LibraryService modified item.path/item.subtitlePath)
     if (item.path != videoPath) {
       batch.updateItemPath(widget.folderId, videoPath, item.path);
     }
-    if (subtitlePath != null && item.subtitlePath != subtitlePath) {
+    if (subtitlePath != null &&
+        item.subtitlePath != null &&
+        item.subtitlePath != subtitlePath) {
       batch.updateItemPath(widget.folderId, subtitlePath, item.subtitlePath!);
     }
 
-    batch.markImported(widget.folderId, item.path, actualId);
-
-    if (mounted) {
-      AppToast.show("已合成并导入", type: AppToastType.success);
-    }
+    await batch.markImported(widget.folderId, item.path, actualId);
   }
 
   vi.MediaType _detectMediaType(String path) {
@@ -452,583 +447,454 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       // Keep the file because it's now in permanent storage and we want to allow re-import.
       // If we delete it, the user loses the file (since original temp was deleted on import).
       await library.removeSingleVideo(importedId, keepFile: true);
-      batch.unmarkImported(widget.folderId, videoPath);
-
-      if (mounted) {
-        AppToast.show("已撤回导入", type: AppToastType.success);
-      }
+      await batch.unmarkImported(widget.folderId, videoPath);
     }
   }
 
-  void _showHelpDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2C2C2C),
-        title: const Text("操作说明", style: TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHelpItem(
-                "1. 导入文件",
-                "• 媒体（视频/音频）：支持批量多选导入。\n• 字幕：支持 srt, vtt, ass, ssa, lrc 格式，支持 zip 压缩包自动解压导入。",
-              ),
-              const SizedBox(height: 12),
-              _buildHelpItem(
-                "2. 列表调整",
-                "• 滑动表格视图：二指同时按住列表项并上下滑动可滑动表格。\n• 拖拽：按住列表项可极速拖拽调整顺序。\n• 删除：左右滑动列表项可单独删除该项；点击最右侧红色删除按钮可删除整行。",
-              ),
-              const SizedBox(height: 12),
-              _buildHelpItem("3. 预览内容", "点击媒体或字幕文件名可进入预览页面。"),
-              const SizedBox(height: 12),
-              _buildHelpItem(
-                "4. 合成与撤回",
-                "• 合成：点击\"合并\"图标将当前行的媒体与字幕关联并导入。\n• 撤回：已合成的项显示绿色，点击\"撤回\"图标可取消导入。",
-              ),
-              const SizedBox(height: 12),
-              _buildHelpItem("5. 自动保存", "所有操作自动保存。文件夹外的红色数字表示待处理媒体数。"),
-            ],
+  Future<void> _runRowAction(Future<void> Function() action) async {
+    if (_committing || _pendingFileBatches > 0) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    setState(() => _committing = true);
+    try {
+      await action();
+    } catch (error) {
+      debugPrint('Batch import action: $error');
+      if (mounted) _showError('操作失败', retry: () => _runRowAction(action));
+    } finally {
+      if (mounted) setState(() => _committing = false);
+    }
+  }
+
+  Future<void> _importAll() => _runRowAction(() async {
+    final batch = context.read<BatchImportService>();
+    // Copy the pairings before LibraryService updates any managed file paths.
+    final videos = batch.getVideoItems(widget.folderId);
+    final subtitles = batch.getSubtitleItems(widget.folderId);
+    final pairs = [
+      for (var i = 0; i < videos.length; i++)
+        if (videos[i].path != null &&
+            !batch.isImported(widget.folderId, videos[i].path!))
+          (
+            path: videos[i].path!,
+            title: videos[i].title,
+            subtitle: i < subtitles.length ? subtitles[i].path : null,
           ),
+    ];
+    var failed = 0;
+    for (final pair in pairs) {
+      if (!mounted) break;
+      try {
+        await _handleMerge(pair.path, pair.subtitle, title: pair.title);
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (mounted && failed > 0) {
+      _showError('$failed 项未导入', retry: _importAll);
+    }
+  });
+
+  void _showError(String message, {VoidCallback? retry}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: AppTokens.bgOverlay,
+          content: Text(
+            message,
+            style: const TextStyle(color: AppTokens.text1),
+          ),
+          action: retry == null
+              ? null
+              : SnackBarAction(
+                  label: '重试',
+                  textColor: AppTokens.text1,
+                  onPressed: retry,
+                ),
         ),
-        actions: [
-          DesktopButtonClickRegion(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                "我知道了",
-                style: TextStyle(color: Colors.blueAccent),
+      );
+  }
+
+  void _showHelpDialog() {
+    final platform = currentNativeTargetPlatform;
+    showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('快捷键'),
+        children: [
+          for (final action in BatchImportShortcutAction.values)
+            if (action != BatchImportShortcutAction.help &&
+                platform != null &&
+                BatchImportShortcuts.isAvailableOnPlatform(action, platform))
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(switch (action) {
+                        BatchImportShortcutAction.back => '返回',
+                        BatchImportShortcutAction.importMedia => '添加媒体',
+                        BatchImportShortcutAction.importSubtitles => '添加字幕',
+                        BatchImportShortcutAction.help => '快捷键',
+                      }),
+                    ),
+                    Text(
+                      formatShortcutKey(BatchImportShortcuts.defaults[action]!),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildHelpItem(String title, String content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          content,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 13,
-            height: 1.4,
-          ),
-        ),
-      ],
+  void _showFontSizeDialog(BatchImportService batch) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('字号'),
+        children: [
+          for (final size in [10.0, 12.0, 14.0, 16.0, 20.0, 24.0, 30.0])
+            SimpleDialogOption(
+              onPressed: () {
+                batch.setFontSize(size);
+                Navigator.pop(context);
+              },
+              child: Row(
+                children: [
+                  Expanded(child: Text('${size.toInt()}')),
+                  if (size == batch.fontSize)
+                    const Icon(Icons.check_rounded, size: 18),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
+
+  ThemeData _pageTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return appInteractionTheme(
+      base.copyWith(
+        brightness: Brightness.dark,
+        colorScheme: const ColorScheme.dark(
+          primary: AppTokens.text1,
+          onPrimary: AppTokens.bgBase,
+          surface: AppTokens.bgBase,
+          onSurface: AppTokens.text1,
+          error: AppTokens.danger,
+        ),
+        scaffoldBackgroundColor: AppTokens.bgBase,
+        dividerColor: AppTokens.lineSubtle,
+        textTheme: base.textTheme.apply(
+          bodyColor: AppTokens.text1,
+          displayColor: AppTokens.text1,
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: AppTokens.bgBase,
+          foregroundColor: AppTokens.text1,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          titleTextStyle: base.textTheme.titleLarge?.copyWith(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTokens.text1,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: AppTokens.text2),
+        scrollbarTheme: ScrollbarThemeData(
+          thumbColor: WidgetStatePropertyAll(
+            AppTokens.text3.withValues(alpha: 0.5),
+          ),
+          thickness: const WidgetStatePropertyAll(3),
+          radius: const Radius.circular(3),
+        ),
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            foregroundColor: AppTokens.text2,
+            minimumSize: Size.square(_mobile ? 44 : 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppTokens.text1,
+            side: const BorderSide(color: Color(0xFF454544)),
+            minimumSize: Size(0, _mobile ? 44 : 30),
+            padding: EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: _mobile ? 8 : 4,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF363A38),
+            foregroundColor: AppTokens.text1,
+            minimumSize: Size(0, _mobile ? 44 : 30),
+            padding: EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: _mobile ? 8 : 4,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addFilesButton(bool busy, {bool iconOnly = false}) =>
+      DesktopButtonClickRegion(
+        child: iconOnly
+            ? IconButton(
+                key: const ValueKey('batch-import-pick-files'),
+                tooltip: '添加文件',
+                onPressed: busy ? null : () => _pickFiles(),
+                icon: const Icon(Icons.add_rounded, size: 20),
+              )
+            : OutlinedButton.icon(
+                key: const ValueKey('batch-import-pick-files'),
+                onPressed: busy ? null : () => _pickFiles(),
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('添加文件'),
+              ),
+      );
+
+  Widget _importButton(bool busy, int pending, {bool compact = false}) =>
+      DesktopButtonClickRegion(
+        child: Tooltip(
+          message: '导入全部',
+          child: FilledButton(
+            key: const ValueKey('batch-import-all'),
+            onPressed: busy || pending == 0 ? null : _importAll,
+            child: Text(compact ? '导入' : '导入全部'),
+          ),
+        ),
+      );
+
+  Widget _toolbar({required bool busy, required int pending}) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final add = _addFilesButton(busy);
+        final commit = _importButton(busy, pending);
+        if (constraints.maxWidth < 420) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [add, const SizedBox(height: 8), commit],
+          );
+        }
+        return Row(children: [add, const Spacer(), commit]);
+      },
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final batch = context.watch<BatchImportService>();
-    final videoItems = batch.getVideoItems(widget.folderId);
-    final subtitleItems = batch.getSubtitleItems(widget.folderId);
-    final fontSize = batch.fontSize;
-    final rowHeight = 40.0 + fontSize * 1.5;
-
-    final maxLen = max(videoItems.length, subtitleItems.length);
-
-    return Focus(
-      focusNode: _shortcutFocusNode,
-      autofocus: supportsNativeHardwareKeyboardShortcuts,
-      onKeyEvent: (node, event) => _handleEscKeyEvent(event),
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) {
-          if (supportsNativeHardwareKeyboardShortcuts &&
-              !_shortcutFocusNode.hasFocus) {
-            _shortcutFocusNode.requestFocus();
-          }
-        },
-        child: Scaffold(
-          backgroundColor: const Color(0xFF121212),
-          appBar: AppBar(
-            title: const Text("批量导入媒体及对应字幕", style: TextStyle(fontSize: 15)),
-            centerTitle: false,
-            backgroundColor: const Color(0xFF1E1E1E),
-            foregroundColor: Colors.white,
-            actions: [
-              DesktopButtonClickRegion(
-                child: IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: () => batch.setFontSize(max(10.0, fontSize - 2)),
+    final videos = batch.getVideoItems(widget.folderId);
+    final subtitles = batch.getSubtitleItems(widget.folderId);
+    final pending = videos
+        .where(
+          (item) =>
+              item.path != null &&
+              !batch.isImported(widget.folderId, item.path!),
+        )
+        .length;
+    final busy = _committing || _pendingFileBatches > 0;
+    final inlineActions = MediaQuery.textScalerOf(context).scale(14) <= 20;
+    final wideActions = MediaQuery.sizeOf(context).width >= 700;
+    return Theme(
+      data: _pageTheme(context),
+      child: Builder(
+        builder: (context) => Focus(
+          focusNode: _shortcutFocusNode,
+          autofocus: supportsNativeHardwareKeyboardShortcuts,
+          onKeyEvent: (node, event) => _handleEscKeyEvent(event),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) {
+              if (supportsNativeHardwareKeyboardShortcuts &&
+                  !_shortcutFocusNode.hasFocus) {
+                _shortcutFocusNode.requestFocus();
+              }
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                toolbarHeight: _mobile ? 52 : 44,
+                title: const Text(
+                  '媒体与字幕导入',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              Center(
-                child: Text(
-                  "${fontSize.toInt()}",
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-              DesktopButtonClickRegion(
-                child: IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => batch.setFontSize(min(30.0, fontSize + 2)),
-                ),
-              ),
-              const SizedBox(width: 16),
-            ],
-          ),
-          body: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                // Top Buttons
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: DesktopButtonClickRegion(
-                          child: ElevatedButton.icon(
-                            onPressed: _pickVideos,
-                            icon: const Icon(Icons.video_library),
-                            label: Text(
-                              _biTooltip(
-                                '导入媒体',
-                                BatchImportShortcutAction.importMedia,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Colors.blueAccent,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
+                centerTitle: false,
+                actions: [
+                  if (inlineActions) ...[
+                    _addFilesButton(busy, iconOnly: !wideActions),
+                    const SizedBox(width: 8),
+                    _importButton(busy, pending, compact: !wideActions),
+                    const SizedBox(width: 8),
+                  ],
+                  PopupMenuButton<String>(
+                    tooltip: '更多',
+                    icon: const Icon(Icons.more_horiz_rounded),
+                    enabled: !busy,
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'gallery':
+                          unawaited(_pickFromGallery());
+                        case 'font':
+                          _showFontSizeDialog(batch);
+                        case 'shortcuts':
+                          _showHelpDialog();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (_mobile)
+                        const PopupMenuItem(
+                          value: 'gallery',
+                          child: Text('从相册添加'),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: DesktopButtonClickRegion(
-                          child: ElevatedButton.icon(
-                            onPressed: _pickSubtitles,
-                            icon: const Icon(Icons.subtitles),
-                            label: Text(
-                              _biTooltip(
-                                '导入字幕 (支持zip)',
-                                BatchImportShortcutAction.importSubtitles,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Colors.orangeAccent,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      DesktopButtonClickRegion(
-                        child: IconButton(
-                          onPressed: _showHelpDialog,
-                          icon: const Icon(
-                            Icons.help_outline,
-                            color: Colors.white70,
-                          ),
-                          tooltip: _biTooltip(
-                            "操作说明",
-                            BatchImportShortcutAction.help,
-                          ),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white10,
-                            padding: const EdgeInsets.all(12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                    ],
-                  ),
-                ),
-
-                // Header Row
-                Container(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  height: 40,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '媒体列表',
-                            style: TextStyle(
-                              color: Colors.blueAccent.shade100,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Container(width: 1, color: Colors.white24),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '字幕列表',
-                            style: TextStyle(
-                              color: Colors.orangeAccent.shade100,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Container(width: 1, color: Colors.white24),
-                      SizedBox(
-                        width: 100,
-                        child: Center(
-                          child: Text(
-                            '操作',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                      const PopupMenuItem(value: 'font', child: Text('字号')),
+                      PopupMenuItem(
+                        value: 'shortcuts',
+                        child: Text(
+                          _biTooltip('快捷键', BatchImportShortcutAction.help),
                         ),
                       ),
                     ],
                   ),
-                ),
-
-                // Lists
-                Expanded(
-                  child: Row(
+                  const SizedBox(width: 8),
+                ],
+              ),
+              body: SafeArea(
+                top: false,
+                child: DropTarget(
+                  key: const ValueKey('batch-import-drop-target'),
+                  enable:
+                      _desktop &&
+                      !_committing &&
+                      (ModalRoute.of(context)?.isCurrent ?? false),
+                  onDragEntered: (_) => setState(() => _dragging = true),
+                  onDragExited: (_) {
+                    if (mounted) setState(() => _dragging = false);
+                  },
+                  onDragDone: (details) {
+                    if (!_desktop ||
+                        _committing ||
+                        ModalRoute.of(context)?.isCurrent != true) {
+                      return;
+                    }
+                    setState(() => _dragging = false);
+                    unawaited(
+                      _enqueueFiles(
+                        details.files.map((file) => file.path).toList(),
+                      ),
+                    );
+                  },
+                  child: Stack(
                     children: [
-                      // Video Column
-                      Expanded(
-                        child: ReorderableListView.builder(
-                          scrollController: _videoController,
-                          buildDefaultDragHandles: false,
-                          itemCount: videoItems.length,
-                          onReorderItem: (oldIndex, newIndex) {
-                            batch.moveVideo(
-                              widget.folderId,
-                              oldIndex,
-                              newIndex,
-                            );
-                          },
-                          itemBuilder: (context, index) {
-                            final item = videoItems[index];
-                            final isImported =
-                                item.path != null &&
-                                batch.isImported(widget.folderId, item.path!);
-                            final duration = item.path != null
-                                ? batch.getDuration(widget.folderId, item.path!)
-                                : null;
-
-                            return ButtonAwareReorderableDragStartListener(
-                              key: ValueKey(item.id),
-                              index: index,
-                              child: Dismissible(
-                                key: ValueKey("${item.id}_dismiss"),
-                                direction: DismissDirection.horizontal,
-                                dismissThresholds: {
-                                  DismissDirection.startToEnd: 0.8,
-                                  DismissDirection.endToStart: 0.8,
-                                },
-                                background: Container(
-                                  color: Colors.red,
-                                  alignment: Alignment.centerLeft,
-                                  padding: const EdgeInsets.only(left: 20),
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                secondaryBackground: Container(
-                                  color: Colors.red,
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                onDismissed: (_) {
-                                  batch.removeVideoItem(widget.folderId, index);
-                                },
-                                child: Container(
-                                  height: rowHeight,
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(color: Colors.white12),
+                      Column(
+                        children: [
+                          if (!inlineActions)
+                            _toolbar(busy: busy, pending: pending),
+                          SizedBox(
+                            height: 2,
+                            child: busy
+                                ? const LinearProgressIndicator(
+                                    minHeight: 2,
+                                    color: AppTokens.text2,
+                                    backgroundColor: AppTokens.lineSubtle,
+                                  )
+                                : null,
+                          ),
+                          Expanded(
+                            child: AbsorbPointer(
+                              absorbing: busy,
+                              child: BatchImportTable(
+                                batch: batch,
+                                folderId: widget.folderId,
+                                media: videos,
+                                subtitles: subtitles,
+                                mediaController: _videoController,
+                                subtitleController: _subtitleController,
+                                actionController: _actionController,
+                                horizontalController: _horizontalController,
+                                onAddMedia: () =>
+                                    unawaited(_pickFiles(mediaOnly: true)),
+                                onAddSubtitles: () =>
+                                    unawaited(_pickSubtitles()),
+                                onPreviewMedia: (item) => Navigator.push(
+                                  context,
+                                  AppMaterialPageRoute(
+                                    builder: (_) => SimpleVideoPreviewScreen(
+                                      videoPath: item.path!,
                                     ),
-                                    color: index % 2 == 0
-                                        ? Colors.white.withValues(alpha: 0.02)
-                                        : Colors.transparent,
                                   ),
-                                  child: item.path == null
-                                      ? Center(
-                                          child: Text(
-                                            "--",
-                                            style: TextStyle(
-                                              color: Colors.white24,
-                                              fontSize: fontSize * 0.8,
-                                            ),
-                                          ),
-                                        )
-                                      : InkWell(
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              AppMaterialPageRoute(
-                                                builder: (_) =>
-                                                    SimpleVideoPreviewScreen(
-                                                      videoPath: item.path!,
-                                                    ),
-                                              ),
-                                            );
-                                          },
-                                          child: Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8.0,
-                                            ),
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  item.title ??
-                                                      p.basename(item.path!),
-                                                  style: TextStyle(
-                                                    color: isImported
-                                                        ? Colors.green
-                                                        : Colors.white,
-                                                    fontSize: fontSize,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                if (duration != null)
-                                                  Text(
-                                                    duration,
-                                                    style: TextStyle(
-                                                      color: Colors.white54,
-                                                      fontSize: fontSize * 0.7,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
+                                ),
+                                onPreviewSubtitle: (item) => Navigator.push(
+                                  context,
+                                  AppMaterialPageRoute(
+                                    builder: (_) => SubtitlePreviewScreen(
+                                      subtitlePath: item.path!,
+                                    ),
+                                  ),
+                                ),
+                                onImport: (media, subtitle) => unawaited(
+                                  _runRowAction(
+                                    () => _handleMerge(
+                                      media.path!,
+                                      subtitle?.path,
+                                      title: media.title,
+                                    ),
+                                  ),
+                                ),
+                                onUndo: (media) => unawaited(
+                                  _runRowAction(() => _handleUndo(media.path!)),
                                 ),
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-
-                      VerticalDivider(width: 1, color: Colors.white24),
-
-                      // Subtitle Column
-                      Expanded(
-                        child: ReorderableListView.builder(
-                          scrollController: _subtitleController,
-                          buildDefaultDragHandles: false,
-                          itemCount: subtitleItems.length,
-                          onReorderItem: (oldIndex, newIndex) {
-                            batch.moveSubtitle(
-                              widget.folderId,
-                              oldIndex,
-                              newIndex,
-                            );
-                          },
-                          itemBuilder: (context, index) {
-                            final item = subtitleItems[index];
-                            return ButtonAwareReorderableDragStartListener(
-                              key: ValueKey(item.id),
-                              index: index,
-                              child: Dismissible(
-                                key: ValueKey("${item.id}_dismiss"),
-                                direction: DismissDirection.horizontal,
-                                dismissThresholds: {
-                                  DismissDirection.startToEnd: 0.8,
-                                  DismissDirection.endToStart: 0.8,
-                                },
-                                background: Container(
-                                  color: Colors.red,
-                                  alignment: Alignment.centerLeft,
-                                  padding: const EdgeInsets.only(left: 20),
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                secondaryBackground: Container(
-                                  color: Colors.red,
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                onDismissed: (_) {
-                                  batch.removeSubtitleItem(
-                                    widget.folderId,
-                                    index,
-                                  );
-                                },
-                                child: Container(
-                                  height: rowHeight,
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(color: Colors.white12),
-                                    ),
-                                    color: index % 2 == 0
-                                        ? Colors.white.withValues(alpha: 0.02)
-                                        : Colors.transparent,
-                                  ),
-                                  child: item.path == null
-                                      ? Center(
-                                          child: Text(
-                                            "--",
-                                            style: TextStyle(
-                                              color: Colors.white24,
-                                              fontSize: fontSize * 0.8,
-                                            ),
-                                          ),
-                                        )
-                                      : InkWell(
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              AppMaterialPageRoute(
-                                                builder: (_) =>
-                                                    SubtitlePreviewScreen(
-                                                      subtitlePath: item.path!,
-                                                    ),
-                                              ),
-                                            );
-                                          },
-                                          child: Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8.0,
-                                            ),
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              p.basename(item.path!),
-                                              style: TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: fontSize,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-
-                      VerticalDivider(width: 1, color: Colors.white24),
-
-                      // Action Column
-                      SizedBox(
-                        width: 100,
-                        child: ListView.builder(
-                          controller: _actionController,
-                          itemCount: maxLen,
-                          itemExtent: rowHeight,
-                          itemBuilder: (context, index) {
-                            final videoItem = index < videoItems.length
-                                ? videoItems[index]
-                                : null;
-                            final subItem = index < subtitleItems.length
-                                ? subtitleItems[index]
-                                : null;
-
-                            final hasVideo = videoItem?.path != null;
-                            final isImported =
-                                hasVideo &&
-                                batch.isImported(
-                                  widget.folderId,
-                                  videoItem!.path!,
-                                );
-
-                            return Container(
-                              height: rowHeight,
+                      if (_dragging && !_committing)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Container(
+                              margin: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(color: Colors.white12),
+                                color: AppTokens.bgOverlay.withValues(
+                                  alpha: 0.96,
                                 ),
-                                color: index % 2 == 0
-                                    ? Colors.white.withValues(alpha: 0.02)
-                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppTokens.text2),
                               ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  if (hasVideo)
-                                    DesktopButtonClickRegion(
-                                      child: IconButton(
-                                        icon: Icon(
-                                          isImported
-                                              ? Icons.undo
-                                              : Icons.merge_type,
-                                          color: isImported
-                                              ? Colors.orange
-                                              : (subItem?.path != null
-                                                    ? Colors.blue
-                                                    : Colors.grey),
-                                          size: fontSize + 4,
-                                        ),
-                                        onPressed: () {
-                                          final videoPath = videoItem?.path;
-                                          if (videoPath == null) return;
-                                          if (isImported) {
-                                            _handleUndo(videoPath);
-                                          } else {
-                                            _handleMerge(
-                                              videoPath,
-                                              subItem?.path,
-                                              title: videoItem?.title,
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  DesktopButtonClickRegion(
-                                    child: IconButton(
-                                      icon: Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                        size: fontSize + 4,
-                                      ),
-                                      onPressed: () {
-                                        batch.removeRow(widget.folderId, index);
-                                      },
-                                    ),
-                                  ),
-                                ],
+                              child: const Center(
+                                child: Icon(
+                                  Icons.file_download_outlined,
+                                  size: 36,
+                                  color: AppTokens.text1,
+                                ),
                               ),
-                            );
-                          },
+                            ),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1040,17 +906,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
 // isolate worker 函数：流式解压 ZIP，仅提取字幕文件，失败时自动清理临时目录
 List<String> _extractZipWorker(String zipPath) {
   // 支持的字幕文件扩展名
-  const subtitleExtensions = {
-    '.srt',
-    '.vtt',
-    '.lrc',
-    '.ass',
-    '.ssa',
-    '.sup',
-    '.sub',
-    '.idx',
-    '.scc',
-  };
+  const subtitleExtensions = batchImportSubtitleExtensions;
   const maxEntryCount = 20000;
   const maxPathDepth = 64;
   const maxSingleSubtitleBytes = 64 * 1024 * 1024;

@@ -1,3 +1,4 @@
+import '../../../services/community_media_input.dart';
 import 'dart:async';
 import '../../media_cache/media_cache_reads.dart';
 import 'dart:convert';
@@ -75,6 +76,7 @@ class NetworkCloudDriveUpstreamClient implements CloudDriveUpstreamClient {
   Future<CloudDriveUpstreamResponse> open(
     CloudDriveUpstreamRequest request,
   ) async {
+    requireCommunityAuthorizedCloudDrive();
     final cancel = CancelToken();
     final unbind = request.cancelToken?.onCancel(() => cancel.cancel());
     BilibiliMediaConnectionPermit permit;
@@ -338,6 +340,7 @@ class CloudDriveStreamGateway {
     required CloudDrivePlaybackDescriptor descriptor,
     required String accountLocalId,
   }) async {
+    requireCommunityAuthorizedCloudDrive();
     final server = await _ensureServer();
     final token = _token();
     final session = _GatewaySession(descriptor)

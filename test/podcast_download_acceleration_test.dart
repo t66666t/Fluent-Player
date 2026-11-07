@@ -264,6 +264,7 @@ void main() {
         length: total,
       );
       episode = PodcastEpisode(
+        sourceFeedUrl: 'https://publisher.test/rss',
         id: 'e',
         channelId: 'c',
         title: 'long podcast',

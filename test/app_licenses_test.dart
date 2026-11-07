@@ -14,11 +14,9 @@ void main() {
       names,
       containsAll([
         'Fluent Player (GPL-3.0-or-later)',
-        'MiSans',
+        'Noto Sans SC variable',
         'ASR native dependencies',
         'Optional UnRAR tool',
-        'Python',
-        'QuickJS-NG',
       ]),
     );
     expect(

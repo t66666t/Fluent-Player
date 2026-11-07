@@ -16,6 +16,7 @@ import 'package:video_player_app/features/model_center/asr_enhancement_options.d
 import 'package:video_player_app/features/model_center/model_token_timing.dart';
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +27,7 @@ void main() {
       DynamicLibrary.open(p.absolute('windows/runtime/onnxruntime.dll'));
       OrtEnv.instance.init();
       sherpa.initBindings(
-        'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+        '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
       );
       final folder = p.absolute(
         '.artifacts/model-center/native/parakeet-v3-int8',
@@ -138,11 +139,11 @@ void main() {
           directory: p.absolute(
             '.artifacts/model-center/native/parakeet-v3-int8',
           ),
-          vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+          vadPath: asrProbeVadPath(),
           language: 'auto',
           threads: 2,
           libraryDirectory:
-              'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+              '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
           enhancements: const AsrEnhancementOptions(),
           naturalPunctuationContext: true,
           enhancementDirectories: {

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -17,6 +18,7 @@ import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/playback_navigation_service.dart';
 import 'package:video_player_app/services/playlist_manager.dart';
 import 'package:video_player_app/services/settings_service.dart';
+import 'package:video_player_app/widgets/media_library_keyboard_navigation.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -491,6 +493,53 @@ void main() {
       library.getRecycleBinDirectoryVideos('branch').map((item) => item.id),
       <String>['branch-video'],
     );
+  });
+
+  testWidgets('recycle bin supports keyboard focus and selection', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await loadTree();
+      await library.moveToRecycleBin(['selected', 'sibling']);
+    });
+    await tester.pumpWidget(
+      ChangeNotifierProvider<LibraryService>.value(
+        value: library,
+        child: const MaterialApp(home: RecycleBinScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(MediaLibraryKeyboardItem.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(
+      tester
+          .widgetList<MediaLibraryKeyboardItem>(
+            find.byType(MediaLibraryKeyboardItem),
+          )
+          .where((card) => card.selected),
+      hasLength(1),
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(
+      tester
+          .widgetList<MediaLibraryKeyboardItem>(
+            find.byType(MediaLibraryKeyboardItem),
+          )
+          .where((card) => card.selected),
+      hasLength(2),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(MediaLibraryKeyboardItem.hasPrimaryFocus, isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('opening a recycled video queues only that directory', (

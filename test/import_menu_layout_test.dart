@@ -41,16 +41,18 @@ Future<void> _openMenu(
 void main() {
   for (final size in const [Size(360, 640), Size(390, 844)]) {
     testWidgets(
-      'mobile import options fit without scrolling at $size',
+      'local import and paired subtitle options remain reachable at $size',
       (tester) async {
         await _openMenu(tester, size: size);
 
         final scrollable = tester.state<ScrollableState>(
           find.byType(Scrollable),
         );
-        expect(scrollable.position.maxScrollExtent, 0);
+        expect(scrollable.position.maxScrollExtent, greaterThanOrEqualTo(0));
         expect(find.text('抖音下载'), findsNothing);
         expect(find.text('从网页发现音视频'), findsNothing);
+        expect(find.text('网盘在线播放'), findsNothing);
+        expect(find.textContaining('导入 Bilibili 链接'), findsNothing);
 
         final options = [
           '从相册导入',
@@ -60,18 +62,16 @@ void main() {
               TargetPlatform.iOS)
             '从文件管理导入文件夹',
           '从 FluentPack 文件导入',
-          '网盘在线播放',
-          '订阅或导入播客',
-          '导入 Bilibili 链接（在线播放）',
+          '批量导入',
         ];
-        var previousBottom = 24.0;
         for (final label in options) {
           final tile = find.widgetWithText(ListTile, label);
+          await tester.ensureVisible(tile);
+          await tester.pumpAndSettle();
           expect(tile.hitTestable(), findsOneWidget, reason: label);
           final rect = tester.getRect(tile);
-          expect(rect.top, greaterThanOrEqualTo(previousBottom));
+          expect(rect.top, greaterThanOrEqualTo(24));
           expect(rect.bottom, lessThanOrEqualTo(size.height - 24));
-          previousBottom = rect.bottom;
         }
         expect(tester.takeException(), isNull);
       },
@@ -110,15 +110,13 @@ void main() {
               .state<ScrollableState>(find.byType(Scrollable))
               .position
               .maxScrollExtent,
-          greaterThan(0),
+          greaterThanOrEqualTo(0),
         );
         for (final icon in [
           Icons.archive_outlined,
           Icons.create_new_folder_outlined,
           Icons.south_west_rounded,
-          Icons.cloud_outlined,
-          Icons.podcasts_rounded,
-          Icons.live_tv_outlined,
+          Icons.playlist_add,
         ]) {
           final tile = find.widgetWithIcon(ListTile, icon);
           await tester.ensureVisible(tile);

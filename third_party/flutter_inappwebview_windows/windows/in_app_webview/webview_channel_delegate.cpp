@@ -383,7 +383,7 @@ namespace flutter_inappwebview_plugin
     channel->InvokeMethod("onUpdateVisitedHistory", std::move(arguments));
   }
 
-  void WebViewChannelDelegate::onCallJsHandler(const std::string& handlerName, const std::string& args, std::unique_ptr<CallJsHandlerCallback> callback) const
+  void WebViewChannelDelegate::onCallJsHandler(const std::string& handlerName, const std::string& args, const std::string& requestUrl, std::unique_ptr<CallJsHandlerCallback> callback) const
   {
     if (!channel) {
       callback->defaultBehaviour(std::nullopt);
@@ -392,7 +392,9 @@ namespace flutter_inappwebview_plugin
 
     auto arguments = std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
       {"handlerName", handlerName},
-      {"args", args}
+      {"args", args},
+      {"requestUrl", requestUrl},
+      {"isMainFrame", true}
       });
     channel->InvokeMethod("onCallJsHandler", std::move(arguments), std::move(callback));
   }
@@ -454,6 +456,18 @@ namespace flutter_inappwebview_plugin
 
     auto arguments = std::make_unique<flutter::EncodableValue>();
     channel->InvokeMethod("onCloseWindow", std::move(arguments));
+  }
+
+  void WebViewChannelDelegate::onDownloadBlocked() const
+  {
+    if (!channel) return;
+    // A metadata-free notification using the SDK's required request shape.
+    // It is emitted only after native Cancel and Handled have been read back.
+    auto arguments = std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {"url", "about:blank"}, {"contentLength", int64_t{ 0 }},
+      {"nativeCancelled", true}, {"nativeHandled", true}
+    });
+    channel->InvokeMethod("onDownloadStarting", std::move(arguments));
   }
 
   void WebViewChannelDelegate::onPermissionRequest(const std::string& origin, const std::vector<int64_t>& resources, std::unique_ptr<PermissionRequestCallback> callback) const

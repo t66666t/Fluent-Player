@@ -1,4 +1,6 @@
+import 'utils/app_branding.dart';
 import 'widgets/processing_screen_protection.dart';
+import 'widgets/processing_screen_protection_settings.dart';
 import 'features/web_media/web_media_download_queue.dart';
 import 'features/douyin_download/douyin_download_controller.dart';
 import 'features/media_cache/app_media_cache_backend.dart';
@@ -7,7 +9,6 @@ import 'features/media_cache/media_cache_models.dart';
 import 'features/media_cache/media_cache_playback.dart';
 import 'features/media_cache/media_cache_hooks.dart';
 import 'features/podcasts/podcast_playback_hooks.dart';
-import 'features/media_cache/bilibili_download_cache.dart';
 import 'services/storage_migration_coordinator.dart';
 import 'widgets/storage_settings_dialog.dart';
 import 'widgets/keyboard_shortcut_help.dart';
@@ -35,16 +36,19 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:window_manager/window_manager.dart';
 import 'features/ai_chat/ai_chat_session.dart';
+import 'features/external_ai/external_ai_controller.dart';
 import 'features/progress_sync/folder_sync_request_prompt.dart';
 import 'features/progress_sync/progress_sync_service.dart';
 import 'package:video_player_app/features/youtube_download/services/yt_dlp_download_service.dart';
 import 'package:video_player_app/platform/windows_video_player_media_kit.dart';
 import 'screens/home_screen.dart';
+import 'screens/collection_screen.dart';
 import 'features/onboarding/onboarding_store.dart';
 import 'services/library_service.dart';
 import 'services/settings_service.dart';
 import 'services/app_default_settings_trial.dart';
 import 'models/recommended_app_defaults.dart';
+import 'widgets/home_playback_defaults.dart';
 import 'features/ai_chat/ai_chat_typography.dart';
 import 'features/ai_chat/ai_chat_settings.dart';
 import 'services/subtitle_translate_settings.dart';
@@ -54,16 +58,13 @@ import 'services/model_task_interruption.dart';
 import 'services/subtitle_translation_service.dart';
 import 'services/media_materialization_service.dart';
 import 'services/batch_import_service.dart';
-import 'services/bilibili/bilibili_cache_limit_service.dart';
 import 'services/embedded_subtitle_service.dart';
 import 'services/bilibili/bilibili_download_service.dart';
 import 'services/bilibili/bilibili_streaming_service.dart';
-import 'services/bilibili/bilibili_watch_cards.dart';
-import 'services/bilibili/bilibili_watch_launch.dart';
-import 'services/bilibili/bilibili_watch_playlist.dart';
 import 'services/media_playback_service.dart';
 import 'services/playlist_manager.dart';
 import 'services/playback_navigation_service.dart';
+import 'services/community_media_input.dart';
 import 'services/playback_restore_preview.dart';
 import 'features/cloud_drive/services/cloud_drive_runtime.dart';
 import 'services/progress_tracker.dart';
@@ -295,20 +296,9 @@ void main() async {
   final coreLibraryReady = Completer<void>();
   PlaybackRestorePreview? restoredPlaybackPreview;
 
-  // Mini can now be opened before podcast setup. Register its route now; only
-  // an actual play request waits for the deferred source resolver to be ready.
+  // Register navigation before restored podcast cards can be opened.
   installPodcastNavigation();
   PodcastPlaybackHooks.deferResolveUntil(deferredServicesReady.future);
-
-  // Register the cloud wait point before any page or restored card can use it.
-  // Only the library directory is required; unrelated deferred services must
-  // not leave an early cloud page with a permanent "not initialized" error.
-  CloudDriveRuntime.beginInstall(
-    library: library,
-    playlist: playlistManager,
-    mediaPlayback: mediaPlaybackService,
-    libraryReady: coreLibraryReady.future,
-  );
 
   // Queue reconstruction and native warmup can wait for integrations. Mini's
   // local bookmark is already published by initializeStartupServices below.
@@ -382,7 +372,6 @@ void main() async {
       await ytDlpService.prepareStorageMigration();
       await transcriptionManager.shutdown();
       await PodcastRuntime.instance.prepareStorageMigration();
-      await CloudDriveRuntime.prepareStorageMigration();
       await library.prepareStorageMigration();
     }),
   );
@@ -456,8 +445,11 @@ void main() async {
             ChangeNotifierProvider.value(value: videoComposeManager),
             ChangeNotifierProvider.value(value: ocrSubtitleManager),
             Provider<SubtitleStreamSource>(
-              create: (_) =>
-                  SubtitleStreamHub([transcriptionManager, ocrSubtitleManager]),
+              create: (_) => SubtitleStreamHub([
+                transcriptionManager,
+                ocrSubtitleManager,
+                SubtitleTranslationService.instance.streamSource,
+              ]),
               dispose: (_, source) => (source as SubtitleStreamHub).dispose(),
             ),
             ChangeNotifierProvider.value(value: playlistManager),
@@ -468,6 +460,11 @@ void main() async {
             initiallyReady: useNativeAndroidLaunchSurface,
             onReadyFirstFrame: () {
               AppStartupTrace.mark('home-first-frame');
+              ExternalAiController.instance.attachTranscriptionManager(
+                transcriptionManager,
+                translationSettings: subtitleTranslateSettings,
+              );
+              unawaited(ExternalAiController.instance.initialize(library));
               library.startDeferredMaintenance();
               unawaited(SubtitleFontService.instance.ready);
               // Cloud setup also schedules thumbnail repairs. Start it after
@@ -727,7 +724,7 @@ class _StartupSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fluent Player',
+      title: kAppDisplayName,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: appLocalizationDelegates,
       supportedLocales: appSupportedLocales,
@@ -740,7 +737,7 @@ class _StartupSurface extends StatelessWidget {
         body: Center(
           child: Semantics(
             image: true,
-            label: 'Fluent Player',
+            label: kAppDisplayName,
             child: Image.asset(
               'android/app/src/main/res/mipmap-xxxhdpi/launcher_icon.png',
               key: const ValueKey<String>('startup-cover'),
@@ -810,28 +807,9 @@ Future<void> _initializeDeferredServices({
     }),
   );
   unawaited(safely('OcrSubtitleManager', ocrSubtitleManager.initialize));
-  unawaited(safely('BilibiliDownloadService', bilibiliService.init));
-  unawaited(
-    safely('Bilibili card data', () async {
-      await libraryFuture;
-      await bilibiliService.init();
-      bilibiliService.resumePendingStreamCardData(library);
-    }),
-  );
-  unawaited(safely('YtDlpDownloadService', ytDlpService.init));
-
   // Playback restoration needs the library and Android media session, but
   // neither is allowed to delay the first Flutter frame.
   await Future.wait<void>(<Future<void>>[libraryFuture, mediaSessionFuture]);
-  await safely('MediaCache', () async {
-    await bilibiliService.init();
-    final cache = MediaCacheService.instance;
-    if (cache != null) {
-      await cache.initialize();
-      await bilibiliService.restoreDownloadedCardLinks(library);
-      await migrateBilibiliDownloadCards(library, cache, bilibiliService.tasks);
-    }
-  });
   onLibraryReady();
   await safely(
     'Podcasts',
@@ -841,81 +819,7 @@ Future<void> _initializeDeferredServices({
       playback: mediaPlaybackService,
     ),
   );
-  // Keeps the online playback cache under the user's cap (Bilibili settings).
-  BilibiliCacheManager.install(
-    BilibiliCacheManager.forApp(
-      library: library,
-      streaming: bilibiliService.streamingService,
-      playback: mediaPlaybackService,
-    ),
-  );
-
-  // Watch-only Bilibili cards: progress into the watch history, removed once
-  // neither playing nor shown on a playback page (or in its episode list).
-  BilibiliWatchCards.install(
-    BilibiliWatchCards.forApp(
-      library: library,
-      playbackChanges: mediaPlaybackService,
-      currentItemId: () => mediaPlaybackService.currentItem?.id,
-      openPageItemIds: _openPlaybackPageItemIds,
-      queueItemIds: () => playlistManager.playlist.map((item) => item.id),
-      // While the mini player or a playback page is still using the temporary
-      // Bilibili list, keep every row. Dropping a card that already had a
-      // cover used to put a blank row back in its place.
-      keptItemIds: () {
-        if (playlistManager.hasManualQueue) {
-          return playlistManager.playlist.map((item) => item.id);
-        }
-        final session = BilibiliWatchPlaylistSession.instance;
-        if (session == null) return const <String>[];
-        final listInUse =
-            mediaPlaybackService.currentItem != null ||
-            PlaybackNavigationService.instance.hasPlaybackPage;
-        if (listInUse) return session.queuedItemIds();
-        return session.placeholderIds();
-      },
-      prepareCurrentItem: (itemId) => completeAndApplyWatchCard(
-        service: bilibiliService,
-        library: library,
-        playback: mediaPlaybackService,
-        itemId: itemId,
-      ),
-    ),
-  );
-
-  // The temporary playlist of videos opened from the Bilibili pages. It
-  // stays when the playback page closes, and is written down so the mini
-  // player can come back after a restart without waiting on a playurl.
-  BilibiliWatchPlaylistSession.install(
-    BilibiliWatchPlaylistSession(
-      list: BilibiliWatchPlaylist.instance,
-      service: bilibiliService,
-      library: library,
-      queue: playlistManager,
-      playbackChanges: mediaPlaybackService,
-      currentItem: () => mediaPlaybackService.currentItem,
-      persistenceFile: library.bilibiliWatchPlaylistFile,
-      warmCovers: true,
-    ),
-  );
 }
-
-Iterable<String> _openPlaybackPageItemIds() sync* {
-  yield* PlaybackNavigationService.instance.browseHistory.itemIds;
-  for (final route in PlaybackNavigationService.instance.observer.routes) {
-    final settings = route.settings;
-    final id = settings.arguments;
-    if (PlaybackNavigationService.isPlaybackRouteName(settings.name) &&
-        id is String) {
-      yield id;
-    }
-  }
-}
-
-final NavigatorObserver _watchCardsRouteObserver =
-    BilibiliWatchCards.routeObserver(
-      isPlaybackRoute: PlaybackNavigationService.isPlaybackRouteName,
-    );
 
 void _configureImageCaches() {
   final imageCache = PaintingBinding.instance.imageCache;
@@ -1074,6 +978,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
     }
     if (state == AppLifecycleState.detached) {
+      unawaited(ExternalAiController.instance.shutdown());
       AiChatSessions.instance.shutdown();
       unawaited(CloudDriveRuntime.instance?.shutdown());
       unawaited(widget.bilibiliService.shutdown());
@@ -1086,6 +991,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(ExternalAiController.instance.shutdown());
     _clipboardRoutes.dispose();
     MediaPlaybackService().removeListener(_handlePlaybackServiceChanged);
     unawaited(_notificationClickedSubscription?.cancel());
@@ -1227,7 +1133,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             ),
           },
           child: MaterialApp(
-            title: 'Fluent_Player',
+            title: kAppDisplayName,
             debugShowCheckedModeBanner: false,
             localizationsDelegates: appLocalizationDelegates,
             supportedLocales: appSupportedLocales,
@@ -1237,13 +1143,29 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               ProcessingScreenProtection.navigationObserver,
               AppToast.routeObserver,
               PlaybackNavigationService.instance.observer,
-              _watchCardsRouteObserver,
               _clipboardRoutes.rootObserver,
               DebugLogNavigatorObserver(),
             ],
             builder: (context, child) {
+              final settings = context.watch<SettingsService>();
+              final playbackActive = context.select<MediaPlaybackService, bool>(
+                (playback) =>
+                    playback.state == PlaybackState.loading ||
+                    playback.isPlaying ||
+                    playback.isTransportPlaying,
+              );
               return ProcessingScreenProtection(
-                enabled: context.watch<SettingsService>().processingScreenProtection,
+                enabled: settings.processingScreenProtection,
+                idleDelay: Duration(
+                  seconds: settings.processingScreenProtectionWaitSeconds,
+                ),
+                playbackActive: playbackActive,
+                onDisableRequested: (context) =>
+                    showProcessingScreenProtectionSettings(
+                      context,
+                      settings,
+                      confirmDisable: true,
+                    ),
                 child: KeyboardShortcutHints(
                   child: MouseBackButtonListener(
                     navigatorKey: AppToast.navigatorKey,
@@ -1259,7 +1181,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                                   child: MobileSystemNavigationBar(
                                     child: AppTextInputFocus(
                                       child: UiRefreshRateScope(
-                                        child: child ?? const SizedBox.shrink(),
+                                        child: KeyboardFocusTheme(
+                                          child:
+                                              child ?? const SizedBox.shrink(),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1282,7 +1207,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 typography: Typography.material2021(
                   platform: isIOS ? TargetPlatform.iOS : defaultTargetPlatform,
                 ),
-                fontFamily: isIOS ? 'CupertinoSystemText' : 'MiSans',
+                fontFamily: isIOS ? 'CupertinoSystemText' : 'Noto Sans SC',
+                fontFamilyFallback: const ['Noto Sans CJK Fallback'],
                 textTheme: appTextTheme(isIOS: isIOS),
                 textButtonTheme: TextButtonThemeData(
                   style: appActionTextStyle(isIOS: isIOS),
@@ -1319,7 +1245,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               if (settings.name != Navigator.defaultRouteName) return null;
               return buildMediaLibraryShellRoute<void>(
                 settings: settings,
-                home: const HomeScreen(),
+                home: const HomePlaybackDefaults(child: HomeScreen()),
+                folderPageBuilder: (folderId) =>
+                    CollectionScreen(collectionId: folderId),
               );
             },
           ),
@@ -1356,26 +1284,21 @@ Future<void> _restorePlaybackState({
     final previewGeneration = preview.generation;
     final position = mediaPlaybackService.position;
 
-    // 恢复播放列表。一次性 B 站视频不在任何文件夹里，上次如果播的是
-    // 它的临时列表，就按那份列表恢复，而不是媒体库根目录。
-    final watchSession = BilibiliWatchPlaylistSession.instance;
-    final restoredManualQueue = playlistManager.hasManualQueue;
-    var restoredWatchQueue = false;
-    if (!restoredManualQueue &&
-        watchSession != null &&
-        watchSession.shouldRestoreWatchQueue(videoItem)) {
-      restoredWatchQueue = await watchSession.restoreWatchQueue(videoItem);
+    if (!communityMediaIsPlayable(
+      videoItem.path,
+      source: videoItem.sourceRef,
+    )) {
+      return;
     }
+    final restoredManualQueue = playlistManager.hasManualQueue;
     var restoredPodcastQueue = false;
-    if (!restoredManualQueue &&
-        !restoredWatchQueue &&
-        PodcastRuntime.instance.ready) {
+    if (!restoredManualQueue && PodcastRuntime.instance.ready) {
       restoredPodcastQueue = await PodcastRuntime.instance.restoreSavedQueue(
         expectedMediaId: videoItem.id,
       );
     }
     if (mediaPlaybackService.sessionGeneration != previewGeneration) return;
-    if (!restoredManualQueue && !restoredWatchQueue && !restoredPodcastQueue) {
+    if (!restoredManualQueue && !restoredPodcastQueue) {
       if (videoItem.isTransient) {
         playlistManager.setPlaylist([videoItem], currentItemId: videoItem.id);
       } else if (snapshot.playlistFolderId != null) {
@@ -1393,20 +1316,11 @@ Future<void> _restorePlaybackState({
     }
 
     if (MediaPlaybackService.shouldPrepareNativePlayerOnRestore(videoItem)) {
-      // Local files can warm a paused controller before Mini chrome is useful.
       await mediaPlaybackService.play(
         videoItem,
         startPosition: position,
         autoPlay: false,
         keepBookmarkOnFailure: true,
-      );
-    } else {
-      // Bilibili may warm opportunistically; other remote sources keep their
-      // offline bookmark until the user opens or plays it. Prepare the paused
-      // player at the saved position without blocking startup. Opening the
-      // card then mounts that player instead of waiting on a cold playurl.
-      unawaited(
-        mediaPlaybackService.warmRestoredOnlinePlayback(videoItem, position),
       );
     }
     await SystemMediaSessionService.instance.refreshNow(
@@ -1423,6 +1337,5 @@ Future<void> _restorePlaybackState({
     // The retained watch-only card is the current item now, or there was
     // nothing to restore. Either way the janitor may sweep the rest.
     library.releaseLaunchRetainedTransients();
-    BilibiliWatchCards.instance?.janitor.scheduleSweep();
   }
 }

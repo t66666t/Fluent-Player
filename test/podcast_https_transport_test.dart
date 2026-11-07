@@ -9,9 +9,13 @@ import 'package:video_player_app/services/network/network_proxy_bridge.dart';
 import 'network_proxy_bridge_test.dart' show FakeProxyResolver;
 import 'network_settings_service_test.dart'
     show MemoryNetworkStore, MemoryCredentials;
+import 'support/temporary_tls_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  late TemporaryTlsFixture tlsFixture;
+  setUpAll(() async => tlsFixture = await TemporaryTlsFixture.create());
+  tearDownAll(() async => tlsFixture.dispose());
   late HttpServer secureOrigin;
   late HttpServer plainOrigin;
   late NetworkSettingsService settings;
@@ -27,8 +31,8 @@ void main() {
       InternetAddress.loopbackIPv4,
       0,
       SecurityContext()
-        ..useCertificateChain('test/fixtures/network/podcast-loopback.pem')
-        ..usePrivateKey('test/fixtures/network/test-key.pem'),
+        ..useCertificateChain(tlsFixture.certificate)
+        ..usePrivateKey(tlsFixture.privateKey),
     );
     plainOrigin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     secureOrigin.listen((request) async {
@@ -83,7 +87,7 @@ void main() {
 
   SecurityContext trustedTls() =>
       SecurityContext(withTrustedRoots: false)
-        ..setTrustedCertificates('test/fixtures/network/podcast-loopback.pem');
+        ..setTrustedCertificates(tlsFixture.certificate);
 
   // Trust only the fixture CA. Hostname and TLS verification remain enabled.
   HttpClient podcastClient() {

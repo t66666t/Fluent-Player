@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/app_haptics.dart';
 import '../utils/desktop_media_management_shortcuts.dart';
 import '../utils/desktop_player_shortcuts.dart';
 import '../utils/page_shortcut_keys.dart';
@@ -48,29 +49,38 @@ class _KeyboardShortcutHelpDialog extends StatelessWidget {
         [
           ('快捷键帮助', 'F1 / Ctrl+/ / ⌘+/'),
           ('返回 / 关闭当前弹窗；输入时先退出输入', 'Esc'),
+          ('字幕、存储及回收站删除确认：取消 / 删除', 'Esc / Enter 或 D'),
+          ('任务移除或移入回收站确认：取消 / 确认', 'Esc / Enter 或 R'),
+          ('确认弹窗：切换按钮 / 执行焦点按钮', 'Tab / Shift+Tab；Enter'),
           ('桌面窗口全屏', 'F11'),
         ],
       ),
       (
         '首页与合集',
         [
-          ('向上 / 向下滚动当前页面（可长按）', '↑ / ↓'),
+          ('在卡片、页面入口和按钮之间移动', '↑ / ↓ / ← / →'),
+          ('打开卡片；打开卡片的更多菜单', 'Enter；Shift+F10 / 菜单键'),
+          ('多选：切换当前卡片；连续选择；全选', 'Enter / Space；Shift+方向键；Ctrl/⌘+A'),
+          ('访问卡片内和悬浮操作栏的按钮', 'Tab / Shift+Tab'),
+          ('播客节目：进入按钮 / 返回节目', '→ / ←；Tab / Shift+Tab'),
+          ('底部卡片与迷你播放条之间移动', '↑ / ↓'),
+          ('迷你播放条：切换控件；调整进度', '方向键；进度条上 ← / →'),
+          ('回收站：进入多选 / 切换当前项 / 全选', 'B / Space / Ctrl/⌘+A'),
+          ('没有可聚焦卡片时滚动页面（可长按）', '↑ / ↓'),
           (
             '展开 / 收起操作按钮',
             library(DesktopMediaManagementShortcutAction.toggleActionButtons),
           ),
-          (
-            '抖音下载',
-            library(DesktopMediaManagementShortcutAction.openDouyinDownload),
-          ),
-          ('浏览器导入', library(DesktopMediaManagementShortcutAction.openWebMedia)),
           ('搜索 / 媒体库设置', 'S / P'),
+          (
+            '连接外部 AI（桌面端）',
+            library(DesktopMediaManagementShortcutAction.openExternalAi),
+          ),
           ('新建合集 / 导入媒体', 'N / I'),
-          ('B站下载 / YT-DLP下载', 'D / Y'),
-          ('语音转录 / 缓存管理 / 导入与导出', 'C / M / X'),
-          ('切换视图 / 卡片样式 / 批量选择 / 全选', 'V / T / B / A'),
+          ('语音转录 / 批量导入 / 导入与导出', 'C / M / X'),
+          ('卡片样式 / 批量选择 / 全选', 'T / B / A'),
           ('多选时：移入回收站 / 导出 / 重命名（仅单项）', 'R / X / N'),
-          ('媒体库首页：按当前入口顺序直达（含小键盘）', '1～6'),
+          ('媒体库首页：按当前入口顺序直达（含小键盘）', '1～3'),
           ('媒体库首页：下一个 / 上一个入口', 'Ctrl+Tab / Ctrl+Shift+Tab'),
           ('输入、弹窗、播放器或批量选择时不切换入口', '仅浏览时生效'),
           ('首页入口排序：长按入口后拖动；侧栏使用相同顺序', '触控与鼠标相同'),
@@ -86,7 +96,7 @@ class _KeyboardShortcutHelpDialog extends StatelessWidget {
           ('快退 / 快进；音量增减', '← / →；↑ / ↓'),
           ('上一集 / 下一集 / 选集', 'P / N / G'),
           ('静音 / 字幕开关 / 字幕侧栏', 'M / C / B'),
-          ('B 站 / 字幕分页；切换分页；横屏侧栏展开收起', 'Alt+← / →；I；B'),
+          ('字幕分页；切换分页；横屏侧栏展开收起', 'Alt+← / →；I；B'),
           ('设置 / 字幕库 / 字幕编辑', 'S / L / E'),
           ('字幕样式 / 移动字幕 / OCR / AI', 'T / J / O / W'),
           ('倍速减小 / 增大', '[ / ]，或 Shift+← / →'),
@@ -103,26 +113,10 @@ class _KeyboardShortcutHelpDialog extends StatelessWidget {
         ],
       ),
       (
-        '抖音下载',
+        '存储管理 / 设备同步',
         [
-          ('粘贴 / 清空 / 解析', 'V / X / Enter'),
-          ('设置 / 登录', 'S / L'),
-          ('全选资源 / 加入队列 / 开始下载', 'A / Q / Space'),
-        ],
-      ),
-      (
-        '网页下载队列',
-        [
-          ('设置 / 全选', 'S / A 或 Ctrl+A、⌘A'),
-          ('开始或继续 / 暂停 / 重试失败 / 移除', 'Space / P / T / R'),
-        ],
-      ),
-      (
-        '缓存管理 / 存储管理 / B站搜索 / 设备同步',
-        [
-          ('缓存：搜索 / 设置 / 全部暂停或继续', 'S / P / Space'),
           ('存储：重新扫描 / 复制诊断摘要', 'R / C'),
-          ('B站：搜索 / 历史 / 账号 / 刷新结果', 'S 或 /；H / L / R'),
+          ('存储详情：搜索；字幕预览：返回', 'S 或 /；Esc'),
           ('设备同步：立即同步 / 发送文件夹', 'R / N'),
         ],
       ),
@@ -167,9 +161,7 @@ class _KeyboardShortcutHelpDialog extends StatelessWidget {
               ],
               const SizedBox(height: 16),
               const Text(
-                '网页正文输入由网页处理；下载浮窗需先取得键盘焦点。'
-                '抖音原生网页显示时暂停页面单字母命令。\n'
-                '页面单字母只在应用内生效。后台播放控制可在媒体库设置 → 桌面媒体控制中设置。'
+                '页面单字母只在应用内生效。本地媒体后台播放控制可在媒体库设置 → 桌面媒体控制中设置。'
                 'Windows / macOS 可开启 Ctrl+Alt+Space 播放/暂停、Ctrl+Alt+← / → 上一项/下一项，'
                 '也可改用 Ctrl+Alt+Shift 组合。Linux 媒体键由桌面环境处理。'
                 'Android / iOS 的后台媒体键沿用系统媒体会话。',
@@ -181,7 +173,10 @@ class _KeyboardShortcutHelpDialog extends StatelessWidget {
       actions: [
         DesktopButtonClickRegion(
           child: TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: AppHaptics.wrap(
+              () => Navigator.of(context).pop(),
+              light: true,
+            ),
             child: const Text('关闭'),
           ),
         ),

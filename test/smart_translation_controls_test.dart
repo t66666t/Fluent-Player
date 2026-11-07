@@ -223,6 +223,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      if (find.byTooltip('展开配置详情').evaluate().isNotEmpty) {
+        await tester.tap(find.byTooltip('展开配置详情'));
+        await tester.pumpAndSettle();
+      }
       expect(find.textContaining('智能互译：', findRichText: true), findsOneWidget);
       expect(find.textContaining('+2', findRichText: true), findsOneWidget);
       expect(

@@ -19,8 +19,8 @@ enum StorageCategory {
   recycleBin('回收站文件', '已回收卡片的原文件和附属资源；与其他卡片共享的文件只计一次。'),
   downloads('下载成品', '已下载但尚未被媒体库引用的成品；删除后需要重新下载。'),
   offlineDownloads('离线下载', '用户明确保留的播客等离线媒体。不参与普通清缓存；删除后需要重新下载，听过和订阅状态仍保留。'),
-  streaming('在线播放缓存', '可重新获取的在线播放片段，例如播客试听缓存。网盘普通播放如果没有落盘，不会出现在这里。'),
-  materialized('在线转写与合成素材', '为播放预览、转写、OCR 或合成准备的可重新获取音视频副本，包括网盘素材。'),
+  streaming('在线播放缓存', '可重新获取的在线播放片段，例如 RSS 播客试听缓存；仅统计已经保存在本机的文件。'),
+  materialized('转写与合成素材', '为播放预览、转写、OCR 或合成准备的音视频副本；使用中和可恢复的任务素材受保护。'),
   thumbnails('封面与缩略图', '卡片封面、章节图片与在线预览图；自选封面删除后无法恢复，其他预览图可按需重建。'),
   subtitles('字幕与弹幕', '媒体库保存的字幕和弹幕；需单独确认后删除，并同步清除卡片引用，删除后无法恢复。'),
   compatibility('兼容播放副本', '为兼容音频解码生成的媒体副本；清理后仍保留原文件，需要时重新生成。'),
@@ -29,8 +29,8 @@ enum StorageCategory {
   workTemp('转写、OCR 与合成临时文件', '提取的音频、OCR 图片、本地推理、AI 文稿预处理缓存和合成工作文件。'),
   transfer('导出包与传输文件', '.fluentpack 导出包、压缩包、解压和便携传输工作副本；删除后无法恢复导出包。'),
   orphaned('未关联的媒体库文件', '已知媒体库目录中没有卡片或任务引用的遗留文件。'),
-  models('模型与下载工具', '本地语音识别、翻译、语音增强和 OCR 模型，以及模型配套文件、下载断点、下载工具及其运行环境；由对应功能管理。'),
-  metadata('配置与任务记录', '媒体库索引、备份、AI 会话、字体、账号、浏览器数据、设置和可恢复任务。'),
+  models('本地模型', '本地语音识别、翻译、语音增强和 OCR 模型及配套文件、下载断点；由模型功能管理。历史工具文件保留占用明细。'),
+  metadata('配置与任务记录', '媒体库索引、备份、AI 会话、字体、连接权限、设置和可恢复任务，以及保留的历史记录。'),
   other('其他与待核实文件', '尚不能确认用途的文件；保留路径明细，避免误删。');
 
   const StorageCategory(this.title, this.description);
@@ -49,7 +49,9 @@ enum StorageOrigin {
   cloudDrive('网盘'),
   shared('共享资源'),
   appData('应用数据'),
-  unknown('未知');
+  unknown('未知'),
+  web('网页媒体'),
+  douyin('抖音');
 
   const StorageOrigin(this.title);
   final String title;
@@ -341,6 +343,15 @@ class StorageCategoryUsage {
   final List<StorageFileEntry> files;
   final int bytes;
   final int clearableBytes;
+
+  int get cacheBytes => files.fold(
+    0,
+    (sum, file) =>
+        sum +
+        (storageDeletionPermitted(StorageCleanupAction.clearCache, file)
+            ? file.bytes
+            : 0),
+  );
 }
 
 class StorageOriginUsage {

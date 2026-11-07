@@ -32,6 +32,7 @@ import '../utils/exclusive_axis_drag_recognizer.dart';
 import '../utils/hardware_keyboard_shortcuts.dart';
 import '../utils/keyboard_shortcut_hints.dart';
 import '../utils/player_volume_keyboard.dart';
+import '../utils/swipe_seek_progress.dart';
 import '../models/media_chapter.dart';
 import '../models/bilibili_video_shot.dart';
 import '../utils/app_toast.dart';
@@ -39,6 +40,7 @@ import 'bilibili_sprite_preview.dart';
 import 'chapter_slider_track_shape.dart';
 import 'player_control_metrics.dart';
 import 'progress_interaction_geometry.dart';
+import 'swipe_seek_feedback.dart';
 import 'playback_speed_dialog.dart';
 import 'stream_quality_picker.dart';
 import 'compact_stream_quality_layout.dart';
@@ -336,7 +338,7 @@ class VideoControlsOverlay extends StatefulWidget {
 }
 
 class VideoControlsOverlayState extends State<VideoControlsOverlay>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const Duration _controlsFadeDuration =
       PlayerSidebarMotion.controlDuration;
   static const Duration _subtitleAvoidanceReleaseDelay = Duration(
@@ -439,13 +441,20 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     final MediaPlaybackService? next = _playbackServiceOrNull();
     if (!identical(next, _transportService)) {
       _transportService?.removeListener(_syncOwnedTransportPlaying);
+      _transportService?.positionNotifier.removeListener(
+        _observeSwipeSeekPlayback,
+      );
       _transportService = next;
       _transportService?.addListener(_syncOwnedTransportPlaying);
+      _transportService?.positionNotifier.addListener(
+        _observeSwipeSeekPlayback,
+      );
     }
     _syncOwnedTransportPlaying();
   }
 
   void _syncOwnedTransportPlaying() {
+    _observeSwipeSeekPlayback();
     final MediaPlaybackService? service = _transportService;
     final VideoPlayerController? controller = widget.controller;
     final bool? next =
@@ -462,7 +471,16 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   String get _controllerDataSource => widget.controller?.dataSource ?? '';
 
   bool _isDraggingProgress = false;
-  final _progressHaptics = DragHapticSession();
+  final _progressHaptics = DragHapticSession(
+    step: 10,
+    minimumInterval: const Duration(milliseconds: 40),
+  );
+  double _progressHapticTrackWidth = 1;
+  // Use seek displacement in logical pixels, independent of media duration.
+  final _gestureSeekHaptics = DragHapticSession(
+    step: 10,
+    minimumInterval: const Duration(milliseconds: 40),
+  );
   double _dragProgressValue = 0.0;
   int? _desktopProgressPointer;
   bool _isProgressHovered = false;
@@ -529,13 +547,35 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   // Gesture Seek
+  late final SwipeSeekProgress _swipeSeekProgress;
   bool _isGestureSeeking = false;
+  Duration _gestureStartTime = Duration.zero;
   Duration _gestureTargetTime = Duration.zero;
   String _gestureDiffText = "";
   bool _isGestureCanceling = false;
+  bool _gestureFeedbackCancelled = false;
   bool _showControlsBeforeGestureSeek = false;
   bool _isProgressDragCanceling = false; // New: For slider drag cancellation
   bool _progressDragWasCancelled = false;
+
+  Listenable get _progressListenable =>
+      Listenable.merge([_controllerListenable, _swipeSeekProgress]);
+
+  Duration get _displayProgressPosition => _isDraggingProgress
+      ? Duration(milliseconds: _dragProgressValue.toInt())
+      : _swipeSeekProgress.position;
+
+  void _observeSwipeSeekPlayback() => _swipeSeekProgress.observePlayback();
+
+  void _resetHorizontalSeek() {
+    _gestureSeekHaptics.reset();
+    _swipeSeekProgress.reset();
+    _isGestureSeeking = false;
+    _isGestureCanceling = false;
+    _gestureFeedbackCancelled = false;
+    _showControlsBeforeGestureSeek = false;
+    _dragStartPosition = null;
+  }
 
   // Keep transient feedback local so a rate change does not rebuild the
   // entire player page in the same frame as the native player update.
@@ -1417,6 +1457,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   void _beginProgressDrag(double value) {
+    _swipeSeekProgress.reset();
     final wasDragging = _isDraggingProgress;
     final chapterIndex = _chapterIndexAt(value);
     setState(() {
@@ -1430,7 +1471,8 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     });
     if (!wasDragging) widget.onProgressScrubbingChanged?.call(true);
     _progressHaptics.begin(
-      value / math.max(1, _controllerValue.duration.inMilliseconds),
+      value / math.max(1, _controllerValue.duration.inMilliseconds) *
+          _progressHapticTrackWidth,
     );
     _scheduleLiveSeekPreview(value, immediate: true);
     _schedulePreciseSeekPreview(value);
@@ -1452,7 +1494,8 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
       }
     });
     _progressHaptics.update(
-      value / math.max(1, _controllerValue.duration.inMilliseconds),
+      value / math.max(1, _controllerValue.duration.inMilliseconds) *
+          _progressHapticTrackWidth,
       checkpoint: crossedChapter,
     );
     _scheduleLiveSeekPreview(value);
@@ -1677,6 +1720,12 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   @override
   void initState() {
     super.initState();
+    _swipeSeekProgress = SwipeSeekProgress(
+      vsync: this,
+      readPosition: () => _controllerValue.position,
+      readDuration: () => _controllerValue.duration,
+    );
+    widget.controller?.addListener(_observeSwipeSeekPlayback);
     WidgetsBinding.instance.addObserver(this);
     // Hover that lands on a subtitle never reaches this MouseRegion. The global
     // route is what still sees that pointer leave the player bounds.
@@ -1720,6 +1769,9 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _isGestureSeeking) {
+      _completeHorizontalSeek(commit: false);
+    }
     if (state == AppLifecycleState.inactive) {
       // A visible but unfocused window can lose key-up too. Retain short taps
       // just as Flutter focus loss does, while ending actual held-key work.
@@ -1749,9 +1801,11 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     }
     if (widget.isLocked ||
         widget.isPreparing ||
+        widget.suppressPrimaryGestures ||
         oldWidget.controller != widget.controller ||
         oldWidget.mediaItemId != widget.mediaItemId) {
       _progressHaptics.reset();
+      _resetHorizontalSeek();
     }
     if (oldWidget.isPreparing != widget.isPreparing) {
       // Initialization is not fresh user activity. Preserve visibility and
@@ -1759,6 +1813,8 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
       _startAutoHideTimer();
     }
     if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?.removeListener(_observeSwipeSeekPlayback);
+      widget.controller?.addListener(_observeSwipeSeekPlayback);
       _syncOwnedTransportPlaying();
     }
     if (oldWidget.focusNode != widget.focusNode) {
@@ -1844,6 +1900,13 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
 
   @override
   void dispose() {
+    widget.controller?.removeListener(_observeSwipeSeekPlayback);
+    _transportService?.removeListener(_syncOwnedTransportPlaying);
+    _transportService?.positionNotifier.removeListener(
+      _observeSwipeSeekPlayback,
+    );
+    _swipeSeekProgress.dispose();
+    _gestureSeekHaptics.reset();
     _progressHaptics.reset();
     WidgetsBinding.instance.removeObserver(this);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(
@@ -1875,7 +1938,6 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     _subtitleAvoidanceReleaseTimer?.cancel();
     _stopKeyboardVolumeHold();
     _volumeFeedbackHideTimer?.cancel();
-    _transportService?.removeListener(_syncOwnedTransportPlaying);
     _unavailableControllerValue.dispose();
     _ownedTransportPlaying.dispose();
     super.dispose();
@@ -2085,6 +2147,11 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   void _finishPlayerPointer(PointerEvent event) {
+    // An accepted DragGestureRecognizer can report onEnd for PointerCancel.
+    // Close the preview before recognizers route that event as a normal lift.
+    if (event is PointerCancelEvent) {
+      _completeHorizontalSeek(commit: false);
+    }
     if (!_isTouchLikePointer(event.kind)) return;
     _activeTouchPointers.remove(event.pointer);
     // If the long-press recognizer missed this up, speed boost and the
@@ -2327,10 +2394,12 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
         widget.onPlayNext!();
         return;
       case DesktopPlayerShortcutAction.toggleSubtitles:
+        _pulseSelection();
         _startAutoHideTimer();
         widget.onToggleSubtitles();
         return;
       case DesktopPlayerShortcutAction.toggleMute:
+        _pulseSelection();
         final playbackService = Provider.of<MediaPlaybackService>(
           context,
           listen: false,
@@ -3026,6 +3095,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   void _seekTo(Duration position, {bool hop = false}) {
+    if (!_isGestureSeeking) _swipeSeekProgress.reset();
     final handler = hop
         ? (widget.onHopSeekTo ?? widget.onSeekTo)
         : widget.onSeekTo;
@@ -3065,7 +3135,11 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
 
   void _onHorizontalDragStart(DragStartDetails details, double width) {
     if (_shouldBlockPrimaryGestures) return;
-    if (!_controllerValue.isInitialized || widget.isLocked) return;
+    if (!_controllerValue.isInitialized ||
+        _controllerValue.duration <= Duration.zero ||
+        widget.isLocked) {
+      return;
+    }
     // 互斥：如果正在长按加速（或显示双击反馈），则不响应滑动
     if (_isLongPressActive) return;
     // 恢复键盘焦点，确保手势操作后快捷键仍然可用
@@ -3082,12 +3156,20 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     if (details.globalPosition.dy > screenHeight * 0.85) return;
 
     _dragStartPosition = details.globalPosition;
+    _gestureStartTime = _swipeSeekProgress.begin();
+    _gestureSeekHaptics.reset();
+    _gestureSeekHaptics.begin(
+      _gestureStartTime.inMilliseconds / 100,
+      dragging: true,
+    );
 
     setState(() {
       _showControlsBeforeGestureSeek = _showControls;
       _isGestureSeeking = true;
-      _gestureTargetTime = _controllerValue.position;
+      _gestureTargetTime = _gestureStartTime;
+      _gestureDiffText = '0s';
       _isGestureCanceling = false;
+      _gestureFeedbackCancelled = false;
     });
 
     // Keep the pre-gesture controls visibility stable during gesture seek.
@@ -3105,10 +3187,10 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
     if (_isLongPressActive) return; // Double check
 
     final double offsetX = details.globalPosition.dx - _dragStartPosition!.dx;
-    final int secondsToAdd = (offsetX / 10).round();
+    final int millisecondsToAdd = (offsetX * 100).round();
 
     final Duration newTime =
-        _controllerValue.position + Duration(seconds: secondsToAdd);
+        _gestureStartTime + Duration(milliseconds: millisecondsToAdd);
 
     final RenderBox box = context.findRenderObject() as RenderBox;
     final localOffset = box.globalToLocal(details.globalPosition);
@@ -3122,12 +3204,21 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
           : (newTime > totalDuration ? totalDuration : newTime);
       _gestureTargetTime = clamped;
 
-      final diff =
-          _gestureTargetTime.inSeconds - _controllerValue.position.inSeconds;
+      final diff = (_gestureTargetTime - _gestureStartTime).inSeconds;
       _gestureDiffText = diff > 0 ? "+${diff}s" : "${diff}s";
 
       _isGestureCanceling = isInCancelArea;
     });
+    _swipeSeekProgress.update(_gestureTargetTime);
+    _gestureSeekHaptics.setCanceling(isInCancelArea);
+    _gestureSeekHaptics.update(
+      _gestureTargetTime.inMilliseconds / 100,
+      boundary: _gestureTargetTime <= Duration.zero
+          ? -1
+          : _gestureTargetTime >= _controllerValue.duration
+          ? 1
+          : null,
+    );
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
@@ -3149,15 +3240,30 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
         commit &&
         !_isGestureCanceling &&
         !widget.isLocked &&
+        _controllerValue.isInitialized &&
+        _controllerValue.duration > Duration.zero &&
         !_shouldBlockPrimaryGestures;
-    final Duration target = _gestureTargetTime;
+    final Duration target = Duration(
+      microseconds: _gestureTargetTime.inMicroseconds.clamp(
+        0,
+        math.max(0, _controllerValue.duration.inMicroseconds),
+      ),
+    );
+    _swipeSeekProgress.update(target);
+    _swipeSeekProgress.finish(
+      commit: commitSeek,
+      animate: !MediaQuery.disableAnimationsOf(context),
+    );
+    _gestureSeekHaptics.end(committed: commitSeek);
     if (commitSeek) {
       _seekTo(target);
+      _observeSwipeSeekPlayback();
     }
 
     final bool restoreControls = _showControlsBeforeGestureSeek;
     setState(() {
       _isGestureSeeking = false;
+      _gestureFeedbackCancelled = !commitSeek;
       _isGestureCanceling = false;
       _showControlsBeforeGestureSeek = false;
       _dragStartPosition = null;
@@ -3574,10 +3680,48 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   // Vertical Drag for Volume/Brightness
+  bool get _usesMobileAdjustmentGestureRegion =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  bool _canStartVerticalAdjustment(Offset position) {
+    if (!_usesMobileAdjustmentGestureRegion) return true;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || box.size.isEmpty) return false;
+
+    final localPosition = box.globalToLocal(position);
+    final edgeHeight = box.size.height * 0.1;
+    if (localPosition.dy < edgeHeight ||
+        localPosition.dy >= box.size.height - edgeHeight) {
+      return false;
+    }
+
+    // Use window coordinates for system insets: the player may be embedded
+    // below a SafeArea, where applying the same insets locally reserves twice.
+    final view = View.of(context);
+    final pixelRatio = view.devicePixelRatio;
+    final windowSize = view.physicalSize / pixelRatio;
+    final padding = EdgeInsets.fromViewPadding(view.viewPadding, pixelRatio);
+    final gestures = EdgeInsets.fromViewPadding(
+      view.systemGestureInsets,
+      pixelRatio,
+    );
+    return Rect.fromLTRB(
+      math.max(padding.left, gestures.left),
+      math.max(padding.top, gestures.top),
+      windowSize.width - math.max(padding.right, gestures.right),
+      windowSize.height - math.max(padding.bottom, gestures.bottom),
+    ).contains(position);
+  }
+
   void _onVerticalDragStart(DragStartDetails details, double width) async {
     if (_shouldBlockPrimaryGestures) return;
     if (widget.isLocked) return; // Prevent global drag if locked
     if (_isLongPressActive) return; // 互斥
+    // DragStartBehavior.down keeps this at the original contact. Still let
+    // the vertical recognizer win so an ignored swipe cannot become a seek.
+    if (!_canStartVerticalAdjustment(details.globalPosition)) return;
     // 恢复键盘焦点，确保手势操作后快捷键仍然可用
     _requestKeyboardFocus();
 
@@ -3653,6 +3797,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details, double height) {
+    if (!_verticalAdjustmentGestureActive) return;
     if (_shouldBlockPrimaryGestures) return;
     if (widget.isLocked) return;
     if (_isLongPressActive) return; // 互斥
@@ -3690,6 +3835,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
+    if (!_verticalAdjustmentGestureActive) return;
     // Always drop the HUD. Blocking chrome after the fact used to skip this
     // and leave the card on screen.
     _hideVolumeBrightnessOverlay(
@@ -4359,6 +4505,12 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                         >(() => ExclusiveVerticalDragGestureRecognizer(), (
                           ExclusiveVerticalDragGestureRecognizer instance,
                         ) {
+                          // Keep both the side and the drag origin tied to the
+                          // first contact, rather than the threshold crossing.
+                          instance.dragStartBehavior =
+                              _usesMobileAdjustmentGestureRegion
+                              ? DragStartBehavior.down
+                              : DragStartBehavior.start;
                           instance.onStart = (details) => _onVerticalDragStart(
                             details,
                             _liveViewportSize.width,
@@ -4422,74 +4574,39 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                       if (_showDoubleTapFeedback && _tapPosition != null)
                         _buildDoubleTapFeedbackOverlay(width, height),
 
-                      // Gesture Seek Feedback (Center)
-                      if (_isGestureSeeking &&
-                          !widget.isLocked &&
-                          !_isLongPressActive)
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _isGestureCanceling
-                                  ? Colors.red.withValues(alpha: 0.8)
-                                  : Colors.black.withValues(alpha: 0.7),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_isGestureCanceling) ...[
-                                  const Icon(
-                                    Icons.undo,
-                                    color: Colors.white,
-                                    size: 48,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    "松手取消跳转",
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ] else ...[
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        _gestureDiffText.startsWith('+')
-                                            ? Icons.fast_forward
-                                            : Icons.fast_rewind,
-                                        color: Colors.white70,
-                                        size: 32,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _gestureDiffText,
-                                        style: const TextStyle(
-                                          color: Colors.blueAccent,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    "${_formatDuration(_gestureTargetTime)} / ${_formatDuration(_controllerValue.duration)}",
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                      // Keep the outgoing HUD mounted for release/cancel motion.
+                      IgnorePointer(
+                        child: AnimatedSwitcher(
+                          duration: _transitionDuration(
+                            const Duration(milliseconds: 160),
                           ),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeOutCubic,
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(
+                                opacity: animation,
+                                child: ScaleTransition(
+                                  scale: Tween<double>(
+                                    begin: 0.96,
+                                    end: 1,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                          child:
+                              _isGestureSeeking &&
+                                  !widget.isLocked &&
+                                  !_isLongPressActive
+                              ? SwipeSeekFeedback(
+                                  visible: true,
+                                  canceling: _isGestureCanceling,
+                                  difference: _gestureDiffText,
+                                  timeLabel:
+                                      "${_formatDuration(_gestureTargetTime)} / ${_formatDuration(_controllerValue.duration)}",
+                                )
+                              : const SizedBox.shrink(),
                         ),
+                      ),
 
                       // Brightness/Volume Feedback (Center)
                       if ((_isAdjustingBrightness || _isAdjustingVolume) &&
@@ -4538,34 +4655,99 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                           ),
                         ),
 
-                      // Seek Cancel Area Highlight
-                      if ((_isGestureSeeking || _isDraggingProgress) &&
-                          !widget.isLocked)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: height * 0.25,
-                          child: Container(
-                            color:
+                      // Passive, animated cancel hint; it never owns a pointer.
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: height * 0.25,
+                        child: IgnorePointer(
+                          child: AnimatedOpacity(
+                            opacity:
+                                (_isGestureSeeking || _isDraggingProgress) &&
+                                    !widget.isLocked
+                                ? 1
+                                : 0,
+                            duration: _transitionDuration(
+                              const Duration(milliseconds: 160),
+                            ),
+                            child: AnimatedContainer(
+                              duration: _transitionDuration(
+                                const Duration(milliseconds: 140),
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    (_isGestureCanceling ||
+                                            _isProgressDragCanceling)
+                                        ? Colors.red.withValues(alpha: 0.32)
+                                        : Colors.black.withValues(alpha: 0.28),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
                                 (_isGestureCanceling ||
-                                    _isProgressDragCanceling)
-                                ? Colors.red.withValues(alpha: 0.3)
-                                : Colors.white.withValues(alpha: 0.1),
-                            alignment: Alignment.center,
-                            child: Text(
-                              (_isGestureCanceling || _isProgressDragCanceling)
-                                  ? "松手取消"
-                                  : "上滑至此区域取消",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                                        _isProgressDragCanceling)
+                                    ? "\u677e\u624b\u53d6\u6d88"
+                                    : "\u4e0a\u6ed1\u81f3\u6b64\u533a\u57df\u53d6\u6d88",
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      ),
                     ],
+                  ),
+                ),
+              ),
+
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: AnimatedSwitcher(
+                    duration: _transitionDuration(
+                      const Duration(milliseconds: 180),
+                    ),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeOutCubic,
+                    layoutBuilder: (currentChild, previousChildren) => Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [...previousChildren, ?currentChild],
+                    ),
+                    child:
+                        _isGestureSeeking &&
+                            !_showControlsBeforeGestureSeek &&
+                            !widget.isLocked
+                        ? AnimatedBuilder(
+                            key: const ValueKey('swipe-seek-progress-rail'),
+                            animation: _progressListenable,
+                            builder: (context, _) => SwipeSeekProgressRail(
+                              visible: true,
+                              canceling: _isGestureSeeking
+                                  ? _isGestureCanceling
+                                  : _gestureFeedbackCancelled,
+                              position: _displayProgressPosition,
+                              duration: _controllerValue.duration,
+                              metrics: controlMetrics,
+                              chapters: widget.chapters,
+                              padding: EdgeInsets.only(
+                                left: controlSafeLeft,
+                                right: controlSafeRight,
+                                bottom: controlMetrics.bottomPadding +
+                                    controlMetrics.bottomRowHeight,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ),
               ),
@@ -4878,7 +5060,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                         ),
                                       ),
                                     AnimatedBuilder(
-                                      animation: _controllerListenable,
+                                      animation: _progressListenable,
                                       // Keep this selector and its text measurement outside
                                       // the per-frame progress rebuild. Its own provider
                                       // subscription still updates quality/catalog changes.
@@ -4904,8 +5086,6 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                             )
                                           : null,
                                       builder: (context, child) {
-                                        final position =
-                                            _controllerValue.position;
                                         final duration =
                                             _controllerValue.duration;
                                         final hasDuration =
@@ -4918,12 +5098,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                             duration.inMilliseconds > 0;
 
                                         final currentPosition =
-                                            _isDraggingProgress
-                                            ? Duration(
-                                                milliseconds: _dragProgressValue
-                                                    .toInt(),
-                                              )
-                                            : position;
+                                            _displayProgressPosition;
 
                                         final sliderMax = hasDuration
                                             ? duration.inMilliseconds.toDouble()
@@ -4975,7 +5150,7 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                           .chapterButtonBottom,
                                                       child: AnimatedBuilder(
                                                         animation:
-                                                            _controllerListenable,
+                                                            _progressListenable,
                                                         builder: (context, _) {
                                                           final chapter =
                                                               MediaChapter.atPosition(
@@ -5214,6 +5389,10 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                         .deferToChild,
                                                     onPointerDown: isInitialized
                                                         ? (event) {
+                                                            _progressHapticTrackWidth = math.max(
+                                                              1.0,
+                                                              sliderConstraints.maxWidth - trackInset * 2,
+                                                            );
                                                             _progressHaptics
                                                                 .pointerDown(
                                                                   event,
@@ -5439,7 +5618,8 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                             child: TweenAnimationBuilder<double>(
                                                               tween: Tween<double>(
                                                                 end:
-                                                                    _isDraggingProgress
+                                                                    (_isDraggingProgress ||
+                                                                        _isGestureSeeking)
                                                                     ? 1
                                                                     : (_isProgressHovered
                                                                           ? 0.62
@@ -5460,7 +5640,9 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                                   ) => SliderTheme(
                                                                     data: SliderTheme.of(context).copyWith(
                                                                       activeTrackColor:
-                                                                          _isProgressDragCanceling
+                                                                          (_isProgressDragCanceling ||
+                                                                              (_isGestureSeeking &&
+                                                                                  _isGestureCanceling))
                                                                           ? Colors.grey
                                                                           : Color.lerp(
                                                                               const Color(
@@ -5485,7 +5667,9 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                                       ),
                                                                       thumbColor:
                                                                           isInitialized
-                                                                          ? (_isProgressDragCanceling
+                                                                          ? ((_isProgressDragCanceling ||
+                                                                                    (_isGestureSeeking &&
+                                                                                        _isGestureCanceling))
                                                                                 ? Colors.grey
                                                                                 : Color.lerp(
                                                                                     const Color(
@@ -5539,6 +5723,8 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                                         child!,
                                                                   ),
                                                               child: Slider(
+                                                                // Keep endpoints fixed while the emphasis animates.
+                                                                padding: EdgeInsets.symmetric(horizontal: progressTrackInset),
                                                                 min: 0.0,
                                                                 max: sliderMax,
                                                                 value:
@@ -5699,17 +5885,10 @@ class VideoControlsOverlayState extends State<VideoControlsOverlay>
                                                     // 时间文本 — 小范围 AnimatedBuilder，仅重建 Text
                                                     AnimatedBuilder(
                                                       animation:
-                                                          _controllerListenable,
+                                                          _progressListenable,
                                                       builder: (context, _) {
                                                         final pos =
-                                                            _isDraggingProgress
-                                                            ? Duration(
-                                                                milliseconds:
-                                                                    _dragProgressValue
-                                                                        .toInt(),
-                                                              )
-                                                            : _controllerValue
-                                                                  .position;
+                                                            _displayProgressPosition;
                                                         final dur =
                                                             _controllerValue
                                                                 .duration;

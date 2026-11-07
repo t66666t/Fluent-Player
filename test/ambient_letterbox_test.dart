@@ -11,6 +11,57 @@ import 'package:video_player_app/widgets/settings_panel.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('视频变换手势默认开启，关闭后持久化并包含在设置导出中', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final settings = SettingsService()..resetForTest();
+    await settings.init();
+    expect(settings.enableVideoTransformGestures, isTrue);
+    final saving = settings.saveEnableVideoTransformGestures(false);
+    expect(settings.enableVideoTransformGestures, isFalse);
+    await saving;
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('enableVideoTransformGestures'), isFalse);
+    expect(
+      (settings.exportSettingsSnapshot()['playback']
+          as Map)['enableVideoTransformGestures'],
+      isFalse,
+    );
+    settings.resetForTest();
+    await settings.init();
+    expect(settings.enableVideoTransformGestures, isFalse);
+  });
+
+  testWidgets('视频播放设置可关闭变换手势，音频模式隐藏该开关', (tester) async {
+    var enabled = true;
+    await tester.pumpWidget(
+      _host(
+        audio: false,
+        ambient: false,
+        onAmbient: (_) {},
+        transformGestures: enabled,
+        onTransformGestures: (value) => enabled = value,
+      ),
+    );
+    final tile = find.widgetWithText(SwitchListTile, '视频缩放、旋转手势');
+    await tester.scrollUntilVisible(
+      tile,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(tile).value, isTrue);
+    await tester.tap(tile);
+    await tester.pump();
+    expect(enabled, isFalse);
+    await tester.pumpWidget(
+      _host(audio: true, ambient: false, onAmbient: (_) {}),
+    );
+    await tester.pump();
+    expect(tile, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('留边氛围默认关闭，并可写入持久化', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final settings = SettingsService();
@@ -244,6 +295,8 @@ Widget _host({
   required bool audio,
   required bool ambient,
   required ValueChanged<bool> onAmbient,
+  bool transformGestures = true,
+  ValueChanged<bool>? onTransformGestures,
   TextScaler textScaler = TextScaler.noScaling,
 }) {
   return MaterialApp(
@@ -309,6 +362,8 @@ Widget _host({
         enableSeekPreview: true,
         onEnableSeekPreviewChanged: (_) {},
         enableHapticFeedback: false,
+        enableVideoTransformGestures: transformGestures,
+        onEnableVideoTransformGesturesChanged: onTransformGestures ?? (_) {},
         onEnableHapticFeedbackChanged: (_) {},
         isLeftHandedMode: false,
         onLeftHandedModeChanged: (_) {},

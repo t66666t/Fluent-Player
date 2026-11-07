@@ -71,7 +71,7 @@ void main() {
     );
     await tester.tap(find.text('打开设置'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('settings-search')), findsOneWidget);
+    expect(find.text('媒体库设置'), findsOneWidget);
 
     await tester.pumpAndSettle();
   }

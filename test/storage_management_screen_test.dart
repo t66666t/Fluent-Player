@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_app/screens/storage_management_screen.dart';
 import 'package:video_player_app/services/storage_audit_models.dart';
 import 'package:video_player_app/services/storage_audit_service.dart';
+import 'package:video_player_app/services/storage_presentation.dart';
 
 void main() {
   StorageSnapshot snapshot() => StorageSnapshot(
@@ -123,12 +124,179 @@ void main() {
       ),
     );
     expect(find.text('播客'), findsOneWidget);
-    expect(find.text('网盘'), findsOneWidget);
+    expect(find.text('网盘'), findsNothing);
     expect(find.text('存储记录已变化'), findsOneWidget);
     await tester.tap(find.text('播客'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('存储空间管理'), findsOneWidget);
+  });
+
+  testWidgets(
+    'source cleanup uses the displayed scope and preserves offline media',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final service = _ScopedCleanupService();
+      await tester.pumpWidget(
+        MaterialApp(home: StorageManagementScreen(service: service)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('网盘'),
+        storageSourceFilters.contains(StorageSourceFilter.cloudDrive)
+            ? findsOneWidget
+            : findsNothing,
+      );
+      expect(
+        find.text('历史来源文件'),
+        storageSourceFilters.contains(StorageSourceFilter.legacy)
+            ? findsOneWidget
+            : findsNothing,
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('storageTotal'))).data,
+        '10.00 KB',
+      );
+      await tester.tap(find.text('播客'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('storageTotal'))).data,
+        '5.00 KB',
+      );
+      expect(find.text('4.88 KiB · 2 个文件'), findsOneWidget);
+      expect(find.text('可清理缓存 2.00 KB'), findsOneWidget);
+      expect(find.text('需确认删除 3.00 KB'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('storageClearCache')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(service.plans.single.action, StorageCleanupAction.clearCache);
+      expect(service.plans.single.files.map((file) => file.path), [
+        '/data/podcast.seg',
+      ]);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('storageTotal'))).data,
+        '3.00 KB',
+      );
+      expect(find.text('可清理缓存 0 B'), findsOneWidget);
+      expect(find.text('2.93 KiB · 1 个文件'), findsOneWidget);
+      expect(find.byKey(const ValueKey('storageClearCache')), findsNothing);
+      await tester.scrollUntilVisible(
+        find.text(StorageCategory.offlineDownloads.title),
+        150,
+      );
+      await tester.tap(find.text(StorageCategory.offlineDownloads.title));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除离线下载'));
+      await tester.pumpAndSettle();
+      expect(find.text('删除 1 个文件？'), findsOneWidget);
+      expect(find.textContaining('3.00 KB · 离线下载'), findsOneWidget);
+      await tester.tap(find.text('删除这些文件'));
+      await tester.pumpAndSettle();
+      expect(service.plans.last.action, StorageCleanupAction.deleteOffline);
+      expect(service.lastSnapshot!.appBytes, 5000);
+      expect(find.text('0 B · 0 个文件，按大小排列'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('storageTotal'))).data,
+        '0 B',
+      );
+      expect(find.text('此来源暂无应用文件。'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'detail cleanup retains the source filter when updating its files',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final service = _ScopedCleanupService();
+      await tester.pumpWidget(
+        MaterialApp(home: StorageManagementScreen(service: service)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('播客'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text(StorageCategory.streaming.title),
+        180,
+      );
+      await tester.tap(find.text(StorageCategory.streaming.title));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('/data/cloud.bin'), findsNothing);
+      await tester.enterText(find.byType(TextField), 'no-match');
+      await tester.pumpAndSettle(const Duration(milliseconds: 250));
+      expect(find.text('清理缓存'), findsNothing);
+      expect(find.textContaining('当前匹配 0 个文件'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'podcast');
+      await tester.pumpAndSettle(const Duration(milliseconds: 250));
+      await tester.tap(find.text('清理缓存'));
+      await tester.pumpAndSettle();
+      expect(find.text('0 B · 0 个文件，按大小排列'), findsOneWidget);
+      expect(find.textContaining('/data/cloud.bin'), findsNothing);
+      expect(
+        service.lastSnapshot!.files.any(
+          (file) => file.path == '/data/cloud.bin',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets('detail header scrolls with large text and an open keyboard', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 520);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final service = StorageAuditService(
+      buildInput: () async => const StorageScanInput(roots: []),
+      deletionBlockedReason: () => null,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(1.6)),
+          child: child!,
+        ),
+        home: StorageManagementScreen(
+          service: service,
+          initialSnapshot: snapshot(),
+        ),
+      ),
+    );
+    await tester.scrollUntilVisible(
+      find.text(StorageCategory.picker.title),
+      180,
+    );
+    await tester.tap(find.text(StorageCategory.picker.title));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 220);
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byType(TextField),
+      120,
+      scrollable: find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.enterText(find.byType(TextField), 'video');
+    await tester.pumpAndSettle(const Duration(milliseconds: 250));
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('当前匹配 1 个文件'), findsOneWidget);
   });
 
   for (final details in [false, true]) {
@@ -148,13 +316,17 @@ void main() {
         );
         await tester.pumpAndSettle();
         if (details) {
+          await tester.scrollUntilVisible(
+            find.text(StorageCategory.picker.title),
+            150,
+          );
           await tester.tap(find.text(StorageCategory.picker.title));
           await tester.pumpAndSettle();
           await tester.tap(find.text('清理当前列表可删除文件'));
         } else {
-          await tester.ensureVisible(find.text('清理 3.00 KB'));
+          await tester.scrollUntilVisible(find.text('删除 3.00 KB'), 150);
           await tester.pumpAndSettle();
-          await tester.tap(find.text('清理 3.00 KB'));
+          await tester.tap(find.text('删除 3.00 KB'));
         }
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
@@ -198,6 +370,92 @@ void main() {
         TargetPlatform.android,
         TargetPlatform.iOS,
       }),
+    );
+  }
+}
+
+class _ScopedCleanupService extends StorageAuditService {
+  _ScopedCleanupService()
+    : super(
+        buildInput: () async => throw StateError('unexpected scan'),
+        deletionBlockedReason: () => null,
+        initialSnapshot: StorageSnapshot(
+          scannedAt: DateTime(2026),
+          roots: const [],
+          warnings: const [],
+          files: [
+            for (final (name, bytes, origin, category, policy, direct, explicit)
+                in [
+                  (
+                    'local.mp4',
+                    1000,
+                    StorageOrigin.localMedia,
+                    StorageCategory.libraryMedia,
+                    StorageCleanupPolicy.protected,
+                    false,
+                    false,
+                  ),
+                  (
+                    'podcast.seg',
+                    2000,
+                    StorageOrigin.podcast,
+                    StorageCategory.streaming,
+                    StorageCleanupPolicy.regenerableCache,
+                    true,
+                    false,
+                  ),
+                  (
+                    'offline.mp3',
+                    3000,
+                    StorageOrigin.podcast,
+                    StorageCategory.offlineDownloads,
+                    StorageCleanupPolicy.savedContent,
+                    false,
+                    true,
+                  ),
+                  (
+                    'cloud.bin',
+                    4000,
+                    StorageOrigin.cloudDrive,
+                    StorageCategory.streaming,
+                    StorageCleanupPolicy.regenerableCache,
+                    true,
+                    false,
+                  ),
+                ])
+              StorageFileEntry(
+                path: '/data/$name',
+                rootPath: '/data',
+                rootLabel: 'data',
+                category: category,
+                bytes: bytes,
+                modifiedMicros: 1,
+                changedMicros: 1,
+                ownerIds: const [],
+                ownerTitles: const [],
+                origin: origin,
+                cleanupPolicy: policy,
+                canDelete: direct,
+                explicitDelete: explicit,
+              ),
+          ],
+        ),
+      );
+
+  final plans = <StorageDeletionPlan>[];
+  @override
+  Future<StorageDeletionResult> delete(
+    StorageDeletionPlan plan, {
+    void Function(StorageDeletionProgress progress)? onProgress,
+  }) async {
+    plans.add(plan);
+    final paths = plan.files.map((file) => file.path).toList();
+    lastSnapshot = storageSnapshotWithoutFiles(lastSnapshot!, paths);
+    return StorageDeletionResult(
+      deletedPaths: paths,
+      releasedBytes: plan.bytes,
+      skipped: const {},
+      failed: const {},
     );
   }
 }

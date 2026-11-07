@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -10,13 +9,14 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/features/ai_chat/ai_chat_settings.dart';
 import 'package:video_player_app/features/model_center/model_center_service.dart';
+import 'package:video_player_app/features/model_center/model_catalog.dart';
+import 'package:video_player_app/features/model_center/model_transcription.dart';
 import 'package:video_player_app/models/managed_subtitle_asset.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/models/subtitle_punctuation.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/ai_subtitle_translator.dart';
 import 'package:video_player_app/services/ai_subtitle_api_settings.dart';
-import 'package:video_player_app/services/gongyi_asr_service.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/subtitle_translate_settings.dart';
@@ -35,18 +35,52 @@ class _Paths extends PathProviderPlatform {
   Future<String?> getTemporaryPath() async => root;
 }
 
-class _Asr extends GongyiAsrService {
+// These tests target the completed-file lifecycle used by user-configured
+// services. They must not depend on the disabled public ASR transport.
+class _Center extends ModelCenterService {
+  @override
+  bool get started => true;
+  @override
+  Future<void> initialize() async {}
+  @override
+  ModelJobSpec get transcriptionConfiguration => const ModelJobSpec(
+    profile: ModelServiceProfile(
+      id: 'test-authorized',
+      name: 'Configured test service',
+      kind: TranscriptionServiceKind.openai,
+      endpoint: 'https://example.test/v1',
+      model: 'test',
+    ),
+  );
+  @override
+  Future<ModelJobSpec> captureTranscription() async =>
+      transcriptionConfiguration;
+}
+
+class _Asr extends ModelTranscriptionRunner {
   _Asr({this.speech = 'Hello world'});
   final String speech;
   @override
-  Future<List<SubtitleItem>> transcribeAudio(
-    String audioPath, {
-    bool needWordTimestamp = false,
-    bool includeWordTimings = false,
-    Function(double progress, String status)? onProgress,
-    CancelToken? cancelToken,
-    GongyiAsrTaskCheckpoint? checkpoint,
-    Future<String> Function()? prepareAudio,
+  Future<List<SubtitleItem>> run({
+    required ModelJobSpec spec,
+    required String sourceIdentity,
+    String checkpointScope = '',
+    required Duration duration,
+    required PrepareModelAudio prepareAudio,
+    PrepareCloudAsrAudio? prepareCloudAudio,
+    dynamic prepareAudioChannel,
+    required void Function(ModelProcessingProgress) onProgress,
+    Future<void>? cancelSignal,
+    Future<void> Function(StableAsrBatch)? onStableBatch,
+    bool serializeConsumer = false,
+    int consumerModelBytes = 0,
+    int? consumerWorkingSetBytes,
+    int consumerBatchSize = 8,
+    int streamAssemblyVersion = 3,
+    Future<void> Function()? onSessionClose,
+    Future<void> Function()? onConsumerIdle,
+    bool Function()? consumerHasResidentModel,
+    dynamic resourceSession,
   }) async => [
     SubtitleItem(
       index: 1,
@@ -182,7 +216,7 @@ void main() {
           ]);
           expect(generated.exitCode, 0);
           final preparer = _GatePreparer(phase);
-          final center = ModelCenterService()
+          final center = _Center()
             ..subtitlePunctuation = SubtitlePunctuation.removeAll;
           final translation = SubtitleTranslationService(
             outputPreparer: preparer,
@@ -204,7 +238,7 @@ void main() {
           final manager = TranscriptionManager(
             settings: settings,
             modelCenter: center,
-            asrService: _Asr(speech: 'Hello, world.'),
+            modelRunner: _Asr(speech: 'Hello, world.'),
             translationService: translation,
             outputPreparer: preparer,
           );
@@ -339,7 +373,7 @@ void main() {
           audio,
         ]);
         expect(generated.exitCode, 0, reason: '${generated.stderr}');
-        final center = ModelCenterService()..subtitlePunctuation = mode;
+        final center = _Center()..subtitlePunctuation = mode;
         final entered = Completer<void>(), release = Completer<void>();
         var requests = 0;
         final translation = SubtitleTranslationService(
@@ -365,7 +399,7 @@ void main() {
         final manager = TranscriptionManager(
           settings: settings,
           modelCenter: center,
-          asrService: _Asr(speech: rawSource),
+          modelRunner: _Asr(speech: rawSource),
           translationService: translation,
         );
         try {
@@ -489,7 +523,8 @@ void main() {
         );
         final manager = TranscriptionManager(
           settings: settings,
-          asrService: _Asr(),
+          modelCenter: _Center(),
+          modelRunner: _Asr(),
           translationService: translation,
         );
         try {

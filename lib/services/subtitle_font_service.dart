@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/subtitle_font.dart';
 import '../models/subtitle_style.dart';
 import '../utils/subtitle_font_parser.dart';
+import '../utils/subtitle_font_metrics.dart';
 import '../utils/subtitle_font_resolver.dart';
 import 'network/network_http.dart';
 
@@ -35,6 +36,7 @@ class SubtitleFontService extends ChangeNotifier {
   SharedPreferences? _prefs;
   final Map<String, SubtitleFontAsset> _imported = {};
   final Set<String> _loaded = {};
+  final Map<String, Map<int, double>> _latinBodyCenters = {};
   final Map<String, Future<void>> _loading = {};
   Future<void> _writes = Future.value();
   String? loadError;
@@ -46,12 +48,25 @@ class SubtitleFontService extends ChangeNotifier {
     SubtitleFontAsset(
       id: 'Noto Sans SC',
       name: '思源黑体',
-      weights: [100, 200, 300, 400, 500, 700, 900],
+      weights: [100, 200, 300, 400, 500, 600, 700, 800, 900],
+      variableWeightMin: 100,
+      variableWeightMax: 900,
+      weightAxisChecked: true,
       license: SubtitleFontLicense.commercial,
-      assetPath: 'assets/fonts/licenses/NotoSans-OFL.txt',
-      sourceUrl: 'https://github.com/notofonts/noto-cjk',
+      assetPath: 'assets/fonts/licenses/NotoSansSC-Variable-OFL.txt',
+      sourceUrl:
+          'https://github.com/google/fonts/tree/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/notosanssc',
       licenseUrl: 'https://openfontlicense.org/',
       verifiedOn: '2026-09-09',
+    ),
+    SubtitleFontAsset(
+      id: 'Swei Gothic CJK SC',
+      name: '狮尾圆体',
+      weights: [700],
+      license: SubtitleFontLicense.commercial,
+      assetPath: 'assets/fonts/licenses/SweiGothic-OFL.txt',
+      sourceUrl: 'https://github.com/max32002/swei-gothic',
+      licenseUrl: 'https://openfontlicense.org/',
     ),
     SubtitleFontAsset(
       id: 'Inter',
@@ -94,13 +109,40 @@ class SubtitleFontService extends ChangeNotifier {
       verifiedOn: '2026-09-09',
     ),
   ];
-  List<SubtitleFontAsset> get fonts => [...bundled, ..._imported.values];
+
+  /// Downloaded and imported families are shown newest first, before built-ins.
+  List<SubtitleFontAsset> get fonts => [
+    ..._imported.values.toList().reversed,
+    ...bundled,
+  ];
   SubtitleFontAsset? find(String id) =>
       _imported[id] ?? bundled.where((f) => f.id == id).firstOrNull;
+
+  /// The optional serif preset uses a user-installed face, never an asset
+  /// silently substituted under the old bundled-family name.
+  SubtitleFontAsset? get downloadedNotoSerif => _imported.values
+      .where(
+        (font) =>
+            font.name == 'Noto Serif SC' ||
+            font.internalFamily == 'Noto Serif SC' ||
+            font.internalFamily == 'Noto Serif CJK SC',
+      )
+      .lastOrNull;
   String nameOf(String id) => find(id)?.name ?? id;
   bool get initialized => _directory != null;
   bool isLoaded(String id) =>
       !id.startsWith('subtitle_font_') || _loaded.contains(id);
+
+  double? latinBodyCenter(String family, int weight) {
+    final faces = _latinBodyCenters[family];
+    if (faces == null || faces.isEmpty) {
+      return bundledSubtitleLatinBodyCenter(family, weight);
+    }
+    final nearest = faces.keys.reduce(
+      (a, b) => (a - weight).abs() <= (b - weight).abs() ? a : b,
+    );
+    return faces[nearest];
+  }
 
   Future<void> _initialize() async {
     try {
@@ -201,7 +243,7 @@ class SubtitleFontService extends ChangeNotifier {
         );
       }
       await ensureLoaded(existing.id);
-      return existing;
+      return _imported[existing.id] ?? existing;
     }
     final digest = sha256.convert(utf8.encode(hashes.join(':'))).toString();
     final id = 'subtitle_font_$digest';
@@ -212,6 +254,9 @@ class SubtitleFontService extends ChangeNotifier {
       paths.add(path);
     }
     final weights = parsed.expand((f) => f.weights).toSet().toList()..sort();
+    final variableRange = _widestWeightAxis(
+      parsed.map((font) => font.variableWeightRange),
+    );
     final font = SubtitleFontAsset(
       id: id,
       name: online?.name ?? parsed.first.family,
@@ -221,6 +266,9 @@ class SubtitleFontService extends ChangeNotifier {
       faceHashes: hashes,
       sha256: digest,
       weights: weights,
+      variableWeightMin: variableRange?.$1,
+      variableWeightMax: variableRange?.$2,
+      weightAxisChecked: true,
       coverage: parsed.expand((f) => f.coverage).toList(),
       license: online?.license ?? SubtitleFontLicense.unknown,
       licenseText: licenseText,
@@ -256,11 +304,35 @@ class SubtitleFontService extends ChangeNotifier {
       }
       await loader.load();
     }
+    final metrics = <int, double>{};
+    for (final face in bytes) {
+      try {
+        final parsed = parseSubtitleLatinMetrics(face);
+        if (parsed != null) metrics[parsed.weight] = parsed.bodyCenter;
+      } on FormatException {
+        // Optional metrics must not prevent an otherwise usable font loading.
+      }
+    }
+    _latinBodyCenters[id] = metrics;
     _loaded.add(id);
   }
 
+  (int, int)? _widestWeightAxis(Iterable<(int, int)?> ranges) {
+    (int, int)? widest;
+    for (final range in ranges) {
+      if (range != null &&
+          (widest == null || range.$2 - range.$1 > widest.$2 - widest.$1)) {
+        widest = range;
+      }
+    }
+    return widest;
+  }
+
   Future<void> ensureLoaded(String id) async {
-    if (!id.startsWith('subtitle_font_') || _loaded.contains(id)) return;
+    if (!id.startsWith('subtitle_font_')) return;
+    final pending = _loading[id];
+    if (pending != null) return pending;
+    if (_loaded.contains(id)) return;
     return _loading.putIfAbsent(id, () async {
       try {
         await ready;
@@ -279,6 +351,22 @@ class SubtitleFontService extends ChangeNotifier {
           faces.add(bytes);
         }
         await _load(id, faces);
+        if (!font.weightAxisChecked) {
+          try {
+            final ranges = await Future.wait(
+              faces.map((face) => compute(parseSubtitleFontWeightAxis, face)),
+            );
+            _imported[id] = font.withWeightAxis(_widestWeightAxis(ranges));
+            try {
+              await _save();
+            } catch (_) {
+              // The axis can be inspected again on a later run.
+            }
+            notifyListeners();
+          } catch (_) {
+            // Existing font playback remains usable if inspection fails.
+          }
+        }
       } finally {
         _loading.remove(id);
       }

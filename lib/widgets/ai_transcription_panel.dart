@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'sidebar_activity.dart';
 import 'package:flutter/services.dart';
 import 'landscape_sidebar_layout.dart';
-import 'stable_width_label.dart';
+import 'subtitle_settings_layout.dart';
+import 'subtitle_optimization_progress_view.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
@@ -18,41 +19,138 @@ import 'ai_transcription_configuration.dart';
 import 'transcript_translate_settings_sheet.dart';
 import 'transcription_restart_dialog.dart';
 import '../services/subtitle_translation_languages.dart';
+import '../services/subtitle_optimization_background.dart';
+import '../services/subtitle_optimization.dart';
 import '../utils/transcription_failure_summary.dart';
 import 'operation_status.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
-/// 转录按钮所有可能的文案，按钮按最宽的一条定宽，状态切换时图标和文字不跳。
+/// 只转录，或只加优化时，底部按钮可能出现的文案。
 const List<String> kAiTranscriptionActionLabels = [
   '开始语音转录',
+  '转录并优化',
   '加入队列',
   '已加入队列',
   '转录中...',
   '转录中 · 点击暂停',
+  '优化中 · 点击暂停',
+  '翻译中 · 点击暂停',
   '正在暂停...',
   '正在取消...',
   '继续转录',
+  '继续转录并优化',
   '继续上次任务',
   '重试转录',
+  '重试转录并优化',
   '重新转录',
+  '重新转录并优化',
 ];
 
 const List<String> kAiTranscribeTranslateActionLabels = [
   '转录并翻译',
+  '转录、优化并翻译',
   '加入队列',
   '已加入队列',
   '转录中...',
   '翻译中...',
   '转录中 · 点击暂停',
+  '优化中 · 点击暂停',
   '翻译中 · 点击暂停',
   '正在暂停...',
   '正在取消...',
   '继续转录',
   '继续上次任务',
   '继续转录并翻译',
+  '继续转录、优化并翻译',
   '重试转录并翻译',
+  '重试转录、优化并翻译',
   '重新转录并翻译',
+  '重新转录、优化并翻译',
 ];
+
+/// 底部主按钮的文案。优化和翻译都会改任务名，进行中则改成当前阶段。
+String transcriptionButtonLabel({
+  required bool optimize,
+  required bool translate,
+  required bool blocked,
+  required bool cancelling,
+  required bool stopping,
+  required bool processing,
+  required bool translatingNow,
+  required bool optimizingNow,
+  required bool paused,
+  required bool failed,
+  required bool queued,
+  required bool awaitingFirstStart,
+  required bool hasGenerated,
+  required bool busyWithOther,
+}) {
+  final job = transcriptionJobTitle(optimize: optimize, translate: translate);
+  if (blocked) return job == '转录' ? '开始语音转录' : job;
+  if (cancelling) return '正在取消...';
+  if (stopping) return '正在暂停...';
+  if (processing) {
+    if (translatingNow) return '翻译中 · 点击暂停';
+    if (optimizingNow) return '优化中 · 点击暂停';
+    return '转录中 · 点击暂停';
+  }
+  if (paused) return '继续$job';
+  if (failed) return '重试$job';
+  if (queued && !awaitingFirstStart) return '已加入队列';
+  if (hasGenerated) return '重新$job';
+  if (busyWithOther) return '加入队列';
+  return job == '转录' ? '开始语音转录' : job;
+}
+
+/// 图标和文字合成一组，再放到按钮正中。
+///
+/// 外层占满按钮宽度，内层按内容收缩后居中，所以换文案时这一组仍在中间。
+/// 右侧如果叠了设置按钮，调用方要留出同样宽的左右内边距，否则会被挤偏。
+class _CenteredActionContent extends StatelessWidget {
+  const _CenteredActionContent({
+    required this.icon,
+    required this.label,
+    this.iconSize,
+    this.gap = 8,
+    this.color,
+    this.textStyle,
+  });
+
+  final IconData icon;
+  final String label;
+  final double? iconSize;
+  final double gap;
+  final Color? color;
+  final TextStyle? textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: iconSize, color: color),
+              SizedBox(width: gap),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: textStyle,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Result handed to the player after a transcript, and a translation when
 /// that step was requested and succeeded.
@@ -99,6 +197,9 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
   TranscriptionStatus? _terminalStatusForCurrentVideo;
   String _terminalMessageForCurrentVideo = "";
   bool _starting = false;
+  bool _translationEnabled = false;
+  bool _optimizationEnabled = false;
+  int _optimizationEpoch = 0;
   String? _startupErrorDetails;
 
   bool get _cancelling =>
@@ -123,6 +224,9 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
     super.initState();
     _manager = Provider.of<TranscriptionManager>(context, listen: false);
     _manager.addListener(_onManagerUpdate);
+    // 优化开关写在共享设置里，底部按钮要跟着它改名。
+    SubtitleOptimizationSettings.changes.addListener(_syncOptimization);
+    _syncOptimization();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkCompletion(_manager);
     });
@@ -130,8 +234,23 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
 
   @override
   void dispose() {
+    _optimizationEpoch++;
+    SubtitleOptimizationSettings.changes.removeListener(_syncOptimization);
     _manager.removeListener(_onManagerUpdate);
     super.dispose();
+  }
+
+  /// 优化开关是全局设置，读完再刷新按钮，避免沿用上一份媒体的状态。
+  Future<void> _syncOptimization() async {
+    final epoch = ++_optimizationEpoch;
+    try {
+      final settings = await SubtitleOptimizationSettings.load();
+      if (!mounted || epoch != _optimizationEpoch) return;
+      if (_optimizationEnabled == settings.enabled) return;
+      setState(() => _optimizationEnabled = settings.enabled);
+    } catch (error) {
+      debugPrint('[ai-transcription] 优化开关未读取：$error');
+    }
   }
 
   void _onManagerUpdate() {
@@ -210,6 +329,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
           !await confirmTranscriptionRestart(
             context,
             withTranslation: withTranslation,
+            optimize: _optimizationEnabled,
             modelCenter: manager.modelCenter,
           )) {
         return;
@@ -343,7 +463,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
         const SizedBox(width: 8),
         SizedBox(
           width: 40,
-          height: layout.controlHeight,
+          height: SubtitleSettingsTheme.controlHeight,
           child: DesktopButtonClickRegion(
             child: IconButton(
               key: const ValueKey('ai-transcription-cancel'),
@@ -356,7 +476,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
                 disabledBackgroundColor: red.withValues(alpha: 0.06),
                 padding: EdgeInsets.zero,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(layout.controlHeight / 2),
+                  borderRadius: BorderRadius.circular(10),
                   side: BorderSide(color: red.withValues(alpha: 0.3)),
                 ),
               ),
@@ -379,351 +499,390 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
   @override
   Widget build(BuildContext context) {
     final manager = context.read<TranscriptionManager>();
-    return SidebarValueBuilder<Object>(
-      listenable: manager,
-      select: () => (
-        manager.currentVideoPath,
-        manager.currentVideoId,
-        manager.status,
-        manager.isProcessing,
-        manager.pendingCount,
-        manager.processingCount,
-        manager.queuedCount,
-        manager.isVideoRunning(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoQueued(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoPaused(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoAwaitingFirstStart(
-          widget.videoPath,
-          videoId: widget.videoId,
+    return SubtitleSettingsTheme(
+      child: SidebarValueBuilder<Object>(
+        listenable: manager,
+        select: () => (
+          manager.currentVideoPath,
+          manager.currentVideoId,
+          manager.status,
+          manager.isProcessing,
+          manager.pendingCount,
+          manager.processingCount,
+          manager.queuedCount,
+          manager.isVideoRunning(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoQueued(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoPaused(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoAwaitingFirstStart(
+            widget.videoPath,
+            videoId: widget.videoId,
+          ),
+          manager.isVideoFailed(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoStopping(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoCancelling(widget.videoPath, videoId: widget.videoId),
+          manager.isVideoTranslating(widget.videoPath, videoId: widget.videoId),
+          manager.translateEnabledForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          ),
+          manager.queuePositionForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          ),
+          manager.getGeneratedSrtPathForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          ),
         ),
-        manager.isVideoFailed(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoStopping(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoCancelling(widget.videoPath, videoId: widget.videoId),
-        manager.isVideoTranslating(widget.videoPath, videoId: widget.videoId),
-        manager.translateEnabledForVideo(
-          widget.videoPath,
-          videoId: widget.videoId,
-        ),
-        manager.queuePositionForVideo(
-          widget.videoPath,
-          videoId: widget.videoId,
-        ),
-        manager.getGeneratedSrtPathForVideo(
-          widget.videoPath,
-          videoId: widget.videoId,
-        ),
-      ),
-      builder: (context, _, child) {
-        final bool samePath = manager.currentVideoPath == widget.videoPath;
-        final String? trimmedVideoId = widget.videoId?.trim();
-        final bool sameVideoId =
-            trimmedVideoId == null ||
-            trimmedVideoId.isEmpty ||
-            manager.currentVideoId == trimmedVideoId;
-        final bool isJobForThisVideo = samePath && sameVideoId;
-        final bool isProcessing = manager.isVideoRunning(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final bool isQueued = manager.isVideoQueued(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final bool isBusyWithOther = manager.isProcessing && !isJobForThisVideo;
-        final bool hasGeneratedSrt =
-            manager.getGeneratedSrtPathForVideo(
-              widget.videoPath,
-              videoId: widget.videoId,
-            ) !=
-            null;
-        final int pendingCount = manager.pendingCount;
-        final int processingCount = manager.processingCount;
-        final int queueCount = manager.queuedCount;
-        final int queuePosition = manager.queuePositionForVideo(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final cancelling = _cancelling;
-        final stopping =
-            cancelling ||
-            manager.isVideoStopping(widget.videoPath, videoId: widget.videoId);
-        final awaitingFirstStart = manager.isVideoAwaitingFirstStart(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final paused =
-            !awaitingFirstStart &&
-            manager.isVideoPaused(widget.videoPath, videoId: widget.videoId);
-        final bool canQueueCurrentVideo =
-            !isProcessing && (!isQueued || paused || awaitingFirstStart);
-        final failed = manager.isVideoFailed(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final taskWithTranslation = manager.translateEnabledForVideo(
-          widget.videoPath,
-          videoId: widget.videoId,
-        );
-        final hasTask =
-            !awaitingFirstStart &&
-            (isProcessing || isQueued || paused || failed || stopping);
-        final transcriptionBlocked = hasTask && taskWithTranslation;
-        final String actionLabel = transcriptionBlocked
-            ? '开始语音转录'
-            : cancelling
-            ? '正在取消...'
-            : stopping
-            ? '正在暂停...'
-            : isProcessing
-            ? '转录中 · 点击暂停'
-            : paused
-            ? '继续转录'
-            : failed
-            ? '重试转录'
-            : isQueued && !awaitingFirstStart
-            ? "已加入队列"
-            : (hasGeneratedSrt
-                  ? "重新转录"
-                  : (isBusyWithOther ? "加入队列" : "开始语音转录"));
-
-        return Focus(
-          autofocus: true,
-          onKeyEvent: (node, event) {
-            if (event is KeyRepeatEvent) return KeyEventResult.handled;
-            if (event is KeyDownEvent &&
-                event.logicalKey == LogicalKeyboardKey.escape) {
-              widget.onBack?.call();
-              return KeyEventResult.handled;
-            }
-            return KeyEventResult.ignored;
-          },
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final layout = LandscapeSidebarLayout.fromSize(
-                Size(constraints.maxWidth, constraints.maxHeight),
+        builder: (context, _, child) {
+          final bool samePath = manager.currentVideoPath == widget.videoPath;
+          final String? trimmedVideoId = widget.videoId?.trim();
+          final bool sameVideoId =
+              trimmedVideoId == null ||
+              trimmedVideoId.isEmpty ||
+              manager.currentVideoId == trimmedVideoId;
+          final bool isJobForThisVideo = samePath && sameVideoId;
+          final bool isProcessing = manager.isVideoRunning(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final bool isQueued = manager.isVideoQueued(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final bool isBusyWithOther =
+              manager.isProcessing && !isJobForThisVideo;
+          final bool hasGeneratedSrt =
+              manager.getGeneratedSrtPathForVideo(
+                widget.videoPath,
+                videoId: widget.videoId,
+              ) !=
+              null;
+          final int pendingCount = manager.pendingCount;
+          final int processingCount = manager.processingCount;
+          final int queueCount = manager.queuedCount;
+          final int queuePosition = manager.queuePositionForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final cancelling = _cancelling;
+          final stopping =
+              cancelling ||
+              manager.isVideoStopping(
+                widget.videoPath,
+                videoId: widget.videoId,
               );
-              return Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: layout.horizontalPadding,
-                  vertical: layout.verticalPadding,
-                ),
-                decoration: BoxDecoration(
-                  color: widget.musicAppearance
-                      ? Colors.transparent
-                      : const Color(0xFF1E1E1E),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
+          final awaitingFirstStart = manager.isVideoAwaitingFirstStart(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final paused =
+              !awaitingFirstStart &&
+              manager.isVideoPaused(widget.videoPath, videoId: widget.videoId);
+          final bool canQueueCurrentVideo =
+              !isProcessing && (!isQueued || paused || awaitingFirstStart);
+          final failed = manager.isVideoFailed(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final taskWithTranslation = manager.translateEnabledForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          );
+          final hasTask =
+              !awaitingFirstStart &&
+              (isProcessing || isQueued || paused || failed || stopping);
+          final transcriptionBlocked = hasTask && taskWithTranslation;
+          final stageForThisVideo = isProcessing ? manager.status : null;
+          final String actionLabel = transcriptionButtonLabel(
+            optimize: _optimizationEnabled,
+            translate: false,
+            blocked: transcriptionBlocked,
+            cancelling: cancelling,
+            stopping: stopping,
+            processing: isProcessing,
+            translatingNow:
+                stageForThisVideo == TranscriptionStatus.translating,
+            optimizingNow: stageForThisVideo == TranscriptionStatus.optimizing,
+            paused: paused,
+            failed: failed,
+            queued: isQueued,
+            awaitingFirstStart: awaitingFirstStart,
+            hasGenerated: hasGeneratedSrt,
+            busyWithOther: isBusyWithOther,
+          );
+          assert(
+            kAiTranscriptionActionLabels.contains(actionLabel),
+            actionLabel,
+          );
+
+          return Focus(
+            autofocus: true,
+            onKeyEvent: (node, event) {
+              if (event is KeyRepeatEvent) return KeyEventResult.handled;
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.escape) {
+                widget.onBack?.call();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final layout = LandscapeSidebarLayout.fromSize(
+                  Size(constraints.maxWidth, constraints.maxHeight),
+                );
+                return Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: layout.horizontalPadding,
+                    vertical: layout.verticalPadding,
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!widget.musicAppearance)
-                      SizedBox(
-                        height: layout.headerHeight,
-                        child: Row(
-                          children: [
-                            SizedBox.square(
-                              dimension: layout.controlHeight,
-                              child: DesktopButtonClickRegion(
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  icon: Icon(
-                                    Icons.arrow_back,
-                                    color: Colors.white,
-                                    size: layout.iconSize,
+                  decoration: BoxDecoration(
+                    color: widget.musicAppearance
+                        ? Colors.transparent
+                        : SubtitleSettingsTheme.background,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!widget.musicAppearance)
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: layout.headerHeight,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox.square(
+                                dimension: SubtitleSettingsTheme.controlHeight,
+                                child: DesktopButtonClickRegion(
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(
+                                      Icons.arrow_back,
+                                      color: Colors.white,
+                                      size: layout.iconSize,
+                                    ),
+                                    tooltip: "返回",
+                                    onPressed: widget.onBack,
                                   ),
-                                  tooltip: "返回",
-                                  onPressed: widget.onBack,
                                 ),
                               ),
-                            ),
-                            SizedBox(width: layout.isNarrow ? 2 : 6),
-                            Expanded(
-                              child: Text(
-                                "语音转录",
-                                style: TextStyle(
-                                  fontSize: layout.titleSize,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (isProcessing)
-                              const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.blueAccent,
+                              SizedBox(width: layout.isNarrow ? 2 : 6),
+                              Expanded(
+                                child: Text(
+                                  "语音转录",
+                                  style: TextStyle(
+                                    fontSize: layout.titleSize,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                          ],
+                              if (isProcessing)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.blueAccent,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    SizedBox(height: layout.sectionGap / 2),
-                    Expanded(
-                      child: ListView(
-                        key: const PageStorageKey('transcription-options'),
-                        padding: EdgeInsets.only(bottom: layout.sectionGap),
-                        children: [
-                          if (hasTask) ...[
-                            Text(
-                              isProcessing
-                                  ? '以下设置用于新任务；当前任务保持开始时的语言与配置。'
-                                  : '以下设置用于新任务；继续任务沿用上次配置。',
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: layout.captionSize + 1,
-                              ),
-                            ),
-                            SizedBox(height: layout.sectionGap / 2),
-                          ],
-                          AiTranscriptionConfiguration(
-                            center: manager.modelCenter,
-                            hotwords: manager.hotwordStore,
-                            mediaKey: manager.mediaKeyForVideo(
-                              widget.videoPath,
-                              videoId: widget.videoId,
-                            ),
-                            mediaTitle:
-                                widget.sourceItem?.title ??
-                                widget.videoPath.split(RegExp(r'[/\\]')).last,
-                            translation: lookupSubtitleTranslateSettings(
-                              context,
-                            ),
-                          ),
-                          SizedBox(height: layout.sectionGap),
-                          if ((paused || failed) && !taskWithTranslation)
-                            _buildResumeActions(
-                              manager: manager,
-                              layout: layout,
-                              withTranslation: false,
-                              failed: failed,
-                            )
-                          else
-                            _withCancellationAction(
-                              layout: layout,
-                              showCancel: hasTask && !taskWithTranslation,
-                              child: DesktopButtonClickRegion(
-                                child: ElevatedButton.icon(
-                                  key: const ValueKey(
-                                    'ai-transcription-action',
-                                  ),
-                                  onPressed:
-                                      transcriptionBlocked ||
-                                          stopping ||
-                                          _actionsBusy
-                                      ? null
-                                      : isProcessing
-                                      ? () => manager.pauseVideo(
-                                          widget.videoPath,
-                                          videoId: widget.videoId,
-                                        )
-                                      : canQueueCurrentVideo
-                                      ? () => _startTranscription(
-                                          withTranslation: false,
-                                        )
-                                      : null,
-                                  icon: Icon(
-                                    isProcessing && !transcriptionBlocked
-                                        ? Icons.pause_circle_outline
-                                        : Icons.auto_awesome,
-                                  ),
-                                  label: StableWidthLabel(
-                                    actionLabel,
-                                    variants: kAiTranscriptionActionLabels,
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    foregroundColor: Colors.white,
-                                    minimumSize: Size.fromHeight(
-                                      layout.controlHeight,
-                                    ),
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: layout.verticalPadding / 2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          SizedBox(height: layout.sectionGap),
-                          const SizedBox(height: 4),
-                          _buildTranslateAction(
-                            layout: layout,
-                            manager: manager,
-                            isProcessing: isProcessing,
-                            isQueued: isQueued,
-                            isBusyWithOther: isBusyWithOther,
-                            canQueueCurrentVideo: canQueueCurrentVideo,
-                            blocked: hasTask && !taskWithTranslation,
-                          ),
-                          SizedBox(height: layout.sectionGap),
-                          Container(
-                            padding: EdgeInsets.all(layout.horizontalPadding),
-                            decoration: BoxDecoration(
-                              color: Colors.blueGrey.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.blueGrey.withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      SizedBox(height: layout.sectionGap / 2),
+                      Expanded(
+                        child: ListView(
+                          key: const PageStorageKey('transcription-options'),
+                          padding: EdgeInsets.only(bottom: layout.sectionGap),
+                          children: [
+                            // Preserve field state and live task progress while scrolling.
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text(
-                                  "语音转录队列",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: layout.bodySize,
+                                if (hasTask) ...[
+                                  Text(
+                                    isProcessing
+                                        ? '以下设置用于新任务；当前任务保持开始时的语言与配置。'
+                                        : '以下设置用于新任务；继续任务沿用上次配置。',
+                                    style: TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: layout.captionSize + 1,
+                                    ),
+                                  ),
+                                  SizedBox(height: layout.sectionGap / 2),
+                                ],
+                                AiTranscriptionConfiguration(
+                                  center: manager.modelCenter,
+                                  hotwords: manager.hotwordStore,
+                                  mediaKey: manager.mediaKeyForVideo(
+                                    widget.videoPath,
+                                    videoId: widget.videoId,
+                                  ),
+                                  mediaTitle:
+                                      widget.sourceItem?.title ??
+                                      widget.videoPath
+                                          .split(RegExp(r'[/\\]'))
+                                          .last,
+                                  translation: lookupSubtitleTranslateSettings(
+                                    context,
+                                  ),
+                                  translationEnabled: _translationEnabled,
+                                  onTranslationChanged: (value) => setState(
+                                    () => _translationEnabled = value,
+                                  ),
+                                  backgroundPreview: () =>
+                                      SubtitleOptimizationBackground.capture(
+                                        widget.sourceItem,
+                                        widget.sourceItem?.title ??
+                                            widget.videoPath
+                                                .split(RegExp(r'[/\\]'))
+                                                .last,
+                                      ),
+                                ),
+                                SizedBox(height: layout.sectionGap),
+                                if (paused || failed)
+                                  _buildResumeActions(
+                                    manager: manager,
+                                    layout: layout,
+                                    withTranslation: taskWithTranslation,
+                                    failed: failed,
+                                  )
+                                else if (_translationEnabled ||
+                                    (hasTask && taskWithTranslation))
+                                  _buildTranslateAction(
+                                    layout: layout,
+                                    manager: manager,
+                                    isProcessing: isProcessing,
+                                    isQueued: isQueued,
+                                    isBusyWithOther: isBusyWithOther,
+                                    canQueueCurrentVideo: canQueueCurrentVideo,
+                                    blocked: false,
+                                  )
+                                else
+                                  _withCancellationAction(
+                                    layout: layout,
+                                    showCancel: hasTask && !taskWithTranslation,
+                                    child: DesktopButtonClickRegion(
+                                      child: ElevatedButton(
+                                        key: const ValueKey(
+                                          'ai-transcription-action',
+                                        ),
+                                        onPressed:
+                                            transcriptionBlocked ||
+                                                stopping ||
+                                                _actionsBusy
+                                            ? null
+                                            : isProcessing
+                                            ? () => manager.pauseVideo(
+                                                widget.videoPath,
+                                                videoId: widget.videoId,
+                                              )
+                                            : canQueueCurrentVideo
+                                            ? () => _startTranscription(
+                                                withTranslation: false,
+                                              )
+                                            : null,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              SubtitleSettingsTheme.accent,
+                                          foregroundColor: Colors.white,
+                                          minimumSize: Size.fromHeight(
+                                            SubtitleSettingsTheme.controlHeight,
+                                          ),
+                                          padding: EdgeInsets.symmetric(
+                                            vertical:
+                                                layout.verticalPadding / 2,
+                                          ),
+                                        ),
+                                        child: _CenteredActionContent(
+                                          icon:
+                                              isProcessing &&
+                                                  !transcriptionBlocked
+                                              ? Icons.pause_circle_outline
+                                              : Icons.mic_none_rounded,
+                                          label: actionLabel,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                SizedBox(height: layout.sectionGap),
+                                Container(
+                                  padding: EdgeInsets.all(
+                                    layout.horizontalPadding,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: SubtitleSettingsTheme.surface,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: SubtitleSettingsTheme.divider,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "语音转录队列",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: layout.bodySize,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        "处理中 $processingCount / 排队 $queueCount / 总计 $pendingCount",
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: layout.captionSize,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  "处理中 $processingCount / 排队 $queueCount / 总计 $pendingCount",
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: layout.captionSize,
+                                SizedBox(height: layout.sectionGap),
+                                SidebarValueBuilder<Object>(
+                                  listenable: manager,
+                                  select: () => (
+                                    manager.progress,
+                                    manager.statusMessage,
+                                    manager.translationProgress,
+                                    manager.optimizationProgress,
+                                    manager.localAsrProgress,
+                                    manager.localAudioProgress,
+                                    manager.status,
                                   ),
+                                  builder: (context, _, _) =>
+                                      _buildInlineProgressSection(
+                                        manager: manager,
+                                        isJobForThisVideo: isJobForThisVideo,
+                                        isProcessing: isProcessing,
+                                        isQueued: isQueued,
+                                        hasGeneratedSrt: hasGeneratedSrt,
+                                        queuePosition: queuePosition,
+                                        canQueueCurrentVideo:
+                                            canQueueCurrentVideo,
+                                      ),
                                 ),
                               ],
                             ),
-                          ),
-                          SizedBox(height: layout.sectionGap),
-                          SidebarValueBuilder<Object>(
-                            listenable: manager,
-                            select: () => (
-                              manager.progress,
-                              manager.statusMessage,
-                              manager.translationProgress,
-                              manager.localAsrProgress,
-                              manager.localAudioProgress,
-                              manager.status,
-                            ),
-                            builder: (context, _, _) =>
-                                _buildInlineProgressSection(
-                                  manager: manager,
-                                  isJobForThisVideo: isJobForThisVideo,
-                                  isProcessing: isProcessing,
-                                  isQueued: isQueued,
-                                  hasGeneratedSrt: hasGeneratedSrt,
-                                  queuePosition: queuePosition,
-                                  canQueueCurrentVideo: canQueueCurrentVideo,
-                                ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -762,31 +921,33 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
         failed: failed,
       );
     }
-    final actionLabel = blocked
-        ? '转录并翻译'
-        : cancelling
-        ? '正在取消...'
-        : stopping
-        ? '正在暂停...'
-        : isProcessing
-        ? (translating ? '翻译中 · 点击暂停' : '转录中 · 点击暂停')
-        : paused
-        ? '继续转录并翻译'
-        : failed
-        ? '重试转录并翻译'
-        : isQueued &&
-              !manager.isVideoAwaitingFirstStart(
-                widget.videoPath,
-                videoId: widget.videoId,
-              )
-        ? '已加入队列'
-        : (manager.getGeneratedSrtPathForVideo(
-                    widget.videoPath,
-                    videoId: widget.videoId,
-                  ) !=
-                  null
-              ? '重新转录并翻译'
-              : (isBusyWithOther ? '加入队列' : '转录并翻译'));
+    final actionLabel = transcriptionButtonLabel(
+      optimize: _optimizationEnabled,
+      translate: true,
+      blocked: blocked,
+      cancelling: cancelling,
+      stopping: stopping,
+      processing: isProcessing,
+      translatingNow:
+          translating ||
+          (isProcessing && manager.status == TranscriptionStatus.translating),
+      optimizingNow:
+          isProcessing && manager.status == TranscriptionStatus.optimizing,
+      paused: paused,
+      failed: failed,
+      queued: isQueued,
+      awaitingFirstStart: manager.isVideoAwaitingFirstStart(
+        widget.videoPath,
+        videoId: widget.videoId,
+      ),
+      hasGenerated:
+          manager.getGeneratedSrtPathForVideo(
+            widget.videoPath,
+            videoId: widget.videoId,
+          ) !=
+          null,
+      busyWithOther: isBusyWithOther,
+    );
     assert(
       kAiTranscribeTranslateActionLabels.contains(actionLabel),
       actionLabel,
@@ -796,19 +957,21 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
         !stopping &&
         !_actionsBusy &&
         (isProcessing || canQueueCurrentVideo);
-    final radius = BorderRadius.circular(layout.controlHeight / 2);
+    final radius = BorderRadius.circular(10);
+    // 分隔线和设置按钮占右侧 41。左右留出同样宽度，图标和文字才落在整个按钮正中。
+    const sideSlot = 41.0;
     return _withCancellationAction(
       layout: layout,
       showCancel: !blocked && (isProcessing || isQueued || stopping),
       child: SizedBox(
-        height: layout.controlHeight,
+        height: SubtitleSettingsTheme.controlHeight,
         child: Material(
           color: enabled ? Colors.blue : Colors.white10,
           borderRadius: radius,
           clipBehavior: Clip.antiAlias,
-          child: Row(
+          child: Stack(
             children: [
-              Expanded(
+              Positioned.fill(
                 child: InkWell(
                   key: const ValueKey('ai-transcription-translate-action'),
                   onTap: blocked || stopping || _actionsBusy
@@ -824,46 +987,42 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
                   child: Opacity(
                     opacity: enabled ? 1 : 0.38,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.translate,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              actionLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
+                      padding: const EdgeInsets.symmetric(horizontal: sideSlot),
+                      child: _CenteredActionContent(
+                        icon: Icons.translate,
+                        label: actionLabel,
+                        iconSize: 18,
+                        gap: 6,
+                        color: Colors.white,
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-              const ColoredBox(
-                color: Colors.white24,
-                child: SizedBox(width: 1, height: double.infinity),
+              const Positioned(
+                top: 0,
+                right: 40,
+                bottom: 0,
+                child: ColoredBox(
+                  color: Colors.white24,
+                  child: SizedBox(width: 1),
+                ),
               ),
-              SizedBox(
+              Positioned(
+                top: 0,
+                right: 0,
+                bottom: 0,
                 width: 40,
                 child: Tooltip(
                   message: '翻译设置',
                   child: InkWell(
                     onTap: () => showTranscriptTranslateSettings(context),
-                    child: const Icon(
-                      Icons.settings_outlined,
-                      color: Colors.white,
+                    child: const Center(
+                      child: Icon(Icons.settings_outlined, color: Colors.white),
                     ),
                   ),
                 ),
@@ -901,7 +1060,14 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
                 completed: processed,
                 total: processed,
               ).timeLabel.split(' / ').first;
-        final mode = withTranslation ? '转录并翻译' : '转录';
+        final savedTask = manager.configurationForVideo(
+          widget.videoPath,
+          videoId: widget.videoId,
+        );
+        final mode = transcriptionJobTitle(
+          optimize: savedTask?.optimization.enabled == true,
+          translate: withTranslation,
+        );
         final message =
             _terminalStatusForCurrentVideo == TranscriptionStatus.error
             ? _terminalMessageForCurrentVideo
@@ -958,7 +1124,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
                     icon: const Icon(Icons.play_arrow_rounded, size: 18),
                     label: Text(_cancelling ? '正在取消...' : '继续上次任务'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
+                      backgroundColor: SubtitleSettingsTheme.accent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1062,7 +1228,13 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
     final model = saved?.transcription;
     final translation = saved?.translation;
     final rows = <(String, String)>[
-      ('任务', translation?.enabled == true ? '转录并翻译' : '转录'),
+      (
+        '任务',
+        transcriptionJobTitle(
+          optimize: saved?.optimization.enabled == true,
+          translate: translation?.enabled == true,
+        ),
+      ),
       ('转录模型', model?.profile.name ?? '尚未开始处理'),
       if (model != null)
         ('识别语言', subtitleLanguageLabel(model.profile.language)),
@@ -1076,6 +1248,18 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
               : '${model.requestedAsrThreads}',
         ),
       if (saved?.punctuation != null) ('标点处理', saved!.punctuation!.label),
+      ('字幕优化', saved?.optimization.enabled == true ? '开启' : '关闭'),
+      if (saved?.optimization.enabled == true) ...[
+        ('优化模型', saved!.optimization.endpoint!.model),
+        ('优化提示词', saved.optimization.prompt),
+        if (saved.optimization.background.isNotEmpty)
+          (
+            '自动背景',
+            subtitleOptimizationBackgroundPreview(
+              saved.optimization.background,
+            ),
+          ),
+      ],
       if (translation?.enabled == true) ...[
         ('翻译方式', subtitleTranslateProviderLabels[translation!.provider]!),
         if (translation.localSpecification != null)
@@ -1177,6 +1361,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
         statusMessage: message,
         status: manager.status,
         translationProgress: manager.translationProgress,
+        optimizationProgress: manager.optimizationProgress,
         localAsrProgress: manager.localAsrProgress,
         audioProgress: manager.localAudioProgress,
       );
@@ -1223,13 +1408,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
       );
     }
 
-    return _buildStatusCard(
-      icon: Icons.tips_and_updates_outlined,
-      borderColor: Colors.blueGrey.withValues(alpha: 0.35),
-      bgColor: Colors.blueGrey.withValues(alpha: 0.1),
-      title: "提示",
-      message: "点击“开始语音转录”后，将在此处持续显示处理进度与状态。",
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildProgressCard({
@@ -1237,6 +1416,7 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
     required String statusMessage,
     required TranscriptionStatus status,
     double? translationProgress,
+    SubtitleOptimizationProgress? optimizationProgress,
     LocalAsrProgress? localAsrProgress,
     TranscriptionAudioProgress? audioProgress,
   }) {
@@ -1291,6 +1471,13 @@ class _AiTranscriptionPanelState extends State<AiTranscriptionPanel> {
           if (localAsrProgress != null) ...[
             LocalAsrProgressView(
               progress: localAsrProgress,
+              foregroundColor: Colors.white70,
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (optimizationProgress != null) ...[
+            SubtitleOptimizationProgressView(
+              progress: optimizationProgress,
               foregroundColor: Colors.white70,
             ),
             const SizedBox(height: 10),

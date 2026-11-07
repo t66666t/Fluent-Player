@@ -13,6 +13,7 @@ import 'package:video_player_app/features/model_center/model_center_service.dart
 import 'package:video_player_app/models/subtitle_model.dart';
 import 'package:video_player_app/models/transcription_status.dart';
 import 'package:video_player_app/services/gongyi_asr_service.dart';
+import 'package:video_player_app/services/public_asr_quota.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
@@ -32,6 +33,9 @@ class _Paths extends PathProviderPlatform {
 }
 
 class _Center extends ModelCenterService {
+  _Center() {
+    asrProfileId = ModelCenterService.legacyProfile.id;
+  }
   @override
   Future<ModelJobSpec> captureTranscription() async => const ModelJobSpec(
     profile: ModelServiceProfile(
@@ -43,7 +47,13 @@ class _Center extends ModelCenterService {
 }
 
 class _Asr extends GongyiAsrService {
-  _Asr(Dio dio) : super(dio: dio, maxPollRiskWaits: 0);
+  _Asr(Dio dio)
+    : super(
+        dio: dio,
+        maxPollRiskWaits: 0,
+        minimumResultQueryInterval: Duration.zero,
+        resultQueryDelay: (_) async {},
+      );
   int preparations = 0;
   @override
   Future<List<SubtitleItem>> transcribeAudio(
@@ -287,7 +297,156 @@ void main() {
   });
 
   test(
-    'AAC beyond ten minutes uploads the exact original bytes',
+    'quota stops new uploads, pauses following public jobs and preserves retry',
+    () async {
+      final source = await media('quota.mp3', [
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=sample_rate=16000',
+        '-t',
+        '3',
+        '-c:a',
+        'libmp3lame',
+      ]);
+      final second = await source.copy(p.join(root.path, 'quota-second.mp3'));
+      final third = await source.copy(p.join(root.path, 'quota-third.mp3'));
+      var clock = DateTime.utc(2026, 11, 6);
+      final quota = PublicAsrQuota(
+        directory: () async => root,
+        now: () => clock,
+        allowance: const Duration(seconds: 5),
+      );
+      await manager.shutdown();
+      manager.dispose();
+      manager = TranscriptionManager(
+        settings: settings,
+        asrService: service,
+        modelCenter: _Center(),
+        publicAsrQuota: quota,
+      );
+      await manager.initialize();
+      for (final item in [
+        ('first', source),
+        ('second', second),
+        ('third', third),
+      ]) {
+        await manager.startTranscription(item.$2.path, videoId: item.$1);
+      }
+      manager.startAllTasks();
+      await _until(() => !manager.isQueueRunning);
+      final states = {
+        for (final task in manager.getQueueSnapshot()) task.mediaKey: task,
+      };
+      expect(states['id:first']!.status, TranscriptionStatus.completed);
+      expect(states['id:second']!.status, TranscriptionStatus.error);
+      expect(states['id:second']!.statusMessage, contains('额度不足'));
+      expect(states['id:third']!.isStarted, isFalse);
+      expect(types, ['mp3']);
+      clock = clock.add(const Duration(hours: 5));
+      expect(manager.retryTask('id:second'), isTrue);
+      await _until(() => !manager.isQueueRunning);
+      expect(
+        manager
+            .getQueueSnapshot()
+            .firstWhere((t) => t.mediaKey == 'id:second')
+            .status,
+        TranscriptionStatus.completed,
+      );
+      expect(types, ['mp3', 'mp3']);
+      expectTemporaryAudioClean();
+    },
+    skip: !FFmpegUtils.preferSystemFfmpeg,
+  );
+
+  test(
+    'quota stops new uploads but drains a submitted slice before returning the limit',
+    () async {
+      cueStartMs = 13000;
+      final seed = await media('quota-resume-seed.mp3', [
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=sample_rate=16000',
+        '-t',
+        '1',
+        '-c:a',
+        'libmp3lame',
+        '-b:a',
+        '32k',
+      ]);
+      final source = await media('quota-resume.mp3', [
+        '-stream_loop',
+        '-1',
+        '-i',
+        seed.path,
+        '-t',
+        '661',
+        '-c:a',
+        'copy',
+      ]);
+      var clock = DateTime.utc(2026, 11, 6);
+      final quota = PublicAsrQuota(
+        directory: () async => root,
+        now: () => clock,
+        allowance: const Duration(seconds: 610),
+      );
+      await manager.shutdown();
+      manager.dispose();
+      manager = TranscriptionManager(
+        settings: settings,
+        asrService: service,
+        modelCenter: _Center(),
+        publicAsrQuota: quota,
+      );
+      await manager.initialize();
+      final checkpoints = File(
+        p.join(root.path, 'transcription_slice_checkpoints.json'),
+      );
+      onFirstQuery = () async {
+        await _until(() {
+          try {
+            final saved = TranscriptionCheckpointBook.decode(
+              checkpoints.readAsStringSync(),
+            );
+            return saved.tasks.values.single.remoteTasks.values.any(
+              (task) => task.taskId == null && task.usageReservationId != null,
+            );
+          } on FileSystemException {
+            return false;
+          }
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      };
+      await run(source);
+      expect(
+        manager.getQueueSnapshot().single.status,
+        TranscriptionStatus.error,
+      );
+      expect(manager.getQueueSnapshot().single.statusMessage, contains('额度不足'));
+      final saved = TranscriptionCheckpointBook.decode(
+        await checkpoints.readAsString(),
+      );
+      expect(saved.tasks.values.single.pieces.single.startMs, 0);
+      expect(types, ['mp3']);
+      expectTemporaryAudioClean();
+      clock = clock.add(const Duration(hours: 5));
+      expect(manager.retryTask('id:case'), isTrue);
+      await _until(() => !manager.isQueueRunning);
+      expect(
+        manager.getQueueSnapshot().single.status,
+        TranscriptionStatus.completed,
+        reason: manager.statusMessage,
+      );
+      expect(types, ['mp3', 'mp3']);
+      expect(queries, ['task-0', 'task-1']);
+      expectTemporaryAudioClean();
+    },
+    skip: !FFmpegUtils.preferSystemFfmpeg,
+  );
+
+  test(
+    'AAC is prepared as bounded MP3 slices and its source stays intact',
     () async {
       final seed = await media('seed.m4a', [
         '-f',
@@ -320,9 +479,19 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.statusMessage,
       );
-      expect(digest(uploads[0]!), original);
+      expect(digest(uploads[0]!), isNot(original));
       expect(digest(await source.readAsBytes()), original);
-      expect(types, ['m4a']);
+      expect(types, ['mp3', 'mp3']);
+      final first = await probe(uploads[0]!, 'mp3');
+      final second = await probe(uploads[1]!, 'mp3');
+      expect(
+        double.parse((first['format'] as Map)['duration'] as String),
+        closeTo(600, .2),
+      );
+      expect(
+        double.parse((second['format'] as Map)['duration'] as String),
+        closeTo(71, .2),
+      );
       expectTemporaryAudioClean();
     },
     skip: !FFmpegUtils.preferSystemFfmpeg,
@@ -359,7 +528,7 @@ void main() {
   );
 
   test(
-    'video copies AAC without decoding and leaves source media intact',
+    'video prepares speech MP3 while leaving source media intact',
     () async {
       final source = await media('video.mp4', [
         '-f',
@@ -388,11 +557,11 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.statusMessage,
       );
-      final result = await probe(uploads[0]!, 'm4a');
+      final result = await probe(uploads[0]!, 'mp3');
       final stream = (result['streams'] as List).single as Map;
-      expect(stream['codec_name'], 'aac');
-      expect(stream['sample_rate'], '44100');
-      expect(stream['channels'], 2);
+      expect(stream['codec_name'], 'mp3');
+      expect(stream['sample_rate'], '16000');
+      expect(stream['channels'], 1);
       expect(
         double.parse((result['format'] as Map)['duration'] as String),
         closeTo(3, .1),
@@ -404,7 +573,7 @@ void main() {
   );
 
   test(
-    'unsupported audio uses the original compatible encoding',
+    'unsupported audio uses speech MP3 encoding',
     () async {
       final source = await media('lossless.flac', [
         '-f',
@@ -423,9 +592,9 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.statusMessage,
       );
-      final result = await probe(uploads[0]!, 'm4a');
+      final result = await probe(uploads[0]!, 'mp3');
       final stream = (result['streams'] as List).single as Map;
-      expect(stream['codec_name'], 'aac');
+      expect(stream['codec_name'], 'mp3');
       expect(stream['sample_rate'], '16000');
       expect(stream['channels'], 1);
       expect(digest(await source.readAsBytes()), original);
@@ -458,9 +627,9 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.statusMessage,
       );
-      expect(types, ['mp3', 'm4a']);
+      expect(types, ['mp3', 'mp3']);
       expect(digest(uploads[0]!), digest(await source.readAsBytes()));
-      final result = await probe(uploads[1]!, 'm4a');
+      final result = await probe(uploads[1]!, 'mp3');
       final stream = (result['streams'] as List).single as Map;
       expect(stream['sample_rate'], '16000');
       expect(stream['channels'], 1);
@@ -473,6 +642,19 @@ void main() {
   test(
     'query restriction and queue restart never prepare or upload again',
     () async {
+      PublicAsrQuota quota() => PublicAsrQuota(
+        directory: () async => Directory(p.join(root.path, 'public_asr_usage')),
+        allowance: const Duration(seconds: 3),
+      );
+      await manager.shutdown();
+      manager.dispose();
+      manager = TranscriptionManager(
+        settings: settings,
+        asrService: service,
+        modelCenter: _Center(),
+        publicAsrQuota: quota(),
+      );
+      await manager.initialize();
       restrictQueries = true;
       final source = await media('resume.flac', [
         '-f',
@@ -490,8 +672,12 @@ void main() {
         TranscriptionStatus.error,
       );
       expect(service.preparations, 1);
-      expect(types, ['m4a']);
+      expect(types, ['mp3']);
       expectTemporaryAudioClean();
+      await expectLater(
+        quota().check(duration: const Duration(seconds: 1)),
+        throwsA(isA<PublicAsrQuotaException>()),
+      );
       await manager.shutdown();
       manager.dispose();
       restrictQueries = false;
@@ -499,6 +685,7 @@ void main() {
         settings: settings,
         asrService: service,
         modelCenter: _Center(),
+        publicAsrQuota: quota(),
       );
       await manager.initialize();
       manager.retryTask('id:case');
@@ -510,7 +697,7 @@ void main() {
       );
       expect(queries, ['task-0', 'task-0']);
       expect(service.preparations, 1);
-      expect(types, ['m4a']);
+      expect(types, ['mp3']);
       expectTemporaryAudioClean();
     },
     skip: !FFmpegUtils.preferSystemFfmpeg,
@@ -558,7 +745,7 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.getQueueSnapshot().single.statusMessage,
       );
-      expect(types, ['mp3', 'm4a']);
+      expect(types, ['mp3', 'mp3']);
       expect(service.preparations, 2);
       expectTemporaryAudioClean();
     },
@@ -566,9 +753,9 @@ void main() {
   );
 
   test(
-    'long MP3 prepares the next thirty-minute slice during polling and preserves its timeline',
+    'long MP3 uploads ten-minute windows with context and preserves its timeline',
     () async {
-      cueStartMs = 3000;
+      cueStartMs = 13000;
       final seed = await media('seed.mp3', [
         '-f',
         'lavfi',
@@ -593,14 +780,11 @@ void main() {
         '-c:a',
         'copy',
       ]);
-      var sawPrefetch = false;
+      var sawParallel = false;
       onFirstQuery = () async {
-        final temp = Directory(
-          p.join(root.path, 'ai_transcription_temp_audio'),
-        );
-        await _until(() => temp.listSync().whereType<File>().length == 2);
-        expect(types, ['mp3'], reason: 'Only local preparation may run ahead');
-        sawPrefetch = true;
+        await _until(() => types.length == 3);
+        expect(types, List.filled(3, 'mp3'));
+        sawParallel = true;
       };
       await run(source);
       expect(
@@ -608,9 +792,9 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.getQueueSnapshot().single.statusMessage,
       );
-      expect(sawPrefetch, isTrue);
-      expect(types, ['mp3', 'mp3', 'mp3']);
-      expect(service.preparations, 3);
+      expect(sawParallel, isTrue);
+      expect(types, List.filled(8, 'mp3'));
+      expect(service.preparations, 8);
       final first = await probe(uploads[0]!, 'mp3');
       final stream = (first['streams'] as List).single as Map;
       expect(stream['codec_name'], 'mp3');
@@ -618,27 +802,121 @@ void main() {
       expect(stream['channels'], 1);
       expect(
         double.parse((first['format'] as Map)['duration'] as String),
-        closeTo(1800, .1),
+        closeTo(600, .1),
       );
       final second = await probe(uploads[1]!, 'mp3');
       expect(
         double.parse((second['format'] as Map)['duration'] as String),
-        closeTo(1800, .2),
+        closeTo(600, .2),
       );
-      final third = await probe(uploads[2]!, 'mp3');
+      final third = await probe(uploads[7]!, 'mp3');
       expect(
         double.parse((third['format'] as Map)['duration'] as String),
-        closeTo(660, .2),
+        closeTo(130, .2),
       );
       final output = manager.getGeneratedSrtPathForVideo(
         source.path,
         videoId: 'case',
       );
       final cues = SubtitleParser.parse(await File(output!).readAsString());
-      expect(cues, hasLength(3));
-      expect(cues[0].startTime, const Duration(seconds: 3));
-      expect(cues[1].startTime, const Duration(minutes: 30, seconds: 3));
-      expect(cues[2].startTime, const Duration(hours: 1, seconds: 3));
+      expect(cues, hasLength(8));
+      for (var i = 0; i < cues.length; i++) {
+        expect(cues[i].startTime, Duration(seconds: i * 590 + 13));
+      }
+      expectTemporaryAudioClean();
+    },
+    skip: !FFmpegUtils.preferSystemFfmpeg,
+  );
+
+  test(
+    'a concurrent restriction preserves every submitted ID and restarts without uploads',
+    () async {
+      cueStartMs = 13000;
+      final seed = await media('resume-seed.mp3', [
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=sample_rate=16000',
+        '-t',
+        '1',
+        '-c:a',
+        'libmp3lame',
+        '-b:a',
+        '32k',
+      ]);
+      final source = await media('parallel-resume.mp3', [
+        '-stream_loop',
+        '-1',
+        '-i',
+        seed.path,
+        '-t',
+        '1260',
+        '-c:a',
+        'copy',
+      ]);
+      final checkpointFile = File(
+        p.join(root.path, 'transcription_slice_checkpoints.json'),
+      );
+      bool allSubmitted() {
+        try {
+          final book = TranscriptionCheckpointBook.decode(
+            checkpointFile.readAsStringSync(),
+          );
+          final remotes = book.tasks.values.single.remoteTasks.values;
+          return remotes.length == 3 &&
+              remotes.every((task) => task.taskId != null);
+        } on FileSystemException {
+          return false;
+        }
+      }
+
+      restrictQueries = true;
+      onFirstQuery = () => _until(allSubmitted);
+      await run(source);
+      expect(
+        manager.getQueueSnapshot().single.status,
+        TranscriptionStatus.error,
+      );
+      expect(types, List.filled(3, 'mp3'));
+      final firstQueries = queries.length;
+      expect(firstQueries, inInclusiveRange(1, 3));
+      final book = TranscriptionCheckpointBook.decode(
+        await checkpointFile.readAsString(),
+      );
+      final remotes = book.tasks.values.single.remoteTasks.values.toList();
+      expect(remotes, hasLength(3));
+      expect(remotes.every((task) => task.taskId != null), isTrue);
+      expect(
+        remotes.every(
+          (task) =>
+              task.queryNotBefore!.difference(DateTime.now()) >
+              const Duration(seconds: 58),
+        ),
+        isTrue,
+      );
+      expectTemporaryAudioClean();
+      await manager.shutdown();
+      manager.dispose();
+      restrictQueries = false;
+      manager = TranscriptionManager(
+        settings: settings,
+        asrService: service,
+        modelCenter: _Center(),
+      );
+      await manager.initialize();
+      expect(manager.retryTask('id:case'), isTrue);
+      await _until(() => !manager.isQueueRunning);
+      expect(
+        manager.getQueueSnapshot().single.status,
+        TranscriptionStatus.completed,
+        reason: manager.statusMessage,
+      );
+      expect(types, List.filled(3, 'mp3'));
+      expect(service.preparations, 3);
+      expect(
+        queries.skip(firstQueries),
+        unorderedEquals(remotes.map((task) => task.taskId)),
+      );
       expectTemporaryAudioClean();
     },
     skip: !FFmpegUtils.preferSystemFfmpeg,
@@ -683,8 +961,8 @@ void main() {
         TranscriptionStatus.completed,
         reason: manager.getQueueSnapshot().single.statusMessage,
       );
-      expect(types, ['m4a']);
-      final result = await probe(uploads[0]!, 'm4a');
+      expect(types, ['mp3']);
+      final result = await probe(uploads[0]!, 'mp3');
       expect(
         double.parse((result['format'] as Map)['duration'] as String),
         closeTo(8, .1),
@@ -699,7 +977,7 @@ void main() {
   for (final expired in [false, true]) {
     test(
       expired
-          ? 'expired hour-long tasks are replaced by thirty-minute uploads'
+          ? 'expired hour-long tasks are replaced by ten-minute uploads'
           : 'saved hour-long tasks resume without any local preparation or upload',
       () async {
         cueStartMs = 3000;
@@ -759,13 +1037,13 @@ void main() {
           reason: manager.getQueueSnapshot().single.statusMessage,
         );
         expect(queries.first, 'old-task');
-        expect(types, expired ? ['m4a', 'm4a'] : isEmpty);
-        expect(service.preparations, expired ? 3 : 0);
+        expect(types, expired ? List.filled(7, 'mp3') : isEmpty);
+        expect(service.preparations, expired ? 8 : 0);
         for (final bytes in uploads.values) {
-          final metadata = await probe(bytes, 'm4a');
+          final metadata = await probe(bytes, 'mp3');
           expect(
             double.parse((metadata['format'] as Map)['duration'] as String),
-            lessThanOrEqualTo(1800.2),
+            lessThanOrEqualTo(600.2),
           );
         }
         expectTemporaryAudioClean();
@@ -775,7 +1053,7 @@ void main() {
   }
 
   test(
-    'pausing during result polling cleans the prefetched slice',
+    'pausing result polling drains concurrent slices and cleans temporary audio',
     () async {
       final source = await media('pause-prefetch.m4a', [
         '-f',
@@ -794,13 +1072,13 @@ void main() {
         final temp = Directory(
           p.join(root.path, 'ai_transcription_temp_audio'),
         );
-        await _until(() => temp.listSync().whereType<File>().length == 2);
+        await _until(() => temp.listSync().whereType<File>().length >= 2);
         paused = manager.pauseTask('id:case');
       };
       await run(source);
       expect(paused, isTrue);
-      expect(types, ['m4a']);
-      expect(uploads, hasLength(1));
+      expect(types.length, inInclusiveRange(1, 3));
+      expect(uploads.length, inInclusiveRange(1, 3));
       expect(
         manager.getQueueSnapshot().single.status,
         TranscriptionStatus.idle,
@@ -825,7 +1103,7 @@ void main() {
       ]);
       var paused = false;
       manager.addListener(() {
-        if (!paused && manager.statusMessage.contains('准备音频 0%')) {
+        if (!paused && manager.statusMessage.contains('准备音频')) {
           paused = true;
           manager.pauseTask('id:case');
         }

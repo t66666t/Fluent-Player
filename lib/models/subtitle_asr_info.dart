@@ -11,6 +11,7 @@ class SubtitleAsrInfo {
     this.backend = '',
     this.weights = '',
     this.wordBoundaries = const [],
+    this.pauses = const [],
   });
   final String language, speaker, reviewReason, alternateText;
   final double? alignmentScore;
@@ -19,6 +20,10 @@ class SubtitleAsrInfo {
 
   /// Preferred UTF-16 text cuts, with no associated or estimated timestamps.
   final List<int> wordBoundaries;
+
+  /// Absolute low-energy intervals, in microseconds. Display segmentation may
+  /// use them, then drops them so saved subtitles stay on the old schema.
+  final List<List<int>> pauses;
   bool get hasData =>
       language.isNotEmpty ||
       speaker.isNotEmpty ||
@@ -26,7 +31,8 @@ class SubtitleAsrInfo {
       reviewReason.isNotEmpty ||
       notes.isNotEmpty ||
       backend.isNotEmpty ||
-      wordBoundaries.isNotEmpty;
+      wordBoundaries.isNotEmpty ||
+      pauses.isNotEmpty;
 
   SubtitleAsrInfo copyWith({
     String? language,
@@ -38,6 +44,7 @@ class SubtitleAsrInfo {
     String? backend,
     String? weights,
     List<int>? wordBoundaries,
+    List<List<int>>? pauses,
   }) => SubtitleAsrInfo(
     language: language ?? this.language,
     speaker: speaker ?? this.speaker,
@@ -48,6 +55,7 @@ class SubtitleAsrInfo {
     backend: backend ?? this.backend,
     weights: weights ?? this.weights,
     wordBoundaries: wordBoundaries ?? this.wordBoundaries,
+    pauses: pauses ?? this.pauses,
   );
   Map<String, Object?> toJson() => {
     if (language.isNotEmpty) 'language': language,
@@ -59,6 +67,7 @@ class SubtitleAsrInfo {
     if (backend.isNotEmpty) 'backend': backend,
     if (weights.isNotEmpty) 'weights': weights,
     if (wordBoundaries.isNotEmpty) 'wordBoundaries': wordBoundaries,
+    if (pauses.isNotEmpty) 'pauses': pauses,
   };
   factory SubtitleAsrInfo.fromJson(Object? value) {
     if (value is! Map) return const SubtitleAsrInfo();
@@ -84,6 +93,15 @@ class SubtitleAsrInfo {
             .toList()
           ..sort(),
       ),
+      pauses: List.unmodifiable([
+        for (final raw in value['pauses'] as List? ?? const [])
+          if (raw is List &&
+              raw.length >= 2 &&
+              raw[0] is num &&
+              raw[1] is num &&
+              (raw[1] as num) >= (raw[0] as num))
+            [(raw[0] as num).round(), (raw[1] as num).round()],
+      ]),
     );
   }
 }

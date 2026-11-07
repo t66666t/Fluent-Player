@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/playback_mode.dart';
 import 'playback_mode_icon.dart';
+import '../services/app_haptics.dart';
 import '../services/media_playback_service.dart';
 import '../services/playlist_manager.dart';
 import '../theme/app_tokens.dart';
@@ -15,12 +16,14 @@ class PlaybackModeButton extends StatelessWidget {
     this.iconSize = 20,
     this.backgroundColor = Colors.transparent,
     this.foregroundColor = Colors.white70,
+    this.focusColor,
   });
 
   final Size size;
   final double iconSize;
   final Color backgroundColor;
   final Color foregroundColor;
+  final Color? focusColor;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +38,7 @@ class PlaybackModeButton extends StatelessWidget {
         final mode = manager?.playbackMode ?? PlaybackMode.sequential;
         final enabled = manager != null && manager.playlist.isNotEmpty;
         final VoidCallback? advance = enabled
-            ? manager.cyclePlaybackMode
+            ? AppHaptics.wrap(manager.cyclePlaybackMode)
             : null;
 
         return Semantics(
@@ -63,7 +66,8 @@ class PlaybackModeButton extends StatelessWidget {
                   radius: size.shortestSide / 2,
                   hoverColor: Colors.white.withValues(alpha: 0.055),
                   highlightColor: Colors.white.withValues(alpha: 0.09),
-                  focusColor: AppTokens.accent.withValues(alpha: 0.16),
+                  focusColor:
+                      focusColor ?? AppTokens.accent.withValues(alpha: 0.16),
                   child: Center(
                     child: SizedBox.square(
                       dimension: iconSize,

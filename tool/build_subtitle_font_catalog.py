@@ -36,7 +36,8 @@ def main():
     fonts = []
     subsets = {"latin": "en", "japanese": "ja", "korean": "ko", "chinese-simplified": "zh-Hans",
                "chinese-traditional": "zh-Hant", "arabic": "ar", "cyrillic": "ru", "greek": "el",
-               "devanagari": "hi", "thai": "th", "hebrew": "he", "vietnamese": "vi"}
+               "devanagari": "hi", "thai": "th", "hebrew": "he", "vietnamese": "vi",
+               "khmer": "km", "lao": "lo", "myanmar": "my", "tamil": "ta", "lycian": "xlc"}
     for family in metadata:
         folder = key(family["family"])
         entries = folders.get(folder, [])

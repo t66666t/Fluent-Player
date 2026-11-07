@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:xml/xml.dart';
 import '../../services/network/network_http.dart';
+import '../../utils/app_branding.dart';
 
 /// Credentials are stored by the sync service, never in a progress document.
 class ProgressSyncWebDavConfig {
@@ -101,7 +102,12 @@ class ProgressSyncWebDav {
     );
   }
 
-  static const _namespace = ['FluentPlayerProgress', 'v1', 'events'];
+  static const _namespace = [
+    'FluentPlayerProgress',
+    'v2',
+    kApplicationId,
+    'events',
+  ];
   static const _maxEnvelopeBytes = 256 * 1024;
   static const _maxListingBytes = 8 * 1024 * 1024;
   static const _maxEntries = 50000;

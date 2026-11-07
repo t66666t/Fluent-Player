@@ -7,10 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_app/models/video_item.dart';
-import 'package:video_player_app/screens/bilibili/bilibili_account_screen.dart';
 import 'package:video_player_app/screens/bilibili/bilibili_home_page.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
-import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/widgets/media_library_folder_route.dart';
 import 'package:video_player_app/widgets/media_library_search_prompt.dart';
 import 'package:video_player_app/widgets/media_library_selection_bottom_bar.dart';
@@ -839,23 +837,18 @@ void main() {
       expect(hits(tester, center, offstageCard), isFalse);
     });
 
-    testWidgets('the Bilibili account page opens above the card', (
+    testWidgets('community edition does not expose Bilibili account entry', (
       tester,
     ) async {
-      final settings = SettingsService();
-      await settings.init();
       await pumpShell(
         tester,
         const Scaffold(body: BilibiliHomePage(isActive: true)),
       );
       expect(card, findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('bilibili-account-button')));
-      await settle(tester);
-      expect(find.byType(BilibiliAccountScreen), findsOneWidget);
-      expect(card, findsNothing);
+      // 社区版不含 Bilibili 账号入口，占位页也不应再 push 全屏账号页。
       expect(
-        Navigator.of(tester.element(find.byType(BilibiliAccountScreen))),
-        same(rootKey.currentState),
+        find.byKey(const ValueKey('bilibili-account-button')),
+        findsNothing,
       );
     });
 

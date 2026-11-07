@@ -9,13 +9,13 @@ esac
 mkdir -p "$DATA_HOME/applications"
 # Desktop Entry Exec quoting is not shell quoting. Escape reserved characters
 # and literal percent signs instead of evaluating a user-controlled path.
-escaped=$(printf '%s' "$APP_DIR" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g; s/%/%%/g')
+escaped=$(printf '%s' "$APP_DIR" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g; s/%/%%/g' | sed 's/\\/\\\\/g')
 {
     printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Fluent Player'
     printf 'Exec="%s/fluent-player.sh"\n' "$escaped"
     printf 'Icon=%s/fluent-player.png\n' "$APP_DIR"
-    printf '%s\n' 'Terminal=false' 'Categories=AudioVideo;Player;' 'StartupWMClass=io.github.t66666t.FluentPlayer'
-} > "$DATA_HOME/applications/io.github.t66666t.FluentPlayer.desktop"
+    printf '%s\n' 'Terminal=false' 'Categories=AudioVideo;Player;' 'StartupWMClass=cn.teezy.fluentplayer.standard'
+} > "$DATA_HOME/applications/cn.teezy.fluentplayer.standard.desktop"
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$DATA_HOME/applications"
 fi

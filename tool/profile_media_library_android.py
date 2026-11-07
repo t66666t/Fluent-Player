@@ -16,7 +16,7 @@ parser.add_argument('--folder-only', action='store_true')
 args = parser.parse_args()
 out = pathlib.Path(args.out).resolve()
 out.mkdir(parents=True, exist_ok=True)
-package = 'com.example.video_player_app'
+package = 'cn.teezy.fluentplayer.standard'
 base = [args.adb, '-s', args.serial]
 
 def adb(*command, **kwargs):
@@ -64,7 +64,7 @@ if not args.scroll_only:
                 adb('shell', 'input', 'keyevent', '3')
             time.sleep(.8)
             start = time.monotonic()
-            output = adb('shell', 'am', 'start', '-W', '-n', package + '/.MainActivity')
+            output = adb('shell', 'am', 'start', '-W', '-n', package + '/com.example.video_player_app.MainActivity')
             ready = []
             if cold:
                 deadline = time.monotonic() + 30
@@ -109,7 +109,7 @@ data_sources { config { name: "linux.ftrace" ftrace_config {
   ftrace_events: "sched/sched_waking"
   atrace_categories: "gfx"
   atrace_categories: "view"
-  atrace_apps: "com.example.video_player_app"
+  atrace_apps: "cn.teezy.fluentplayer.standard"
 } } }
 '''
             adb('shell', 'perfetto', '--background-wait', '--txt', '-c', '-', '-o', device_trace,

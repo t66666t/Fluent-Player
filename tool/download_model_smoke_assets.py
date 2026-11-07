@@ -24,8 +24,15 @@ def main():
     root = pathlib.Path(args.output).resolve()
     root.mkdir(parents=True, exist_ok=True)
     catalog = json.loads(pathlib.Path('assets/models/catalog.json').read_text(encoding='utf-8'))
-    for model in catalog['models']:
-        if model['id'] not in args.ids:
+    dependencies = json.loads(pathlib.Path('assets/models/asr_dependencies.json').read_text(encoding='utf-8'))
+    ids = set(args.ids)
+    if any(m['id'] in ids and m['purpose'] == 'transcription' for m in catalog['models']):
+        ids.add('silero-vad-16k')
+    unknown = ids - {m['id'] for m in catalog['models'] + dependencies['models']}
+    if unknown:
+        parser.error('Unknown model IDs: ' + ', '.join(sorted(unknown)))
+    for model in dependencies['models'] + catalog['models']:
+        if model['id'] not in ids:
             continue
         folder = root / model['id']
         folder.mkdir(exist_ok=True)
@@ -35,7 +42,7 @@ def main():
                 print(f'Already verified: {target.name}', flush=True)
                 continue
             sources = item['sources']
-            urls = [sources[key] for key in ['mainland', 'official', 'mirror'] if key in sources]
+            urls = [sources[key] for key in ['mainland', 'official', 'mirror', 'upstream'] if key in sources]
             success = False
             for url in urls:
                 try:

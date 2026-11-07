@@ -2,6 +2,16 @@
   "verifiedOn": "2026-09-09",
   "fonts": [
     {
+      "file": "NotoSansSC-Variable.ttf",
+      "bytes": 17772300,
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+      "copyright": "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'",
+      "family": "Noto Sans SC",
+      "style": "Variable weight 100-900",
+      "license": "SIL Open Font License 1.1; NotoSansSC-Variable-OFL.txt",
+      "source": "https://github.com/google/fonts/blob/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf"
+    },
+    {
       "file": "NotoSansCJKsc-Black.otf",
       "bytes": 17797908,
       "sha256": "2267c4a0312d267dff8c0d1609948f7d949a3da8be3e126f5e2690cb9cc883b4",

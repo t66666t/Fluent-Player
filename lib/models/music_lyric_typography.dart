@@ -9,6 +9,12 @@ class MusicLyricTypography {
   static const double minSpacingScale = 0;
   static const double maxSpacingScale = 4;
 
+  /// 1 keeps the historical secondary size. The slider is continuous and wide
+  /// enough to go well below or above that pairing.
+  static const double defaultSecondaryRatio = 1;
+  static const double minSecondaryRatio = 0.35;
+  static const double maxSecondaryRatio = 2.8;
+
   final double primaryFontSize;
   final double secondaryFontSize;
 
@@ -30,6 +36,7 @@ class MusicLyricTypography {
     required Size viewport,
     double fontSizeScale = defaultFontSizeScale,
     double spacingScale = defaultSpacingScale,
+    double secondaryRatio = defaultSecondaryRatio,
     TextScaler textScaler = TextScaler.noScaling,
   }) {
     // Bound the responsive default, then apply the user's scale. Clamping the
@@ -41,7 +48,10 @@ class MusicLyricTypography {
         textScaler.scale(primarySize) * normalizeSpacingScale(spacingScale);
     return MusicLyricTypography._(
       primaryFontSize: primarySize,
-      secondaryFontSize: (baseSize * 0.48).clamp(12.0, 22.0) * scale,
+      secondaryFontSize:
+          (baseSize * 0.48).clamp(12.0, 22.0) *
+          scale *
+          normalizeSecondaryRatio(secondaryRatio),
       interludeSize: textScaler.scale(primarySize),
       stanzaGap: gapUnit * 0.8,
       supportGap: gapUnit * 0.25,
@@ -55,4 +65,8 @@ class MusicLyricTypography {
   static double normalizeSpacingScale(double value) => value.isFinite
       ? value.clamp(minSpacingScale, maxSpacingScale)
       : defaultSpacingScale;
+
+  static double normalizeSecondaryRatio(double value) => value.isFinite
+      ? value.clamp(minSecondaryRatio, maxSecondaryRatio)
+      : defaultSecondaryRatio;
 }

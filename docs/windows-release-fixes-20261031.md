@@ -1,6 +1,6 @@
 # Windows 发布前问题修复记录 2026年10月31日
 
-本轮修复 [Windows 审计](/D:/1spbfq/video_player_app/docs/windows-release-audit-20261031.md) 中确认的 W01 至 W06，并在回归中确认、修复另两项问题。保留工作区原有改动、模型 ID、权重、任务和兼容性基线，没有升级 FFmpeg 版本。修复代码与测试已写入工作区；原有 dist 安装包和 ZIP 尚未替换。
+本轮修复 [Windows 审计](../docs/windows-release-audit-20261031.md) 中确认的 W01 至 W06，并在回归中确认、修复另两项问题。保留工作区原有改动、模型 ID、权重、任务和兼容性基线，没有升级 FFmpeg 版本。修复代码与测试已写入工作区；原有 dist 安装包和 ZIP 尚未替换。
 
 ## 修复内容
 
@@ -15,7 +15,7 @@
 | W07 小窗口键盘弹出后字体面板溢出 | 仅字幕样式工具在键盘出现时为面板腾出更多空间；字体选择器在极矮区域内让搜索、工具栏与字体列表共同滚动，保留正常窗口布局、字体筛选和滚动条。 |
 | W08 B 站起播超时后重试状态错误 | 先把来源会话标为失败，再触发外层预算的取消清理。避免网关释放同步把会话变成 cancelled，使 hasFailed 与专用重试入口失效。没有增加等待或延长超时。 |
 
-FFmpeg 补丁使用项目内的 `third_party/ffmpeg_kit_flutter_new`，仍为 4.6.2；相对本轮修复前的工作区，依赖锁只把这一包的来源从 hosted 改为本地 path。Windows 补丁说明见 [FFmpeg PATCHES](/D:/1spbfq/video_player_app/third_party/ffmpeg_kit_flutter_new/PATCHES.md) 和 [WebView PATCHES](/D:/1spbfq/video_player_app/third_party/flutter_inappwebview_windows/PATCHES.md)。其他平台源码和许可证保留。
+FFmpeg 补丁使用项目内的 `third_party/ffmpeg_kit_flutter_new`，仍为 4.6.2；相对本轮修复前的工作区，依赖锁只把这一包的来源从 hosted 改为本地 path。Windows 补丁说明见 [FFmpeg PATCHES](../third_party/ffmpeg_kit_flutter_new/PATCHES.md) 和 [WebView PATCHES](../third_party/flutter_inappwebview_windows/PATCHES.md)。其他平台源码和许可证保留。
 
 ## 复现与验证
 
@@ -34,18 +34,18 @@ FFmpeg 补丁使用项目内的 `third_party/ffmpeg_kit_flutter_new`，仍为 4.
 | 模型接入标准入口 | 1017 项通过、3 项跳过，相关静态分析通过。兼容性基线没有修改。 |
 | Python 完整测试 | 87 项通过。 |
 | 修改涉及的 Dart 入口 | 最终 22 个入口静态分析无问题；原测试替身的无效 override 已修正。全项目仍有原有 info 级提示。 |
-| 全项目静态分析 | 无 error／warning，仍有 11 项已有 info；使用 --no-fatal-infos 返回 0，不把默认规则下的 info 当作已消除。见 [全项目分析](/D:/1spbfq/video_player_app/build/release-fixes-20261031/analyze-complete.log)。 |
+| 全项目静态分析 | 无 error／warning，仍有 11 项已有 info；使用 --no-fatal-infos 返回 0，不把默认规则下的 info 当作已消除。见 [全项目分析](../build/release-fixes-20261031/analyze-complete.log)。 |
 | 扩展播放分组 | 最终 168 项全部通过，含原生媒体合成、播放恢复与请求竞争、起播、质量切换、传输同步、字幕保存及键盘；首次 162 通过／4 失败的日志保留，见下一节。 |
 | 小窗口字体与默认键盘布局 | 修复后 45 项通过，保留原面板高度、视频高度、键盘边界及 widget identity 断言，新增真实滚动到“使用”按钮并点击选字体验证；原在线字体滚动条另 3 项通过。 |
 | B 站质量切换与起播截止 | 原整文件 46 项全部通过，原 250 毫秒超时及断言保持不变。 |
 
-主要证据目录为 [build/release-fixes-20261031](/D:/1spbfq/video_player_app/build/release-fixes-20261031)。可直接查看 [字幕与退出最终回归](/D:/1spbfq/video_player_app/build/release-fixes-20261031/subtitle-exit-final.log)、[真实库与文件重启测试](/D:/1spbfq/video_player_app/build/release-fixes-20261031/subtitle-library-native-io.log)、[存储与下载回归](/D:/1spbfq/video_player_app/build/release-fixes-20261031/storage-ytdlp-regressions.log)、[模型标准检查](/D:/1spbfq/video_player_app/build/release-fixes-20261031/model-integration.log)、[运行库实际加载](/D:/1spbfq/video_player_app/build/release-fixes-20261031/windows-dependency-validation.json)。
+主要证据目录为 [build/release-fixes-20261031](../build/release-fixes-20261031)。可直接查看 [字幕与退出最终回归](../build/release-fixes-20261031/subtitle-exit-final.log)、[真实库与文件重启测试](../build/release-fixes-20261031/subtitle-library-native-io.log)、[存储与下载回归](../build/release-fixes-20261031/storage-ytdlp-regressions.log)、[模型标准检查](../build/release-fixes-20261031/model-integration.log)、[运行库实际加载](../build/release-fixes-20261031/windows-dependency-validation.json)。
 
-合并全部修复的普通 `lib/main.dart` Windows Release 已构建并核对正式插件注册表，不包含 integration_test 开发插件；没有用正式入口启动用户数据。原生修复、真实库／测试 DLL 的边界与源码哈希见 [原生修复收据](/D:/1spbfq/video_player_app/build/release-fixes-20261031/windows-native-fixes.json)。另外将这一正式 AOT 和已修复 DLL 组成全新验证目录，补齐 CRT 后通过依赖闭包及独立翻译 worker 启动、通信、正常退出检查，见 [组合包检查](/D:/1spbfq/video_player_app/build/release-fixes-20261031/combined-package-validation.json)。该目录用于内部验收，尚未替换正式 dist 安装包，也不是“所有发布检查已通过”的结论。
+合并全部修复的普通 `lib/main.dart` Windows Release 已构建并核对正式插件注册表，不包含 integration_test 开发插件；没有用正式入口启动用户数据。原生修复、真实库／测试 DLL 的边界与源码哈希见 [原生修复收据](../build/release-fixes-20261031/windows-native-fixes.json)。另外将这一正式 AOT 和已修复 DLL 组成全新验证目录，补齐 CRT 后通过依赖闭包及独立翻译 worker 启动、通信、正常退出检查，见 [组合包检查](../build/release-fixes-20261031/combined-package-validation.json)。该目录用于内部验收，尚未替换正式 dist 安装包，也不是“所有发布检查已通过”的结论。
 
-最终验证目录为 [combined-windows-package-final](/D:/1spbfq/video_player_app/build/release-fixes-20261031/combined-windows-package-final)，不是较早的 `combined-windows-package` 或 `windows-package-after`。正式构建耗时 203.2 秒，1281 份源码与独立构建快照一致；最终 stage 的 EXE、FFmpeg 插件、WebView 插件与 AOT 均核对匹配正式构建指纹。模型推理没有在这一启动与通信检查中执行。
+最终验证目录为 [combined-windows-package-final](../build/release-fixes-20261031/combined-windows-package-final)，不是较早的 `combined-windows-package` 或 `windows-package-after`。正式构建耗时 203.2 秒，1281 份源码与独立构建快照一致；最终 stage 的 EXE、FFmpeg 插件、WebView 插件与 AOT 均核对匹配正式构建指纹。模型推理没有在这一启动与通信检查中执行。
 
-新正式测试包括 [字幕保存](/D:/1spbfq/video_player_app/test/subtitle_editor_persistence_test.dart)、[退出草稿顺序](/D:/1spbfq/video_player_app/test/subtitle_window_exit_test.dart)、[窗口等待与失败保留](/D:/1spbfq/video_player_app/test/windows_subtitle_exit_guard_test.dart)、[真实字幕库重启](/D:/1spbfq/video_player_app/test/subtitle_editor_library_integration_test.dart)、[下载校验生命周期](/D:/1spbfq/video_player_app/test/yt_dlp_desktop_verification_test.dart)，迁移和打包检查补入原有测试文件。修改前副本与哈希也保留在证据目录。最终扩展播放日志见 [168 项回归](/D:/1spbfq/video_player_app/build/release-fixes-20261031/playback-regressions-final.log)，相关源码分析见 [22 个入口检查](/D:/1spbfq/video_player_app/build/release-fixes-20261031/changed-analysis-complete.log)。
+新正式测试包括 [字幕保存](../test/subtitle_editor_persistence_test.dart)、[退出草稿顺序](../test/subtitle_window_exit_test.dart)、[窗口等待与失败保留](../test/windows_subtitle_exit_guard_test.dart)、[真实字幕库重启](../test/subtitle_editor_library_integration_test.dart)、[下载校验生命周期](../test/yt_dlp_desktop_verification_test.dart)，迁移和打包检查补入原有测试文件。修改前副本与哈希也保留在证据目录。最终扩展播放日志见 [168 项回归](../build/release-fixes-20261031/playback-regressions-final.log)，相关源码分析见 [22 个入口检查](../build/release-fixes-20261031/changed-analysis-complete.log)。
 
 退出修复中的可失败对照同样保留：通道注销最初放在插件析构内，实测 messenger 已进入 shutdown；只在 OnDestroy 提前清理仍遗漏 window_manager.destroy 的 PostQuitMessage 路径。最终由派生类析构与 OnDestroy 共用幂等 ShutdownEngine，在 controller 成员析构之前清理。因此新版 runner EXE 和 WebView DLL 需配套更新，不能只替换其中一个。
 
@@ -53,8 +53,8 @@ FFmpeg 补丁使用项目内的 `third_party/ffmpeg_kit_flutter_new`，仍为 4.
 
 首次扩展分组的四个失败进一步定位为两类真实问题，修复后的分项与重新组合的 168 项分组均已通过：
 
-1. `bilibili_quality_handoff_test.dart` 的起播截止场景实际失败的是 `context.hasFailed`，并非先前怀疑的遮罩撤下；诊断确认遮罩一直保留，旧判断撤回。两项相邻测试即可稳定复现：外层预算取消同步释放网关，把尚未 fail 的来源上下文变成 cancelled。W08 调整顺序后原整文件 46 项全部通过。见 [修复收据](/D:/1spbfq/video_player_app/build/release-fixes-20261031/bilibili-deadline-fix-receipt.json)。
-2. 修正 `portrait_subtitle_style_settings_test.dart` 测试替身缺少 audioQualityId 的编译错误后，320×568 小窗口的 Android／iOS／Windows 模拟布局暴露真实 RenderFlex 溢出，并非单纯任意高度断言。W07 修复后原 9 项、默认布局 36 项及滚动条 3 项通过；原高度要求没有降低。见 [布局修复说明](/D:/1spbfq/video_player_app/build/release-fixes-20261031/portrait-font-fix.md)。
+1. `bilibili_quality_handoff_test.dart` 的起播截止场景实际失败的是 `context.hasFailed`，并非先前怀疑的遮罩撤下；诊断确认遮罩一直保留，旧判断撤回。两项相邻测试即可稳定复现：外层预算取消同步释放网关，把尚未 fail 的来源上下文变成 cancelled。W08 调整顺序后原整文件 46 项全部通过。见 [修复收据](../build/release-fixes-20261031/bilibili-deadline-fix-receipt.json)。
+2. 修正 `portrait_subtitle_style_settings_test.dart` 测试替身缺少 audioQualityId 的编译错误后，320×568 小窗口的 Android／iOS／Windows 模拟布局暴露真实 RenderFlex 溢出，并非单纯任意高度断言。W07 修复后原 9 项、默认布局 36 项及滚动条 3 项通过；原高度要求没有降低。见 [布局修复说明](../build/release-fixes-20261031/portrait-font-fix.md)。
 
 原审计中其余过时 fixture、布局断言与设置导出分类问题，没有在这轮全部处理。完整 Flutter 套件也没有在修复后重新取得全部通过的结果。外部字幕在磁盘故障后重试保存成功时，编辑副本可在字幕库查看；不会为自动采用旧分组而覆盖用户已经切换的新选择。
 

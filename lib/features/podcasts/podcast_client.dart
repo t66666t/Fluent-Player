@@ -209,11 +209,15 @@ class PodcastClient {
     _searchTimes.add(DateTime.now());
     final Map<String, dynamic> json;
     if (provider == 'index') {
-      const storage = FlutterSecureStorage();
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(resetOnError: false),
+      );
       final key = await storage.read(key: 'podcastIndexKey'),
           secret = await storage.read(key: 'podcastIndexSecret');
       if (key == null || secret == null || key.isEmpty || secret.isEmpty) {
-        throw const FormatException('请先在“播客设置 → 搜索与备份 → Podcast Index 搜索凭据”中配置凭据');
+        throw const FormatException(
+          '请先在“播客设置 → 搜索与备份 → Podcast Index 搜索凭据”中配置凭据',
+        );
       }
       final time = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
       final response = await http.get(
@@ -387,54 +391,26 @@ class PodcastClient {
     }
     final document = html.parse(source);
     final candidates = <String>{};
-    for (final element in document.querySelectorAll('link[rel="alternate"]')) {
-      if ([
-        'application/rss+xml',
-        'application/atom+xml',
-        'application/feed+json',
-      ].contains(element.attributes['type'])) {
+    for (final element in document.querySelectorAll('link[href], a[href]')) {
+      final rel = (element.attributes['rel'] ?? '').toLowerCase().split(
+        RegExp(r'\s+'),
+      );
+      if (element.localName == 'link' && !rel.contains('alternate')) continue;
+      final explicitlyNamedRss =
+          element.localName == 'a' &&
+          RegExp(
+            r'^(?:rss|atom)(?:\s+feed)?$|^RSS\s*订阅$|^订阅\s*RSS$',
+            caseSensitive: false,
+          ).hasMatch(element.text.trim());
+      if (explicitlyNamedRss ||
+          [
+            'application/rss+xml',
+            'application/atom+xml',
+          ].contains(element.attributes['type']?.toLowerCase())) {
         final href = element.attributes['href'];
         if (href != null) {
           candidates.add(Uri.parse(result.url).resolve(href).toString());
         }
-      }
-    }
-    void findFeeds(Object? node) {
-      if (node is Map) {
-        for (final entry in node.entries) {
-          if ([
-                'rss',
-                'rssurl',
-                'feedurl',
-                'rss_url',
-                'feed_url',
-              ].contains(entry.key.toString().toLowerCase()) &&
-              entry.value is String &&
-              (entry.value as String).startsWith('http')) {
-            candidates.add(entry.value);
-          }
-          if (entry.value is Map || entry.value is List) findFeeds(entry.value);
-        }
-      } else if (node is List) {
-        for (final item in node) {
-          findFeeds(item);
-        }
-      }
-    }
-
-    for (final script in document.querySelectorAll(
-      'script[type="application/json"],script[type="application/ld+json"]',
-    )) {
-      try {
-        findFeeds(jsonDecode(script.text));
-      } catch (_) {
-        /* A page can contain unrelated JSON. */
-      }
-    }
-    if (uri.host.endsWith('ximalaya.com')) {
-      final album = RegExp(r'/album/(\d+)').firstMatch(uri.path)?.group(1);
-      if (album != null) {
-        candidates.add('https://www.ximalaya.com/album/$album.xml');
       }
     }
     for (final candidate in candidates.take(4)) {
@@ -444,99 +420,6 @@ class PodcastClient {
         request?.check();
         /* Try the next advertised feed. */
       }
-    }
-    Map? publicEpisode;
-    if (uri.host == 'xiaoyuzhoufm.com' ||
-        uri.host.endsWith('.xiaoyuzhoufm.com')) {
-      void findEpisode(Object? value) {
-        if (value is Map) {
-          final media = value['media'];
-          if (value['eid'] != null &&
-              media is Map &&
-              media['source'] is Map &&
-              (media['source'] as Map)['url'] is String) {
-            publicEpisode ??= value;
-          }
-          for (final child in value.values) {
-            if (child is Map || child is List) findEpisode(child);
-          }
-        } else if (value is List) {
-          for (final child in value) {
-            findEpisode(child);
-          }
-        }
-      }
-
-      for (final script in document.querySelectorAll(
-        'script[type="application/json"]',
-      )) {
-        try {
-          findEpisode(jsonDecode(script.text));
-        } catch (_) {
-          /* Unrelated page data. */
-        }
-      }
-    }
-    final publicMedia = publicEpisode?['media'] as Map?;
-    final publicSource = publicMedia?['source'] as Map?;
-    final audio =
-        publicSource?['url'] as String? ??
-        document
-            .querySelector('meta[property="og:audio"]')
-            ?.attributes['content'] ??
-        document
-            .querySelector('meta[property="og:audio:url"]')
-            ?.attributes['content'] ??
-        document
-            .querySelector('meta[property="og:video"]')
-            ?.attributes['content'];
-    if (audio != null && audio.startsWith('http')) {
-      final title =
-          publicEpisode?['title']?.toString() ??
-          document
-              .querySelector('meta[property="og:title"]')
-              ?.attributes['content'] ??
-          document.querySelector('title')?.text ??
-          '导入的播客节目';
-      final image =
-          document
-              .querySelector('meta[property="og:image"]')
-              ?.attributes['content'] ??
-          '';
-      final id = 'podcast_${podcastHash(result.url).substring(0, 32)}';
-      return PodcastResolution(
-        PodcastFeed(
-          PodcastChannel(
-            id: id,
-            feedUrl: result.url,
-            title: title,
-            imageUrl: image,
-            active: false,
-            author:
-                (publicEpisode?['podcast'] as Map?)?['title']?.toString() ?? '',
-          ),
-          [
-            PodcastEpisode(
-              id: 'pe_${podcastHash(result.url).substring(0, 40)}',
-              channelId: id,
-              title: title,
-              imageUrl: image,
-              link: result.url,
-              description: publicEpisode?['description']?.toString() ?? '',
-              durationMs: ((publicEpisode?['duration'] as num? ?? 0) * 1000)
-                  .round(),
-              media: [
-                PodcastMedia(
-                  url: audio,
-                  mimeType: audio.contains('.mp4') ? 'video/mp4' : 'audio/mpeg',
-                ),
-              ],
-              discoveredMs: DateTime.now().millisecondsSinceEpoch,
-            ),
-          ],
-        ),
-        singleEpisode: true,
-      );
     }
     throw const FormatException('这个页面没有提供可确认的公开订阅源。可以搜索频道名称，或粘贴 RSS 链接。');
   }

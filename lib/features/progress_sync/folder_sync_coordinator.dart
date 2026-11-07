@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../../models/video_item.dart';
 import '../../models/media_source_ref.dart';
 import '../../services/library_service.dart';
+import '../../services/community_media_input.dart';
+import '../portable_transfer/legacy_download_export_policy.dart';
 import '../media_cache/media_cache_service.dart';
 import '../media_cache/media_cache_models.dart';
 import 'folder_sync_models.dart';
@@ -290,6 +292,8 @@ class FolderSyncCoordinator {
       if (item == null ||
           item.isRecycled ||
           item.isTransient ||
+          !communityMediaIsPlayable(item.path, source: item.sourceRef) ||
+          omitLegacyWebDownload(item, library) ||
           !allowed(settings, relative, extension: p.extension(item.path))) {
         return;
       }

@@ -1,6 +1,6 @@
 """Prepare pinned runtime inputs from their original publishers before building.
 
-The community source includes an OFL CJK UI face. No downloader runtime is prepared.
+The app fonts are included in the source tree. No downloader runtime is prepared.
 Nothing in this script runs in the shipped application.
 """
 import argparse
@@ -64,9 +64,10 @@ def main():
     args = parser.parse_args()
     if args.platform == 'host':
         args.platform = {'win32': 'windows', 'darwin': 'macos'}.get(sys.platform, 'linux')
-    lock = json.loads(LOCK.read_text(encoding='utf-8'))
     if args.fonts_only:
+        print('Bundled fonts are already included in the source tree.')
         return
+    lock = json.loads(LOCK.read_text(encoding='utf-8'))
     if args.platform in ['all', 'windows'] and 'windowsFfmpeg' in lock:
         spec = lock['windowsFfmpeg']
         archive = download(spec['url'], spec['sha256'])

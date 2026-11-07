@@ -453,7 +453,7 @@ void main() {
       expect(before.messageId, question.id);
       expect(
         tester.getTopLeft(find.byTooltip('返回字幕')).dx,
-        lessThan(tester.getTopLeft(find.text('AI 对话')).dx),
+        greaterThan(tester.getTopRight(find.text('AI 对话')).dx),
       );
       await tester.tap(find.byTooltip('返回字幕'));
       await tester.pumpAndSettle();
@@ -743,14 +743,45 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('ai-chat-input')));
       await tester.pumpAndSettle();
       expect(tester.testTextInput.isVisible, isTrue);
-      await tester.tap(find.text('挑出视频中最难理解的一个概念，用例子讲清楚'));
+      await tester.tap(find.text('这个视频讲了什么内容？'));
       await tester.pumpAndSettle();
-      expect(field.controller!.text, '挑出视频中最难理解的一个概念，用例子讲清楚');
+      expect(field.controller!.text, '这个视频讲了什么内容？');
       expect(field.focusNode!.hasFocus, isFalse);
       expect(tester.testTextInput.isVisible, isFalse);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('quick prompt labels share a visual center with the side icons', (
+    tester,
+  ) async {
+    await mount(tester);
+    for (final id in ['summary', 'explain', 'key-points', 'notes']) {
+      final row = find.byKey(ValueKey('ai-quick-prompt-$id'));
+      final icons = find.descendant(of: row, matching: find.byType(Icon));
+      final label = find.descendant(of: row, matching: find.byType(Text));
+      expect(icons, findsNWidgets(2), reason: id);
+      expect(label, findsOneWidget, reason: id);
+      final style = tester.widget<Text>(label).style;
+      expect(style?.leadingDistribution, TextLeadingDistribution.even);
+      expect(style?.height, 1);
+      final textCenter = tester.getRect(label).center.dy;
+      final leftCenter = tester.getRect(icons.at(0)).center.dy;
+      final rightCenter = tester.getRect(icons.at(1)).center.dy;
+      expect(leftCenter, closeTo(rightCenter, 0.5), reason: id);
+      // The 1px optical lift puts CJK ink on the same line as the icons.
+      expect(textCenter, closeTo(leftCenter - 1, 0.5), reason: id);
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('ai-quick-prompt-explain')),
+        matching: find.byIcon(Icons.help_outline),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('这个视频讲了什么内容？'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'composer centers empty and single-line text and grows with lines',
@@ -1613,7 +1644,7 @@ void main() {
       final timestampLink = activateLink('00:37:29');
       expect(selected, const Duration(minutes: 37, seconds: 29));
       expect(timestampLink.style?.decoration, TextDecoration.none);
-      expect(timestampLink.style?.fontWeight, FontWeight.w700);
+      expect(timestampLink.style?.fontWeight, FontWeight.w600);
       activateLink('00:42:49');
       expect(selected, const Duration(minutes: 42, seconds: 49));
       final renderedText = tester
@@ -2393,6 +2424,15 @@ void main() {
       final rect = tester.getRect(toolbar);
       expect(rect.width, size.width, reason: name);
       expect(rect.height, lessThanOrEqualTo(scale > 1 ? 90 : 64), reason: name);
+      final title = find.byKey(const ValueKey('ai-chat-toolbar-title'));
+      final firstMessage = find.byKey(
+        PageStorageKey(controller.active!.messages.first.id),
+      );
+      expect(
+        tester.getTopLeft(title).dx,
+        closeTo(tester.getTopLeft(firstMessage).dx, .5),
+        reason: '$name aligns the title with the conversation left edge',
+      );
       final history = find.byTooltip('对话历史');
       final newConversation = find.byTooltip('新建对话');
       expect(history, findsOneWidget, reason: name);

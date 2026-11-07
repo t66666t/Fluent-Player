@@ -82,7 +82,11 @@ def extract(path, parent):
         for entry in package.infolist():
             if not (parent / entry.filename).resolve().is_relative_to(resolved):
                 raise ValueError('Invalid source archive path')
-        package.extractall(parent)
+        # Python's zip extractor otherwise hits MAX_PATH on upstream notices.
+        destination = str(resolved)
+        if os.name == 'nt' and not destination.startswith('\\\\?\\'):
+            destination = '\\\\?\\' + destination
+        package.extractall(destination)
     return parent / folder
 
 

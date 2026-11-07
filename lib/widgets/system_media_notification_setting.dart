@@ -8,6 +8,7 @@ import '../services/settings_service.dart';
 import '../services/system_media_session_service.dart';
 import '../theme/app_tokens.dart';
 import 'operation_status.dart';
+import 'media_library_settings_controls.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 class SystemMediaNotificationSetting extends StatefulWidget {
@@ -15,9 +16,11 @@ class SystemMediaNotificationSetting extends StatefulWidget {
     super.key,
     required this.settings,
     this.session,
+    this.flat = false,
   });
   final SettingsService settings;
   final SystemMediaSessionService? session;
+  final bool flat;
   @override
   State<SystemMediaNotificationSetting> createState() =>
       _SystemMediaNotificationSettingState();
@@ -66,7 +69,6 @@ class _SystemMediaNotificationSettingState
       _details = null;
     });
     try {
-      unawaited(AppHaptics.selectionClick(widget.settings));
       await widget.settings.updateSetting('showSystemMediaNotification', value);
     } catch (error) {
       if (mounted) {
@@ -132,75 +134,72 @@ class _SystemMediaNotificationSettingState
       final hasIssue =
           blocked || _error != null || nativeFailure != null || _nativeRetrying;
       return Material(
-        color: AppTokens.bgCard,
+        color: widget.flat ? Colors.transparent : AppTokens.bgCard,
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
-        child: SwitchListTile.adaptive(
+        child: MediaLibrarySettingsSwitchTile(
           key: const ValueKey('showSystemMediaNotification'),
           value: widget.settings.showSystemMediaNotification,
           onChanged: _saving || _nativeRetrying || blocked ? null : _change,
           title: Text(ios ? '显示锁屏与控制中心播放控件' : '显示媒体通知'),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: hasIssue
-                ? OperationStatus(
-                    title:
-                        _error ??
-                        (_nativeRetrying
-                            ? '正在重试系统播放控件…'
-                            : blocked
-                            ? '媒体播放通知已被系统关闭'
-                            : nativeFailure!.requestedVisible
-                            ? '系统播放控件未能显示'
-                            : '系统播放控件未能隐藏'),
-                    message: blocked ? '请在系统设置中开启媒体播放通知。' : null,
-                    kind: _nativeRetrying
-                        ? OperationStatusKind.progress
-                        : OperationStatusKind.error,
-                    details: _details?.toString() ?? nativeFailure?.diagnostic,
-                    actions: [
-                      if (nativeFailure != null && !blocked)
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            key: const ValueKey(
-                              'retry-system-media-notification',
-                            ),
-                            onPressed: _nativeRetrying ? null : _retryNative,
-                            child: const Text('重试'),
+          description: Text(ios ? '在锁屏和控制中心显示播放控件。' : '在通知栏和锁屏显示播放控件。'),
+          feedback: hasIssue
+              ? OperationStatus(
+                  title:
+                      _error ??
+                      (_nativeRetrying
+                          ? '正在重试系统播放控件…'
+                          : blocked
+                          ? '媒体播放通知已被系统关闭'
+                          : nativeFailure!.requestedVisible
+                          ? '系统播放控件未能显示'
+                          : '系统播放控件未能隐藏'),
+                  message: blocked ? '请在系统设置中开启媒体播放通知。' : null,
+                  kind: _nativeRetrying
+                      ? OperationStatusKind.progress
+                      : OperationStatusKind.error,
+                  details: _details?.toString() ?? nativeFailure?.diagnostic,
+                  actions: [
+                    if (nativeFailure != null && !blocked)
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          key: const ValueKey(
+                            'retry-system-media-notification',
                           ),
-                        ),
-                      if (_error != null && nativeFailure == null && !blocked)
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: _saving ? null : _retryAction,
-                            child: const Text('重试'),
+                          onPressed: AppHaptics.wrap(
+                            _nativeRetrying ? null : _retryNative,
+                            light: true,
                           ),
+                          child: const Text('重试'),
                         ),
-                      if (_availability?.canOpenSystemSettings == true)
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: _openSettings,
-                            child: const Text('系统设置'),
+                      ),
+                    if (_error != null && nativeFailure == null && !blocked)
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: AppHaptics.wrap(
+                            _saving ? null : _retryAction,
+                            light: true,
                           ),
+                          child: const Text('重试'),
                         ),
-                      if (blocked)
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: _refresh,
-                            child: const Text('重新检查'),
-                          ),
+                      ),
+                    if (_availability?.canOpenSystemSettings == true)
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: AppHaptics.wrap(_openSettings, light: true),
+                          child: const Text('系统设置'),
                         ),
-                    ],
-                  )
-                : Text(
-                    ios ? '在锁屏和控制中心显示播放控件。' : '在通知栏和锁屏显示播放控件。',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.5,
-                      color: AppTokens.text1,
-                    ),
-                  ),
-          ),
+                      ),
+                    if (blocked)
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: AppHaptics.wrap(_refresh, light: true),
+                          child: const Text('重新检查'),
+                        ),
+                      ),
+                  ],
+                )
+              : null,
         ),
       );
     },

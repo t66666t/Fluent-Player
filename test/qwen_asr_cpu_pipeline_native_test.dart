@@ -15,8 +15,9 @@ import 'package:video_player_app/features/model_center/model_transcription.dart'
 import 'package:video_player_app/features/model_center/asr_acceleration.dart';
 import 'package:video_player_app/services/app_storage_service.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import 'support/prepared_local_models.dart';
 
-class _Center extends ModelCenterService {
+class _Center extends ModelCenterService with PreparedLocalModels {
   _Center({required super.storage});
   @override
   Future<void> prepareAsrEnhancements(

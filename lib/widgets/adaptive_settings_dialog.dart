@@ -1,3 +1,4 @@
+import '../theme/app_settings_theme.dart';
 import 'package:flutter/material.dart';
 
 @immutable
@@ -100,7 +101,10 @@ class AdaptiveSettingsDialogTheme extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppSettingsTheme(child: Builder(builder: _buildThemedSurface));
+
+  Widget _buildThemedSurface(BuildContext context) {
     final base = Theme.of(context);
     return Theme(
       data: base.copyWith(
@@ -111,14 +115,16 @@ class AdaptiveSettingsDialogTheme extends StatelessWidget {
         listTileTheme: base.listTileTheme.copyWith(
           dense: true,
           minVerticalPadding: metrics.isCompact ? 2 : 4,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
+          titleTextStyle: base.textTheme.bodyMedium?.copyWith(
+            color: AppSettingsTheme.foreground,
             fontSize: metrics.bodySize,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
           ),
-          subtitleTextStyle: TextStyle(
-            color: Colors.white54,
-            fontSize: metrics.captionSize,
-            height: 1.25,
+          subtitleTextStyle: base.textTheme.bodySmall?.copyWith(
+            color: AppSettingsTheme.secondary,
+            fontSize: metrics.captionSize.clamp(11.0, 12.0),
+            height: 1.4,
           ),
         ),
         inputDecorationTheme: base.inputDecorationTheme.copyWith(

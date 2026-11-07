@@ -7,7 +7,12 @@ import 'package:video_player_app/services/settings_service.dart';
 import 'package:video_player_app/services/system_media_session_service.dart';
 import 'package:video_player_app/widgets/media_library_settings_sheet.dart';
 
-import 'media_private_import_setting_test.dart' show useTallSettingsSurface;
+void useTallSettingsSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -54,8 +59,8 @@ void main() {
     playback.publishRestoredSessionPreview(
       VideoItem(
         id: 'mini-switch',
-        path: 'bilibili://stream/BV1xx411c7mD?cid=1',
-        title: 'Online',
+        path: 'C:/media/preview.mp4',
+        title: 'Local preview',
         durationMs: 120000,
         lastUpdated: 0,
       ),
@@ -172,7 +177,9 @@ void main() {
     await settings.init();
     await _openSettings(tester, settings);
 
-    final switches = find.byType(SwitchListTile);
+    final switches = find.byWidgetPredicate(
+      (widget) => widget is SwitchListTile,
+    );
     expect(
       tester.widget<SwitchListTile>(switches.first).key,
       const ValueKey<String>('mediaLibraryRestoreLastPage'),
@@ -182,7 +189,7 @@ void main() {
       findsNothing,
     );
     expect(find.text('显示迷你播放卡片'), findsOneWidget);
-    expect(find.text('打开时回到上次离开的页面'), findsOneWidget);
+    expect(find.text('恢复上次页面'), findsOneWidget);
 
     for (var tap = 0; tap < 6; tap++) {
       await tester.tap(find.byKey(const ValueKey('showMiniPlaybackCard')));
@@ -209,7 +216,9 @@ void main() {
       showSystemMediaNotificationSetting: true,
     );
 
-    final switches = find.byType(SwitchListTile);
+    final switches = find.byWidgetPredicate(
+      (widget) => widget is SwitchListTile,
+    );
     expect(
       tester.widget<SwitchListTile>(switches.at(0)).key,
       const ValueKey<String>('mediaLibraryRestoreLastPage'),
@@ -264,7 +273,7 @@ Future<void> _openSettings(
   );
   await tester.tap(find.text('打开设置'));
   await tester.pumpAndSettle();
-  expect(find.text('打开时回到上次离开的页面'), findsOneWidget);
+  expect(find.text('恢复上次页面'), findsOneWidget);
 
   await tester.pumpAndSettle();
 }

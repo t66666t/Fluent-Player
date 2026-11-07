@@ -25,6 +25,7 @@ import '../../services/settings_service.dart';
 import '../../services/app_haptics.dart';
 import '../../models/import_card_placement.dart';
 import '../../widgets/media_library_grid_card.dart';
+import '../../widgets/media_library_keyboard_navigation.dart';
 import '../../widgets/media_library_item_interaction_wrapper.dart';
 import '../../widgets/media_library_gestures.dart';
 import '../../widgets/folder_placeholder_cover.dart';
@@ -153,12 +154,12 @@ Future<void> openPodcastEpisode(
   await closed;
 }
 
-void _openSettings(BuildContext context, [String? id]) =>
-    Navigator.of(context).push(
-      AppMaterialPageRoute<void>(
-        builder: (_) => PodcastSettingsPage(channelId: id),
-      ),
-    );
+void _openSettings(BuildContext context, [String? id]) => pushAboveMediaLibrary(
+  context,
+  AppMaterialPageRoute<void>(
+    builder: (_) => PodcastSettingsPage(channelId: id),
+  ),
+);
 
 Future<void> _renamePodcastEpisode(
   BuildContext context,
@@ -212,6 +213,15 @@ class PodcastOverviewController extends ChangeNotifier {
   bool get isSelecting => _library?._selection.active ?? false;
   Set<String> get selectedIds =>
       Set.unmodifiable(_library?._selection.ids ?? <String>{});
+
+  List<String> get visibleKeyboardIds =>
+      List.unmodifiable(_library?._visibleIds ?? const <String>[]);
+
+  void setKeyboardSelection(Set<String> ids) {
+    final library = _library;
+    if (library == null || !library.mounted) return;
+    library.setKeyboardSelection(ids);
+  }
 
   void _publishSelection() {
     if (_publishScheduled) return;
@@ -281,6 +291,7 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
   String? _subscriptionFolderId;
   List<PodcastEpisode>? _dragEpisodes;
   final ScrollController _tabsScroll = ScrollController();
+  final Object _headerFocusGroup = Object();
   final _listScrolls = <int, PlaybackScrollController>{};
 
   PlaybackScrollController _scrollForTab(int tab) =>
@@ -348,7 +359,7 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
     final before = runtime.ready
         ? runtime.controller.channels.map((channel) => channel.id).toSet()
         : <String>{};
-    await Navigator.push(
+    await pushAboveMediaLibrary(
       context,
       AppMaterialPageRoute<void>(builder: (_) => const PodcastDiscoverPage()),
     );
@@ -365,6 +376,7 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
   @override
   Widget build(BuildContext context) {
     final body = PodcastGate(
+      bottomPadding: widget.bottomPadding,
       builder: (runtime) {
         final episodes = switch (_tab) {
           1 => runtime.store.view('new'),
@@ -397,103 +409,132 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
                   '播客',
                   style: PodcastType.title.copyWith(fontSize: 25),
                 ),
-                tabs: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: SingleChildScrollView(
-                        controller: _tabsScroll,
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Row(
-                          children: [
-                            for (var i = 0; i < _tabs.length; i++)
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  DesktopButtonClickRegion(
-                                    child: TextButton(
-                                      onPressed: () => _selectTab(i),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: _tab == i
-                                            ? AppTokens.text1
-                                            : AppTokens.text3,
+                tabs: MediaLibrarySpatialNavigationGroup(
+                  group: _headerFocusGroup,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: SingleChildScrollView(
+                          controller: _tabsScroll,
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: MediaLibrarySpatialNavigationGroup(
+                            group: _headerFocusGroup,
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < _tabs.length; i++)
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      DesktopButtonClickRegion(
+                                        child: TextButton(
+                                          onPressed: () {
+                                            _selectTab(i);
+                                            final keyboard =
+                                                HardwareKeyboard.instance;
+                                            if (keyboard.isLogicalKeyPressed(
+                                                  LogicalKeyboardKey.enter,
+                                                ) ||
+                                                keyboard.isLogicalKeyPressed(
+                                                  LogicalKeyboardKey
+                                                      .numpadEnter,
+                                                ) ||
+                                                keyboard.isLogicalKeyPressed(
+                                                  LogicalKeyboardKey.space,
+                                                )) {
+                                              MediaLibrarySpatialNavigation.focusInitial(
+                                                context,
+                                              );
+                                            }
+                                          },
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: _tab == i
+                                                ? AppTokens.text1
+                                                : AppTokens.text3,
+                                          ),
+                                          child: Text(
+                                            _tabs[i],
+                                            style: PodcastType.label,
+                                          ),
+                                        ),
                                       ),
-                                      child: Text(
-                                        _tabs[i],
-                                        style: PodcastType.label,
+                                      IgnorePointer(
+                                        child: Container(
+                                          key: ValueKey(
+                                            'podcast-tab-indicator-$i',
+                                          ),
+                                          height: 2,
+                                          width: 18,
+                                          color: _tab == i
+                                              ? AppTokens.text1
+                                              : Colors.transparent,
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                  IgnorePointer(
-                                    child: Container(
-                                      key: ValueKey('podcast-tab-indicator-$i'),
-                                      height: 2,
-                                      width: 18,
-                                      color: _tab == i
-                                          ? AppTokens.text1
-                                          : Colors.transparent,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                          ],
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                    if (_tab == 5) ...[
-                      if (runtime.playlist?.canUndoQueueAddition ?? false)
-                        PlaybackQueueUndoAdditionButton(
-                          queue: runtime.playlist!,
+                      if (_tab == 5) ...[
+                        if (runtime.playlist?.canUndoQueueAddition ?? false)
+                          PlaybackQueueUndoAdditionButton(
+                            queue: runtime.playlist!,
+                          ),
+                        const SizedBox(width: 4),
+                        PlaybackQueueSortControls(
+                          canReverse: episodes.length > 1,
+                          canReset: runtime.playlist?.hasCustomOrder ?? false,
+                          compact:
+                              MediaQuery.sizeOf(context).width < 600 ||
+                              MediaQuery.textScalerOf(context).scale(14) > 18.2,
+                          color: AppTokens.text2,
+                          onReverse: () => runtime.reorderPodcastQueue(
+                            episodes.reversed
+                                .map((episode) => episode.id)
+                                .toList(),
+                          ),
+                          onReset: runtime.resetQueueOrder,
                         ),
-                      const SizedBox(width: 4),
-                      PlaybackQueueSortControls(
-                        canReverse: episodes.length > 1,
-                        canReset: runtime.playlist?.hasCustomOrder ?? false,
-                        compact:
-                            MediaQuery.sizeOf(context).width < 600 ||
-                            MediaQuery.textScalerOf(context).scale(14) > 18.2,
-                        color: AppTokens.text2,
-                        onReverse: () => runtime.reorderPodcastQueue(
-                          episodes.reversed
-                              .map((episode) => episode.id)
-                              .toList(),
-                        ),
-                        onReset: runtime.resetQueueOrder,
-                      ),
-                      const SizedBox(width: 14),
+                        const SizedBox(width: 14),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-                actions: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DesktopButtonClickRegion(
-                      child: IconButton(
-                        tooltip: runtime.controller.refreshing.isEmpty
-                            ? '检查更新'
-                            : '正在检查更新',
-                        onPressed: runtime.controller.refreshing.isEmpty
-                            ? () => runtime.refresh(manual: true)
-                            : null,
-                        icon: const Icon(Icons.refresh_rounded),
+                actions: MediaLibrarySpatialNavigationGroup(
+                  group: _headerFocusGroup,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DesktopButtonClickRegion(
+                        child: IconButton(
+                          tooltip: runtime.controller.refreshing.isEmpty
+                              ? '检查更新'
+                              : '正在检查更新',
+                          onPressed: runtime.controller.refreshing.isEmpty
+                              ? () => runtime.refresh(manual: true)
+                              : null,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
                       ),
-                    ),
-                    DesktopButtonClickRegion(
-                      child: IconButton(
-                        tooltip: '搜索与导入',
-                        onPressed: _openDiscover,
-                        icon: const Icon(Icons.add_rounded),
+                      DesktopButtonClickRegion(
+                        child: IconButton(
+                          tooltip: '搜索与导入',
+                          onPressed: _openDiscover,
+                          icon: const Icon(Icons.add_rounded),
+                        ),
                       ),
-                    ),
-                    DesktopButtonClickRegion(
-                      child: IconButton(
-                        tooltip: '播客设置',
-                        onPressed: () => _openSettings(context),
-                        icon: const Icon(Icons.tune_rounded),
+                      DesktopButtonClickRegion(
+                        child: IconButton(
+                          tooltip: '播客设置',
+                          onPressed: () => _openSettings(context),
+                          icon: const Icon(Icons.tune_rounded),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             if (_status != null)
@@ -518,128 +559,144 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
                       overviewController: _overviewController,
                       selectionManagedByHost: widget.controller != null,
                     )
-                  : MediaLibraryScrollViewport(
-                      controller: _scrollForTab(_tab),
-                      isActive: widget.isActive,
-                      bottomObstruction: widget.bottomPadding,
-                      child: episodes.isEmpty
-                          ? PodcastEmpty(
-                              title: switch (_tab) {
-                                1 => '暂时没有新节目',
-                                2 => '还没有未听完的节目',
-                                3 => '还没有收藏',
-                                4 => '还没有下载',
-                                _ => '队列是空的',
-                              },
-                              message: _tab == 4
-                                  ? '在节目菜单中下载完整音频或视频，也可以为频道开启自动下载。'
-                                  : '可以从已订阅频道中选择节目。',
-                            )
-                          : _tab == 5
-                          ? PlaybackQueueListView(
-                              controller: _scrollForTab(5),
-                              padding: EdgeInsets.only(
-                                bottom: widget.bottomPadding,
-                              ),
-                              itemCount: episodes.length,
-                              onReorderStart: (_) =>
-                                  _dragEpisodes = List.of(episodes),
-                              onReorder: (oldIndex, newIndex) {
-                                final reordered = [
-                                  ...(_dragEpisodes ?? episodes),
-                                ];
-                                if (oldIndex < 0 ||
-                                    oldIndex >= reordered.length ||
-                                    newIndex < 0 ||
-                                    newIndex >= reordered.length) {
-                                  return;
-                                }
-                                final moved = reordered.removeAt(oldIndex);
-                                reordered.insert(newIndex, moved);
-                                // Keep local files and other sources sitting in the same queue.
-                                // Only the podcast members move, and the queue becomes custom
-                                // so a later channel sort does not put them back.
-                                runtime.reorderPodcastQueue(
-                                  reordered
-                                      .map((episode) => episode.id)
-                                      .toList(),
-                                );
-                                _dragEpisodes = null;
-                                setState(() {});
-                              },
-                              itemBuilder: (_, i) => Row(
-                                key: ValueKey(episodes[i].id),
-                                children: [
-                                  PlaybackQueueDragHandle(
-                                    key: ValueKey(
-                                      'podcast-queue-drag-${episodes[i].id}',
+                  : MediaLibraryKeyboardRegion(
+                      surface: () => 'podcast-overview-$_tab',
+                      orderedIds: () => episodes.map((e) => e.id).toList(),
+                      selectionMode: () => false,
+                      selectedIds: () => <String>{},
+                      onSelectionChanged: (_) {},
+                      child: MediaLibraryScrollViewport(
+                        controller: _scrollForTab(_tab),
+                        isActive: widget.isActive,
+                        bottomObstruction: widget.bottomPadding,
+                        child: episodes.isEmpty
+                            ? PodcastEmpty(
+                                bottomPadding: widget.bottomPadding,
+                                title: switch (_tab) {
+                                  1 => '暂时没有新节目',
+                                  2 => '还没有未听完的节目',
+                                  3 => '还没有收藏',
+                                  4 => '还没有下载',
+                                  _ => '队列是空的',
+                                },
+                                message: _tab == 4
+                                    ? '在节目菜单中下载完整音频或视频，也可以为频道开启自动下载。'
+                                    : '可以从已订阅频道中选择节目。',
+                              )
+                            : _tab == 5
+                            ? PlaybackQueueListView(
+                                controller: _scrollForTab(5),
+                                padding: EdgeInsets.only(
+                                  bottom: widget.bottomPadding,
+                                ),
+                                itemCount: episodes.length,
+                                onReorderStart: (_) =>
+                                    _dragEpisodes = List.of(episodes),
+                                onReorder: (oldIndex, newIndex) {
+                                  final reordered = [
+                                    ...(_dragEpisodes ?? episodes),
+                                  ];
+                                  if (oldIndex < 0 ||
+                                      oldIndex >= reordered.length ||
+                                      newIndex < 0 ||
+                                      newIndex >= reordered.length) {
+                                    return;
+                                  }
+                                  final moved = reordered.removeAt(oldIndex);
+                                  reordered.insert(newIndex, moved);
+                                  // Keep local files and other sources sitting in the same queue.
+                                  // Only the podcast members move, and the queue becomes custom
+                                  // so a later channel sort does not put them back.
+                                  runtime.reorderPodcastQueue(
+                                    reordered
+                                        .map((episode) => episode.id)
+                                        .toList(),
+                                  );
+                                  _dragEpisodes = null;
+                                  setState(() {});
+                                },
+                                itemBuilder: (_, i) => Row(
+                                  key: ValueKey(episodes[i].id),
+                                  children: [
+                                    PlaybackQueueDragHandle(
+                                      key: ValueKey(
+                                        'podcast-queue-drag-${episodes[i].id}',
+                                      ),
+                                      index: i,
+                                      isCurrent:
+                                          runtime
+                                              .playback
+                                              ?.currentItem
+                                              ?.sourceRef
+                                              ?.podcast
+                                              ?.episodeId ==
+                                          episodes[i].id,
+                                      title: runtime.episodeTitle(episodes[i]),
+                                      color: AppTokens.text3,
+                                      numberColor: AppTokens.text2,
+                                      enabled: episodes.length > 1,
+                                      onMoveUp: i > 0
+                                          ? () {
+                                              final reordered = [...episodes];
+                                              final moved = reordered.removeAt(
+                                                i,
+                                              );
+                                              reordered.insert(i - 1, moved);
+                                              runtime.reorderPodcastQueue(
+                                                reordered
+                                                    .map(
+                                                      (episode) => episode.id,
+                                                    )
+                                                    .toList(),
+                                              );
+                                            }
+                                          : null,
+                                      onMoveDown: i < episodes.length - 1
+                                          ? () {
+                                              final reordered = [...episodes];
+                                              final moved = reordered.removeAt(
+                                                i,
+                                              );
+                                              reordered.insert(i + 1, moved);
+                                              runtime.reorderPodcastQueue(
+                                                reordered
+                                                    .map(
+                                                      (episode) => episode.id,
+                                                    )
+                                                    .toList(),
+                                              );
+                                            }
+                                          : null,
                                     ),
-                                    index: i,
-                                    isCurrent:
-                                        runtime
-                                            .playback
-                                            ?.currentItem
-                                            ?.sourceRef
-                                            ?.podcast
-                                            ?.episodeId ==
-                                        episodes[i].id,
-                                    title: runtime.episodeTitle(episodes[i]),
-                                    color: AppTokens.text3,
-                                    numberColor: AppTokens.text2,
-                                    enabled: episodes.length > 1,
-                                    onMoveUp: i > 0
-                                        ? () {
-                                            final reordered = [...episodes];
-                                            final moved = reordered.removeAt(i);
-                                            reordered.insert(i - 1, moved);
-                                            runtime.reorderPodcastQueue(
-                                              reordered
-                                                  .map((episode) => episode.id)
-                                                  .toList(),
-                                            );
-                                          }
-                                        : null,
-                                    onMoveDown: i < episodes.length - 1
-                                        ? () {
-                                            final reordered = [...episodes];
-                                            final moved = reordered.removeAt(i);
-                                            reordered.insert(i + 1, moved);
-                                            runtime.reorderPodcastQueue(
-                                              reordered
-                                                  .map((episode) => episode.id)
-                                                  .toList(),
-                                            );
-                                          }
-                                        : null,
-                                  ),
-                                  Expanded(
-                                    child: PodcastEpisodeTile(
-                                      episode: episodes[i],
-                                      queue: episodes,
-                                      onRemoveFromQueue: () => runtime
-                                          .removeFromQueue(episodes[i].id),
-                                      onError: (s) =>
-                                          setState(() => _status = s),
+                                    Expanded(
+                                      child: PodcastEpisodeTile(
+                                        episode: episodes[i],
+                                        queue: episodes,
+                                        onRemoveFromQueue: () => runtime
+                                            .removeFromQueue(episodes[i].id),
+                                        onError: (s) =>
+                                            setState(() => _status = s),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
+                              )
+                            : PodcastEpisodeList(
+                                key: ValueKey(_tab),
+                                controller: _scrollForTab(_tab),
+                                storageKey: ('podcast-overview', _tab),
+                                episodes: episodes,
+                                bottomPadding: widget.bottomPadding,
+                                onError: (s) => setState(() => _status = s),
                               ),
-                            )
-                          : PodcastEpisodeList(
-                              key: ValueKey(_tab),
-                              controller: _scrollForTab(_tab),
-                              storageKey: ('podcast-overview', _tab),
-                              episodes: episodes,
-                              bottomPadding: widget.bottomPadding,
-                              onError: (s) => setState(() => _status = s),
-                            ),
+                      ),
                     ),
             ),
           ],
         );
       },
     );
-    return PodcastPageShortcuts(
+    final shortcuts = PodcastPageShortcuts(
       enabled: widget.isActive,
       onEscape: () =>
           _subscriptionLibraryKey.currentState?.handleBack() ?? false,
@@ -686,6 +743,9 @@ class _PodcastOverviewPageState extends State<PodcastOverviewPage> {
               ),
       ),
     );
+    return widget.embedded
+        ? shortcuts
+        : MediaLibrarySpatialNavigation(child: shortcuts);
   }
 }
 
@@ -881,6 +941,7 @@ class _ChannelCard extends StatelessWidget {
             titleFontSize,
           );
           return MediaLibraryGridCard(
+            keyboardItemId: channel.id,
             radius: radius,
             isSelected: isSelected,
             isSelectionMode: isSelectionMode,
@@ -1234,7 +1295,7 @@ class PodcastEpisodeTile extends StatelessWidget {
           if (task?.status == PodcastDownloadStatus.completed) ...[
             const PodcastMenuAction(
               'export',
-              '导出媒体文件',
+              '导出媒体文件（遵守来源许可）',
               Icons.ios_share_rounded,
               section: '离线与存储',
             ),
@@ -1261,6 +1322,8 @@ class PodcastEpisodeTile extends StatelessWidget {
               borderRadius: corners,
               clipBehavior: Clip.antiAlias,
               child: PodcastEpisodePress(
+                keyboardItemId: episode.id,
+                selected: selected,
                 borderRadius: corners,
                 selecting: selecting,
                 onOpen: () =>
@@ -1275,15 +1338,23 @@ class PodcastEpisodeTile extends StatelessWidget {
                   ),
                   child: Builder(
                     builder: (context) {
-                      final play = PodcastIconButton(
-                        tooltip: '播放节目',
-                        onPressed: () =>
-                            openPodcastEpisode(context, episode, queue: queue),
-                        icon: const Icon(
-                          Icons.play_arrow_rounded,
-                          size: 24,
-                          color: AppTokens.text2,
+                      final play = MediaLibraryKeyboardDirectionalAction(
+                        child: PodcastIconButton(
+                          tooltip: '播放节目',
+                          onPressed: () => openPodcastEpisode(
+                            context,
+                            episode,
+                            queue: queue,
+                          ),
+                          icon: const Icon(
+                            Icons.play_arrow_rounded,
+                            size: 24,
+                            color: AppTokens.text2,
+                          ),
                         ),
+                      );
+                      final rowMenu = MediaLibraryKeyboardDirectionalAction(
+                        child: menu,
                       );
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1412,12 +1483,12 @@ class PodcastEpisodeTile extends StatelessWidget {
                             if (channelWide)
                               Row(
                                 mainAxisSize: MainAxisSize.min,
-                                children: [play, menu],
+                                children: [play, rowMenu],
                               )
                             else
                               Column(
                                 mainAxisSize: MainAxisSize.min,
-                                children: [play, menu],
+                                children: [play, rowMenu],
                               ),
                           ],
                         ],
@@ -1453,6 +1524,8 @@ class PodcastEpisodeTile extends StatelessWidget {
             borderRadius: corners,
             clipBehavior: Clip.antiAlias,
             child: PodcastEpisodePress(
+              keyboardItemId: episode.id,
+              selected: selected,
               borderRadius: corners,
               selecting: selecting,
               onOpen: () => openPodcastEpisode(context, episode, queue: queue),
@@ -1755,6 +1828,7 @@ class PodcastDiscoverPage extends StatefulWidget {
     this.targetFolderId,
     this.initialPreview,
     this.initialInput,
+    this.autoResolveInitialInput = false,
     this.initialQuery,
   });
   final String? targetFolderId;
@@ -1763,6 +1837,7 @@ class PodcastDiscoverPage extends StatefulWidget {
   /// preview; opening it does not subscribe or write the library.
   final PodcastResolution? initialPreview;
   final String? initialInput;
+  final bool autoResolveInitialInput;
 
   /// A query submitted from the home search scope selector.
   final String? initialQuery;
@@ -1818,6 +1893,16 @@ class _PodcastDiscoverPageState extends State<PodcastDiscoverPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _initialSearchWork.bind(ModalRoute.of(context));
+    if (!_initialSearchScheduled &&
+        widget.autoResolveInitialInput &&
+        widget.initialPreview == null &&
+        _url.text.trim().isNotEmpty) {
+      _initialSearchScheduled = true;
+      _initialSearchWork.schedule(
+        'initial-input',
+        () => unawaited(_resolve(_url.text)),
+      );
+    }
   }
 
   void _scheduleInitialSearch() {
@@ -1967,6 +2052,7 @@ class _PodcastDiscoverPageState extends State<PodcastDiscoverPage> {
   }
 
   Future<void> _resolve(String value) async {
+    _initialSearchWork.cancel('initial-input');
     value = value.trim();
     if (_previewRequest != null && _previewInput == value) return;
     _debounce?.cancel();

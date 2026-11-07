@@ -25,10 +25,6 @@ import 'library_rename_dialog.dart';
 import 'add_to_playlist_button.dart';
 import 'playback_queue_add_actions.dart';
 import 'transcription_queue_actions.dart';
-import '../features/media_cache/media_cache_actions.dart';
-import '../features/media_cache/media_cache_models.dart';
-import '../features/media_cache/media_cache_service.dart';
-import '../features/media_cache/media_cache_widgets.dart' show cacheUiAction;
 
 /// Rename / pin / hide / locate / recycle / export overflow for library cards.
 ///
@@ -179,9 +175,6 @@ class _MediaLibraryActivityMenuButtonState
     final sourceActions = SourceMediaFileActions();
     final canAccessSource =
         localMedia != null && sourceActions.pathFor(localMedia) != null;
-    final cacheSource = localMedia == null
-        ? null
-        : CacheSource.fromItem(localMedia);
     final items = <MediaLibraryAnchorMenuEntry>[
       const MediaLibraryAnchorMenuEntry(
         value: 'transcribe',
@@ -195,30 +188,6 @@ class _MediaLibraryActivityMenuButtonState
           label: AddToPlaylistButton.defaultLabel,
           icon: AddToPlaylistButton.icon,
           key: ValueKey('media-library-add-to-playlist'),
-        ),
-      if (MediaCacheService.instance != null &&
-          (cacheSource != null || widget.isCollection))
-        MediaLibraryAnchorMenuEntry(
-          value: 'cache',
-          label:
-              cacheSource != null &&
-                  MediaCacheService.instance!.hasCache(cacheSource.key)
-              ? '缓存其他画质'
-              : '缓存',
-          icon: CupertinoIcons.arrow_down_to_line,
-        ),
-      if (cacheSource != null &&
-          MediaCacheService.instance?.hasCache(cacheSource.key) == true)
-        const MediaLibraryAnchorMenuEntry(
-          value: 'delete_cache',
-          label: '删除所有缓存',
-          icon: CupertinoIcons.trash,
-        ),
-      if (cacheSource != null && MediaCacheService.instance != null)
-        const MediaLibraryAnchorMenuEntry(
-          value: 'manage_cache',
-          label: '管理缓存',
-          icon: CupertinoIcons.tray,
         ),
       const MediaLibraryAnchorMenuEntry(
         value: 'rename',
@@ -320,26 +289,6 @@ class _MediaLibraryActivityMenuButtonState
         return;
       case 'add_to_playlist':
         await addLibrarySelectionToQueue(context, [widget.targetId]);
-        return;
-      case 'manage_cache':
-        final item = library.getVideo(widget.targetId);
-        final source = item == null ? null : CacheSource.fromItem(item);
-        if (source != null) {
-          await cacheUiAction(() => showCacheQualities(context, source));
-        }
-        return;
-      case 'cache':
-        final item = library.getVideo(widget.targetId);
-        if (item != null) {
-          await cacheSingleMedia(context, item);
-        } else {
-          await cacheLibrarySelection(context, library, [widget.targetId]);
-        }
-        return;
-      case 'delete_cache':
-        final item = library.getVideo(widget.targetId);
-        final source = item == null ? null : CacheSource.fromItem(item);
-        if (source != null) await deleteCacheSources(context, [source]);
         return;
       case 'rename':
         final name = widget.isCollection

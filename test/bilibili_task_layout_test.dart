@@ -120,12 +120,10 @@ void main() {
     dataRoot = await Directory.systemTemp.createTemp('bilibili_layout_');
     PathProviderPlatform.instance = _LayoutPathProvider(dataRoot.path);
     if (preview) {
-      // Load the actual bundled family, including its weight metadata.
-      for (final font in ['Light', 'Regular', 'Medium', 'Semibold', 'Bold']) {
-        await (FontLoader(
-          'MiSans',
-        )..addFont(rootBundle.load('assets/fonts/MiSans-$font.otf'))).load();
-      }
+      // A single variable face supplies the real bundled weights.
+      await (FontLoader('Noto Sans SC')
+            ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf')))
+          .load();
       await (FontLoader(
         'MaterialIcons',
       )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
@@ -156,7 +154,7 @@ void main() {
     final baseTheme = ThemeData.dark(useMaterial3: true);
     // Mirror the app's light body default to verify the page overrides it.
     final lightText = baseTheme.textTheme.apply(
-      fontFamily: preview ? 'MiSans' : null,
+      fontFamily: preview ? 'Noto Sans SC' : null,
     );
     await tester.pumpWidget(
       MultiProvider(

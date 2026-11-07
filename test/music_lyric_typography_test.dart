@@ -36,6 +36,22 @@ void main() {
       expect(accessible.supportGap, closeTo(phone.supportGap * 1.8, 0.001));
       expect(MusicLyricTypography.normalizeFontSizeScale(double.nan), 1);
       expect(MusicLyricTypography.normalizeSpacingScale(double.infinity), 1);
+      // Ratio 1 is the previous built-in pairing. Larger ratios scale only
+      // the secondary line, and the slider range stays finite.
+      final phoneBase = (const Size(320, 640).height * 0.045).clamp(20.0, 44.0);
+      expect(
+        phone.secondaryFontSize,
+        closeTo((phoneBase * 0.48).clamp(12.0, 22.0), 0.001),
+      );
+      final doubled = MusicLyricTypography.resolve(
+        viewport: const Size(320, 640),
+        secondaryRatio: 2,
+      );
+      expect(doubled.primaryFontSize, phone.primaryFontSize);
+      expect(doubled.secondaryFontSize, closeTo(phone.secondaryFontSize * 2, 0.001));
+      expect(MusicLyricTypography.normalizeSecondaryRatio(0), 0.35);
+      expect(MusicLyricTypography.normalizeSecondaryRatio(9), 2.8);
+      expect(MusicLyricTypography.normalizeSecondaryRatio(double.nan), 1);
     },
   );
 

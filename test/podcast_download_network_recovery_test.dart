@@ -75,6 +75,7 @@ void main() {
       length: payload.length,
     );
     episode = PodcastEpisode(
+      sourceFeedUrl: 'https://publisher.test/rss',
       id: 'episode',
       channelId: 'channel',
       title: 'Episode',

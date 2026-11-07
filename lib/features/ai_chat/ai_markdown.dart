@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:url_launcher/url_launcher.dart';
+import '../../services/app_web_navigation.dart';
 import 'ai_math.dart';
 import 'ai_math_syntax.dart';
 import 'ai_math_table_syntax.dart';
 import 'ai_markdown_emphasis.dart';
 import 'ai_chat_typography.dart';
+import '../../theme/app_typography.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 /// GFM is parsed by the maintained Flutter Markdown implementation. The app
@@ -108,12 +109,7 @@ class _AiMarkdownState extends State<AiMarkdown> {
       return;
     }
     try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && context.mounted) {
-        ScaffoldMessenger.maybeOf(
-          context,
-        )?.showSnackBar(const SnackBar(content: Text('无法打开链接')));
-      }
+      await AppWebNavigation.open(context, uri);
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.maybeOf(
@@ -173,20 +169,27 @@ class _AiMarkdownState extends State<AiMarkdown> {
       onTapLink: (text, href, title) => _openLink(context, href),
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         p: typography.bodyStyle.copyWith(color: colors.onSurface),
+        // SemiBold emphasis avoids the heavy ink of a full CJK w700 bold,
+        // which reads as visual noise inside long answers (mainstream chat
+        // UIs cap prose emphasis at 500–600).
+        strong: const TextStyle(fontWeight: AppFontWeight.heading),
         h1: TextStyle(
           color: colors.onSurface,
           fontSize: typography.heading1,
           fontWeight: FontWeight.w600,
+          height: 1.3,
         ),
         h2: TextStyle(
           color: colors.onSurface,
           fontSize: typography.heading2,
           fontWeight: FontWeight.w600,
+          height: 1.3,
         ),
         h3: TextStyle(
           color: colors.onSurface,
           fontSize: typography.heading3,
           fontWeight: FontWeight.w600,
+          height: 1.3,
         ),
         a: TextStyle(color: colors.primary, decoration: TextDecoration.none),
         h4: typography.bodyStyle.copyWith(fontWeight: FontWeight.w600),
@@ -296,7 +299,7 @@ class _StableLinkBuilder extends MarkdownElementBuilder {
       }
       final child = node as md.Element;
       final style = switch (child.tag) {
-        'strong' => const TextStyle(fontWeight: FontWeight.bold),
+        'strong' => const TextStyle(fontWeight: AppFontWeight.heading),
         'em' => const TextStyle(fontStyle: FontStyle.italic),
         'del' => const TextStyle(decoration: TextDecoration.lineThrough),
         'code' => TextStyle(

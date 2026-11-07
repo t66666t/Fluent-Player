@@ -40,7 +40,7 @@ class LinuxLaunchersTests(unittest.TestCase):
             root = Path(temporary)
             app, env = self.fixture(root)
             (app / 'lib/libmpv.so.2').write_bytes(b'not an ELF: shell protocol fixture only')
-            stub = app / 'video_player_app'
+            stub = app / 'fluent-player'
             stub.write_text('#!/bin/sh\nprintf "%s\\n" "$LIBMPV_LIBRARY_PATH" "$1" "${LD_LIBRARY_PATH-unset}"\n',
                             encoding='utf-8', newline='\n')
             stub.chmod(0o755)
@@ -55,10 +55,10 @@ class LinuxLaunchersTests(unittest.TestCase):
             app, env = self.fixture(root)
             subprocess.run([BASH, str(app / 'install-desktop.sh')], env=env,
                            check=True, stdout=subprocess.DEVNULL)
-            text = (root / 'desktop/applications/io.github.t66666t.FluentPlayer.desktop').read_text(encoding='utf-8')
-            self.assertIn('StartupWMClass=io.github.t66666t.FluentPlayer', text)
+            text = (root / 'desktop/applications/cn.teezy.fluentplayer.standard.desktop').read_text(encoding='utf-8')
+            self.assertIn('StartupWMClass=cn.teezy.fluentplayer.standard', text)
             self.assertIn('%%', text)
-            self.assertIn(r'\$', text)
+            self.assertIn(r'\\$', text)
             self.assertIn('Exec="', text)
 
 

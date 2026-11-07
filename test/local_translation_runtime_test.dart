@@ -15,7 +15,12 @@ import 'package:video_player_app/features/model_center/translation_inference.dar
 import 'package:video_player_app/services/app_storage_service.dart';
 
 class _RuntimeCenter extends ModelCenterService {
-  _RuntimeCenter(this.model, this.directory, {required super.storage});
+  _RuntimeCenter(this.model, this.directory, {required super.storage}) {
+    catalog = [model];
+    downloads[model.id] = ModelDownload(
+      artifactId: model.id, phase: ModelDownloadPhase.installed,
+    );
+  }
   final ModelArtifact model;
   final Directory directory;
   @override

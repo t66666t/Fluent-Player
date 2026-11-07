@@ -25,53 +25,6 @@ namespace flutter_inappwebview_plugin
 {
   using namespace Microsoft::WRL;
 
-  namespace {
-    struct PassiveNetworkState {
-      bool available = false;
-      // Keep canonical COM identities alive until response matching, preventing
-      // a freed request object's address from being reused by a later request.
-      std::map<std::string, wil::com_ptr<IUnknown>> requests;
-      std::map<std::string, std::string> responseSignatures;
-    };
-    std::map<const InAppWebView*, PassiveNetworkState> passiveNetworkStates;
-
-    std::string networkRequestKey(ICoreWebView2WebResourceRequest* request, const std::string& url,
-      wil::com_ptr<IUnknown>& identity)
-    {
-      if (!request || FAILED(request->QueryInterface(IID_PPV_ARGS(&identity))) || !identity) {
-        return {};
-      }
-      return std::to_string(reinterpret_cast<std::uintptr_t>(identity.get())) + "\n" + url;
-    }
-
-    bool mediaSegment(const std::string& lowerUrl, const std::string& lowerMime)
-    {
-      auto path = lowerUrl.substr(0, lowerUrl.find_first_of("?#"));
-      const auto parameter = path.find(';', path.rfind('/'));
-      if (parameter != std::string::npos) path.resize(parameter);
-      for (const auto suffix : { ".ts", ".m4s", ".cmfv", ".cmfa" }) {
-        const auto length = std::strlen(suffix);
-        if (path.size() >= length && path.compare(path.size() - length, length, suffix) == 0) return true;
-      }
-      auto mime = lowerMime.substr(0, lowerMime.find(';'));
-      while (!mime.empty() && std::isspace(static_cast<unsigned char>(mime.back()))) mime.pop_back();
-      const auto first = mime.find_first_not_of(" \t\r\n");
-      if (first != std::string::npos) mime.erase(0, first);
-      return mime == "video/mp2t" || mime == "video/iso.segment" || mime == "audio/iso.segment";
-    }
-
-    std::string nativeTotalSize(const nlohmann::json& headers, int status)
-    {
-      const auto range = headers.value("Content-Range", std::string{});
-      const auto slash = range.rfind('/');
-      auto total = slash == std::string::npos ? std::string{} : range.substr(slash + 1);
-      while (!total.empty() && std::isspace(static_cast<unsigned char>(total.back()))) total.pop_back();
-      const auto digits = [](unsigned char c) { return std::isdigit(c) != 0; };
-      if (!total.empty() && std::all_of(total.begin(), total.end(), digits)) return total;
-      return status == 200 ? headers.value("Content-Length", std::string{}) : std::string{};
-    }
-  }
-
   InAppWebView::InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow, wil::com_ptr<ICoreWebView2Environment> webViewEnv,
     wil::com_ptr<ICoreWebView2Controller> webViewController,
     wil::com_ptr<ICoreWebView2CompositionController> webViewCompositionController)
@@ -328,6 +281,45 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
+    // WebView2 otherwise owns an automatic download/save path. For the app's
+    // guarded pages, cancel synchronously before notifying Dart. Never inspect
+    // the download URL, headers, filename, response or proposed destination.
+    wil::com_ptr<ICoreWebView2_4> downloadWebView;
+    const std::weak_ptr<bool> downloadLifetime = downloadLifetime_;
+    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&downloadWebView)))) {
+      downloadCancellationReady_ = SUCCEEDED(downloadWebView->add_DownloadStarting(
+        Callback<ICoreWebView2DownloadStartingEventHandler>(
+          [this, downloadLifetime](ICoreWebView2* sender, ICoreWebView2DownloadStartingEventArgs* args)
+          {
+            const auto lifetime = downloadLifetime.lock();
+            if (!lifetime || !*lifetime) {
+              args->put_Cancel(TRUE);
+              args->put_Handled(TRUE);
+              return S_OK;
+            }
+            if (!settings || !settings->useOnDownloadStart) return S_OK;
+            const auto cancelResult = args->put_Cancel(TRUE);
+            const auto handledResult = args->put_Handled(TRUE);
+            BOOL cancelled = FALSE, handled = FALSE;
+            const auto cancelRead = args->get_Cancel(&cancelled);
+            const auto handledRead = args->get_Handled(&handled);
+            if (SUCCEEDED(cancelResult) && SUCCEEDED(handledResult) &&
+              SUCCEEDED(cancelRead) && SUCCEEDED(handledRead) && cancelled && handled) {
+              if (channelDelegate) channelDelegate->onDownloadBlocked();
+            }
+            else {
+              // A notification is not proof of cancellation. On an unusual COM
+              // failure, cancel the operation itself without reading its data.
+              wil::com_ptr<ICoreWebView2DownloadOperation> operation;
+              if (SUCCEEDED(args->get_DownloadOperation(&operation)) && operation) {
+                operation->Cancel();
+              }
+              webView->Stop();
+            }
+            return S_OK;
+          }).Get(), &downloadStartingToken_));
+    }
+
     wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> fetchRequestPausedEventReceiver;
 
     if (succeededOrLog(webView->GetDevToolsProtocolEventReceiver(L"Fetch.requestPaused", &fetchRequestPausedEventReceiver))) {
@@ -472,6 +464,10 @@ namespace flutter_inappwebview_plugin
       Callback<ICoreWebView2NavigationStartingEventHandler>(
         [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
         {
+          if (settings && settings->useOnDownloadStart && !downloadCancellationReady_) {
+            args->put_Cancel(TRUE);
+            return S_OK;
+          }
           isLoading_ = true;
 
           if (!channelDelegate) {
@@ -481,9 +477,6 @@ namespace flutter_inappwebview_plugin
 
           wil::unique_cotaskmem_string uri = nullptr;
           std::optional<std::string> url = SUCCEEDED(args->get_Uri(&uri)) ? wide_to_utf8(uri.get()) : std::optional<std::string>{};
-          networkDocumentUrl_ = url.value_or("");
-          pendingNetworkResponses_.clear();
-          passiveNetworkStates[this].responseSignatures.clear();
 
           wil::unique_cotaskmem_string requestMethod = nullptr;
           wil::com_ptr<ICoreWebView2HttpRequestHeaders> requestHeaders = nullptr;
@@ -654,7 +647,6 @@ namespace flutter_inappwebview_plugin
     failedLog(webView->add_HistoryChanged(Callback<ICoreWebView2HistoryChangedEventHandler>(
       [this](ICoreWebView2* sender, IUnknown* args)
       {
-        networkDocumentUrl_ = getUrl().value_or(networkDocumentUrl_);
         if (channelDelegate) {
           std::optional<bool> isReload = std::nullopt;
           if (lastNavigationAction_ && lastNavigationAction_->navigationType.has_value()) {
@@ -711,7 +703,10 @@ namespace flutter_inappwebview_plugin
                       delete window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "]; \
                     }", ContentWorld::page(), nullptr);
                 };
-              channelDelegate->onCallJsHandler(handlerName, handlerArgs, std::move(callback));
+              wil::unique_cotaskmem_string source;
+              args->get_Source(&source);
+              channelDelegate->onCallJsHandler(handlerName, handlerArgs,
+                source ? wide_to_utf8(source.get()) : std::string{}, std::move(callback));
             }
           }
         }
@@ -883,12 +878,15 @@ namespace flutter_inappwebview_plugin
       }
     ).Get(), nullptr));
 
-    failedLog(webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL));
+    // Community interception only serves an application's HTML document. Media,
+    // scripts and other subresources stay entirely inside WebView2 networking.
+    failedLog(webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT));
     failedLog(webView->add_WebResourceRequested(
       Callback<ICoreWebView2WebResourceRequestedEventHandler>(
         [this](
           ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args)
         {
+          if (!settings->useShouldInterceptRequest) return S_OK;
           wil::com_ptr<ICoreWebView2Deferral> deferral;
           wil::com_ptr<ICoreWebView2WebResourceRequest> webResourceRequest;
           if (channelDelegate && succeededOrLog(args->get_Request(&webResourceRequest))) {
@@ -897,25 +895,14 @@ namespace flutter_inappwebview_plugin
             // The add_WebResourceRequested event is by default raised for file, http, and https URI schemes.
             // This is also raised for registered custom URI schemes.
             // https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2?view=webview2-1.0.2792.45#add_webresourcerequested
-            if (!url.empty()) {
-              auto& state = passiveNetworkStates[this];
-              wil::com_ptr<IUnknown> identity;
-              const auto key = networkRequestKey(webResourceRequest.get(), url, identity);
-              if (networkRequestPages_.size() >= 512 && !map_contains(networkRequestPages_, key)) {
-                state.requests.erase(networkRequestPages_.begin()->first);
-                networkRequestPages_.erase(networkRequestPages_.begin());
-              }
-              if (!key.empty() && !networkDocumentUrl_.empty()) {
-                networkRequestPages_[key] = networkDocumentUrl_;
-                state.requests[key] = std::move(identity);
-              }
-            }
             auto isCustomScheme = !url.empty() && !starts_with(url, std::string{ "file://" }) && !starts_with(url, std::string{ "http://" }) && !starts_with(url, std::string{ "https://" });
-            // Passive observation does not need a request deferral, a Dart
-            // callback, or a copy of every image/script's request headers.
+            // Only explicit document/custom-scheme responses need a Dart callback.
             if (!settings->useShouldInterceptRequest && !isCustomScheme) return S_OK;
             if (failedAndLog(args->GetDeferral(&deferral))) return S_OK;
-            auto request = std::make_shared<WebResourceRequest>(webResourceRequest);
+            // Serving our own document does not require request headers,
+            // authentication or cookies. Do not copy those into the Dart bridge.
+            auto request = std::make_shared<WebResourceRequest>(url,
+              std::nullopt, std::nullopt, true);
 
             auto onLoadResourceWithCustomSchemeCallback = [this, deferral, request, args]()
               {
@@ -987,115 +974,6 @@ namespace flutter_inappwebview_plugin
 
     wil::com_ptr<ICoreWebView2_2> webView2;
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
-      // Reading response headers never defers the request or copies its body.
-      // Unlike page JavaScript, this sees opaque CDN URLs and child-frame media.
-      const auto responseObservationResult = webView2->add_WebResourceResponseReceived(
-        Callback<ICoreWebView2WebResourceResponseReceivedEventHandler>(
-          [this](ICoreWebView2* sender, ICoreWebView2WebResourceResponseReceivedEventArgs* args)
-          {
-            wil::com_ptr<ICoreWebView2WebResourceRequest> nativeRequest;
-            wil::com_ptr<ICoreWebView2WebResourceResponseView> response;
-            if (FAILED(args->get_Request(&nativeRequest)) || FAILED(args->get_Response(&response)) || !nativeRequest || !response) {
-              return S_OK;
-            }
-            wil::unique_cotaskmem_string nativeUrl, nativeMethod;
-            if (FAILED(nativeRequest->get_Uri(&nativeUrl)) || FAILED(nativeRequest->get_Method(&nativeMethod))) return S_OK;
-            const auto url = wide_to_utf8(nativeUrl.get());
-            auto& state = passiveNetworkStates[this];
-            wil::com_ptr<IUnknown> identity;
-            const auto key = networkRequestKey(nativeRequest.get(), url, identity);
-            const auto page = networkRequestPages_.find(key);
-            const auto pageUrl = page == networkRequestPages_.end() ? std::string{} : page->second;
-            if (page != networkRequestPages_.end()) networkRequestPages_.erase(page);
-            state.requests.erase(key);
-            if (wide_to_utf8(nativeMethod.get()) != "GET") return S_OK;
-            int status = 0;
-            if (FAILED(response->get_StatusCode(&status)) || (status != 200 && status != 206 && status != 304)) {
-              return S_OK;
-            }
-            wil::com_ptr<ICoreWebView2HttpResponseHeaders> headers;
-            if (FAILED(response->get_Headers(&headers)) || !headers) {
-              return S_OK;
-            }
-            nlohmann::json responseHeaders = nlohmann::json::object();
-            for (const auto name : { L"Content-Type", L"Content-Length", L"Content-Range", L"Content-Disposition" }) {
-              wil::unique_cotaskmem_string value;
-              if (SUCCEEDED(headers->GetHeader(name, &value)) && value) {
-                responseHeaders[wide_to_utf8(name)] = wide_to_utf8(value.get());
-              }
-            }
-            auto mime = responseHeaders.value("Content-Type", std::string{});
-            auto lowerMime = mime;
-            auto lowerUrl = url;
-            auto lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
-            std::transform(lowerMime.begin(), lowerMime.end(), lowerMime.begin(), lower);
-            std::transform(lowerUrl.begin(), lowerUrl.end(), lowerUrl.begin(), lower);
-            if (mediaSegment(lowerUrl, lowerMime)) return S_OK;
-            const auto candidate = starts_with(lowerMime, std::string{"video/"}) || starts_with(lowerMime, std::string{"audio/"}) ||
-              lowerMime.find("mpegurl") != std::string::npos || lowerMime.find("dash+xml") != std::string::npos ||
-              lowerMime.find("octet-stream") != std::string::npos ||
-              !responseHeaders.value("Content-Disposition", std::string{}).empty() ||
-              lowerUrl.find(".mp4") != std::string::npos || lowerUrl.find(".m3u8") != std::string::npos ||
-              lowerUrl.find(".mpd") != std::string::npos || lowerUrl.find(".webm") != std::string::npos ||
-              lowerUrl.find(".m4a") != std::string::npos;
-            if (!candidate) {
-              return S_OK;
-            }
-            auto request = WebResourceRequest(nativeRequest);
-            auto sourcePage = pageUrl;
-            if (sourcePage.empty()) {
-              // Some runtime versions wrap request COM objects separately in
-              // the two callbacks. Accept only an exact full-page Referer in
-              // that case; a URL-only lookup/current-page guess is ambiguous.
-              auto currentPage = networkDocumentUrl_;
-              currentPage.resize(currentPage.find('#') == std::string::npos ? currentPage.size() : currentPage.find('#'));
-              if (request.headers.has_value()) {
-                for (const auto& header : request.headers.value()) {
-                  auto name = header.first;
-                  std::transform(name.begin(), name.end(), name.begin(), lower);
-                  if (name == "referer" && header.second == currentPage && !currentPage.empty()) sourcePage = networkDocumentUrl_;
-                }
-              }
-            }
-            if (sourcePage.empty() || sourcePage != networkDocumentUrl_) return S_OK;
-            nlohmann::json requestHeaders = nlohmann::json::object();
-            nlohmann::json signatureHeaders = nlohmann::json::object();
-            if (request.headers.has_value()) {
-              requestHeaders = request.headers.value();
-              for (const auto& header : request.headers.value()) {
-                auto name = header.first;
-                std::transform(name.begin(), name.end(), name.begin(), lower);
-                if (name != "range") signatureHeaders[name] = header.second;
-              }
-            }
-            const auto signature = nlohmann::json{
-              {"headers", signatureHeaders}, {"mime", lowerMime}, {"total", nativeTotalSize(responseHeaders, status)},
-              {"filename", responseHeaders.value("Content-Disposition", std::string{})}
-            }.dump();
-            const auto signatureKey = sourcePage + "\n" + url;
-            const auto previous = state.responseSignatures.find(signatureKey);
-            if (previous != state.responseSignatures.end() && previous->second == signature) return S_OK;
-            if (state.responseSignatures.size() >= 256 && previous == state.responseSignatures.end()) state.responseSignatures.erase(state.responseSignatures.begin());
-            state.responseSignatures[signatureKey] = signature;
-            const auto data = nlohmann::json{
-              {"pageUrl", sourcePage},
-              {"request", {{"url", url}, {"method", "GET"}, {"headers", requestHeaders}}},
-              {"response", {{"url", url}, {"status", status}, {"mimeType", mime}, {"headers", responseHeaders}}}
-            }.dump();
-            if (networkResponseObserverEnabled_ && channelDelegate) {
-              channelDelegate->onDevToolsProtocolEventReceived("Fluent.webResourceResponseReceived", data);
-            }
-            else {
-              if (pendingNetworkResponses_.size() >= 64) {
-                pendingNetworkResponses_.erase(pendingNetworkResponses_.begin());
-              }
-              pendingNetworkResponses_.push_back(data);
-            }
-            return S_OK;
-          }
-        ).Get(), nullptr);
-      failedLog(responseObservationResult);
-      passiveNetworkStates[this].available = SUCCEEDED(responseObservationResult);
       failedLog(webView2->add_DOMContentLoaded(
         Callback<ICoreWebView2DOMContentLoadedEventHandler>(
           [this](ICoreWebView2* sender, ICoreWebView2DOMContentLoadedEventArgs* args)
@@ -1655,9 +1533,11 @@ namespace flutter_inappwebview_plugin
   void InAppWebView::callDevToolsProtocolMethod(const std::string& methodName, const std::optional<std::string>& parametersAsJson, const std::function<void(const HRESULT& errorCode, const std::optional<std::string>&)> completionHandler) const
   {
     if (methodName == "Fluent.getNetworkObserverCapabilities") {
-      const auto state = passiveNetworkStates.find(this);
-      const auto passive = state != passiveNetworkStates.end() && state->second.available;
-      if (completionHandler) completionHandler(S_OK, nlohmann::json{{"passive", passive}}.dump());
+      if (completionHandler) completionHandler(S_OK, nlohmann::json{{"passive", false}}.dump());
+      return;
+    }
+    if (starts_with(methodName, std::string{"Network."}) || starts_with(methodName, std::string{"Fetch."})) {
+      if (completionHandler) completionHandler(E_ACCESSDENIED, std::nullopt);
       return;
     }
     if (!webView) {
@@ -1688,17 +1568,8 @@ namespace flutter_inappwebview_plugin
 
   void InAppWebView::addDevToolsProtocolEventListener(const std::string& eventName)
   {
-    // Internal event backed by WebView2's browser-wide, non-blocking response API.
-    if (eventName == "Fluent.webResourceResponseReceived") {
-      networkResponseObserverEnabled_ = true;
-      if (channelDelegate) {
-        for (const auto& data : pendingNetworkResponses_) {
-          channelDelegate->onDevToolsProtocolEventReceived(eventName, data);
-        }
-      }
-      pendingNetworkResponses_.clear();
-      return;
-    }
+    if (eventName == "Fluent.webResourceResponseReceived" ||
+      starts_with(eventName, std::string{"Network."}) || starts_with(eventName, std::string{"Fetch."})) return;
     if (map_contains(devToolsProtocolEventListener_, eventName)) {
       return;
     }
@@ -1731,11 +1602,6 @@ namespace flutter_inappwebview_plugin
 
   void InAppWebView::removeDevToolsProtocolEventListener(const std::string& eventName)
   {
-    if (eventName == "Fluent.webResourceResponseReceived") {
-      networkResponseObserverEnabled_ = false;
-      pendingNetworkResponses_.clear();
-      return;
-    }
     if (map_contains(devToolsProtocolEventListener_, eventName)) {
       auto eventReceiver = devToolsProtocolEventListener_.at(eventName).first;
       auto token = devToolsProtocolEventListener_.at(eventName).second;
@@ -2078,8 +1944,15 @@ namespace flutter_inappwebview_plugin
 
   InAppWebView::~InAppWebView()
   {
+    if (downloadLifetime_) *downloadLifetime_ = false;
+    downloadLifetime_.reset();
+    if (webView && downloadCancellationReady_) {
+      wil::com_ptr<ICoreWebView2_4> downloadWebView;
+      if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&downloadWebView)))) {
+        downloadWebView->remove_DownloadStarting(downloadStartingToken_);
+      }
+    }
     debugLog("dealloc InAppWebView");
-    networkResponseObserverEnabled_ = false;
     userContentController = nullptr;
     if (webView) {
       failedLog(webView->Stop());
@@ -2093,8 +1966,6 @@ namespace flutter_inappwebview_plugin
     if (webViewController) {
       failedLog(webViewController->Close());
     }
-    passiveNetworkStates.erase(this);
-    networkRequestPages_.clear();
     navigationActions_.clear();
     inAppBrowser = nullptr;
     plugin = nullptr;

@@ -42,29 +42,11 @@ List<PopupMenuEntry<VoidCallback>> mediaLibraryActionMenuItems(
     item('新建合集', Icons.create_new_folder_outlined, () {
       VideoActionButtons.openCreateCollectionDialog(context, collectionId);
     }),
-    item('浏览器导入', Icons.language_outlined, () {
-      VideoActionButtons.openWebMediaPage(context, collectionId: collectionId);
-    }),
-    item('B站下载', Icons.live_tv_outlined, () {
-      VideoActionButtons.openBilibiliDownloadPage(
+    item('批量导入', Icons.playlist_add, () {
+      VideoActionButtons.openBatchImportPage(
         context,
         collectionId: collectionId,
       );
-    }),
-    item('YT-DLP下载', Icons.ondemand_video_outlined, () {
-      VideoActionButtons.openYtDlpDownloadPage(
-        context,
-        collectionId: collectionId,
-      );
-    }),
-    item('抖音下载', Icons.music_note_outlined, () {
-      VideoActionButtons.openDouyinDownloadPage(
-        context,
-        collectionId: collectionId,
-      );
-    }),
-    item('缓存管理', Icons.download_outlined, () {
-      VideoActionButtons.openCacheManagementPage(context);
     }),
     item('语音转录', Icons.closed_caption_outlined, () {
       VideoActionButtons.openBatchSubtitlePage(

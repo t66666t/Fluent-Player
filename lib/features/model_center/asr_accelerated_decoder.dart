@@ -40,9 +40,34 @@ class AsrAcceleratedDecoder {
   bool _decided = false, _disabled = false, _cancelled = false;
   String backend = 'CPU', weights = '';
   bool get hasLoadedModel => _chosen != null;
+  bool get _deferUnprovenGpu {
+    if (configuration['conservativeGpu'] != true) return false;
+    if (mode != AsrAcceleration.auto) return false;
+    if (configuration['benchmark'] == true) return false;
+    final threads = (configuration['threads'] as num?)?.toInt() ?? 0;
+    final seconds = (configuration['durationSeconds'] as num?)?.toDouble() ?? 0;
+    final weights = {
+      configuration['identity'],
+      configuration['gpuIdentity'],
+    }.whereType<String>().toSet();
+    final profiles = (configuration['profiles'] as List? ?? const [])
+        .map(AsrPerformanceProfile.fromJson)
+        .whereType<AsrPerformanceProfile>();
+    return !profiles.any(
+      (profile) => freshGpuWin(
+        profile,
+        weights: weights,
+        threads: threads,
+        seconds: seconds,
+        now: _now(),
+      ),
+    );
+  }
+
   bool get needsExclusiveLoad =>
       !_disabled &&
       _chosen == null &&
+      !_deferUnprovenGpu &&
       (!_decided || _chosenTarget != null) &&
       (mode == AsrAcceleration.gpu ||
           configuration['benchmark'] == true ||
@@ -50,15 +75,25 @@ class AsrAcceleratedDecoder {
               (configuration['automaticTuningAllowed'] != false ||
                   (configuration['profiles'] as List? ?? const []).isNotEmpty));
 
-  void _state(String reason, {AsrPerformanceProfile? profile}) => onState({
+  void _state(
+    String reason, {
+    AsrPerformanceProfile? profile,
+    bool selecting = false,
+  }) => onState({
     'backend': backend,
     'weights': weights,
     'reason': reason,
+    if (selecting) 'selecting': true,
     if (_transport is ProcessAsrAcceleratorTransport)
       'processId': (_transport as ProcessAsrAcceleratorTransport).processId,
     if (profile != null) 'profile': profile.toJson(),
-    if (profile != null && !profile.failed)
+    if (profile != null && !profile.failed) ...{
       'clearProfileSignature': asrAvailabilitySignature(configuration),
+      'clearProfileSignatures': [
+        asrAvailabilitySignature(configuration),
+        asrAvailabilitySignatureV1(configuration),
+      ],
+    },
   });
 
   void _rememberUnavailable(String reason) => _state(
@@ -131,7 +166,7 @@ class AsrAcceleratedDecoder {
       _check(check);
       _privateDirectory ??= await root.createTemp('asr-gpu-run-');
       _check(check);
-      _state('正在加载并验证 ${choice['label']}');
+      _state('正在加载并验证 ${choice['label']}', selecting: true);
       await transport.request({
         'op': 'load',
         ...configuration,
@@ -238,7 +273,7 @@ class AsrAcceleratedDecoder {
         profiles.any(
           (profile) =>
               profile.failed &&
-              profile.matches(asrAvailabilitySignature(configuration), _now()),
+              asrAvailabilityMatches(profile, configuration, _now()),
         )) {
       _decided = true;
       _state('沿用本机 CPU 选择，可在模型中心重新测速');
@@ -268,6 +303,12 @@ class AsrAcceleratedDecoder {
       _state('先使用 CPU 开始识别；新硬件组合可在模型中心测速');
       return;
     }
+    if (!force && _deferUnprovenGpu) {
+      _decided = true;
+      _state('尚无更快的 GPU 记录，直接使用 CPU');
+      return;
+    }
+    _state('正在检查 GPU 能力', selecting: true);
     final capabilities = _capabilities ??= await _probeCapabilities();
     _check(check);
     final devices = (capabilities['devices'] as List? ?? const [])
@@ -418,6 +459,7 @@ class AsrAcceleratedDecoder {
       return;
     }
     if (!force && configuration['automaticTuningAllowed'] == false) {
+      _decided = true;
       _state('先开始识别；空闲且有测速预算时再调优');
       return;
     }
@@ -426,7 +468,7 @@ class AsrAcceleratedDecoder {
       _state('短语音先使用 CPU，等待可测速片段');
       return;
     }
-    _state('同段语音 CPU / GPU 本机测速中');
+    _state('同段语音 CPU / GPU 本机测速中', selecting: true);
     // Earlier short VAD spans may already have loaded CPU weights. Measure a
     // cold warm-up here so the persistent startup estimate is reusable.
     await releaseCpu();

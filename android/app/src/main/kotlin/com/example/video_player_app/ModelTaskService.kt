@@ -22,6 +22,9 @@ class ModelTaskService : Service() {
         private const val CHANNEL = "fluent_model_tasks"
         private const val NOTIFICATION = 3024
         private const val PAUSE = "com.example.video_player_app.MODEL_TASK_PAUSE"
+        private var hasStartRequest = false
+        private var requestedDownloads = 0
+        private var requestedInference = 0
         var onInterrupted: (() -> Unit)? = null
 
         fun register(context: Context, messenger: BinaryMessenger) {
@@ -42,12 +45,18 @@ class ModelTaskService : Service() {
                 val downloads = call.argument<Int>("downloads") ?: 0
                 val inference = call.argument<Int>("inference") ?: 0
                 try {
+                    requestedDownloads = downloads
+                    requestedInference = inference
                     val intent = Intent(app, ModelTaskService::class.java)
                         .putExtra("downloads", downloads).putExtra("inference", inference)
                     if (downloads + inference > 0) {
                         ContextCompat.startForegroundService(app, intent)
-                    } else {
-                        app.stopService(intent)
+                        hasStartRequest = true
+                    } else if (hasStartRequest) {
+                        // Deliver idle in start-ID order. stopService() can
+                        // destroy a pending foreground start before promotion.
+                        app.startService(intent)
+                        hasStartRequest = false
                     }
                     result.success(null)
                 } catch (error: Exception) {
@@ -59,18 +68,36 @@ class ModelTaskService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     override fun onBind(intent: Intent?): IBinder? = null
+    override fun onCreate() {
+        super.onCreate()
+        // Fulfil every foreground-start obligation before an idle/pause intent
+        // can stop the service, including rapid download -> inference handoffs.
+        showForeground(requestedDownloads, requestedInference)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == PAUSE) {
             onInterrupted?.invoke()
-            stopSelf()
+            stopSelfResult(startId)
             return START_NOT_STICKY
         }
         val downloads = intent?.getIntExtra("downloads", 0) ?: 0
         val inference = intent?.getIntExtra("inference", 0) ?: 0
         if (downloads + inference == 0) {
-            stopSelf()
+            // A newer active start must survive this obsolete idle command.
+            stopSelfResult(startId)
             return START_NOT_STICKY
         }
+        showForeground(downloads, inference)
+        if (wakeLock?.isHeld != true) {
+            wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:model-tasks")
+                .also { it.acquire(6 * 60 * 60 * 1000L) }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun showForeground(downloads: Int, inference: Int) {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "模型下载与本地处理", NotificationManager.IMPORTANCE_LOW))
@@ -81,24 +108,18 @@ class ModelTaskService : Service() {
         val text = buildList {
             if (downloads > 0) add("$downloads 个模型下载")
             if (inference > 0) add("正在进行本地字幕处理")
-        }.joinToString(" · ")
+        }.joinToString(" · ").ifEmpty { "正在准备本地任务" }
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.mipmap.launcher_icon).setContentTitle("Fluent Player 模型中心")
             .setContentText(text).setContentIntent(pending).setOngoing(true).setSilent(true)
             .addAction(android.R.drawable.ic_media_pause, "暂停任务", pause).build()
         if (Build.VERSION.SDK_INT >= 29) {
-            var types = if (downloads > 0 || Build.VERSION.SDK_INT < 35) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
+            var types = if (downloads > 0 || inference == 0 || Build.VERSION.SDK_INT < 35) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
             if (inference > 0 && Build.VERSION.SDK_INT >= 35) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
             startForeground(NOTIFICATION, notification, types)
         } else {
             startForeground(NOTIFICATION, notification)
         }
-        if (wakeLock?.isHeld != true) {
-            wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:model-tasks")
-                .also { it.acquire(6 * 60 * 60 * 1000L) }
-        }
-        return START_NOT_STICKY
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {

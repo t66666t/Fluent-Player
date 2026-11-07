@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/app_haptics.dart';
 import '../../services/settings_service.dart';
+import '../../widgets/media_library_keyboard_navigation.dart';
+import '../../widgets/card_context_menu.dart';
 
 /// How long a primary button must stay down before an episode row selects.
 ///
@@ -37,6 +39,8 @@ class PodcastEpisodePress extends StatefulWidget {
     this.onRangeSelect,
     this.onLongPress,
     this.borderRadius,
+    this.keyboardItemId,
+    this.selected = false,
   });
 
   final Widget child;
@@ -48,6 +52,8 @@ class PodcastEpisodePress extends StatefulWidget {
   final VoidCallback? onLongPress;
   final bool selecting;
   final BorderRadius? borderRadius;
+  final String? keyboardItemId;
+  final bool selected;
 
   @override
   State<PodcastEpisodePress> createState() => _PodcastEpisodePressState();
@@ -254,16 +260,30 @@ class _PodcastEpisodePressState extends State<PodcastEpisodePress>
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
+    final hasKeyboardItem =
+        widget.keyboardItemId != null &&
+        MediaLibraryKeyboardRegion.enabledOf(context);
+    final press = Listener(
       behavior: HitTestBehavior.deferToChild,
       onPointerDown: _onPointerDown,
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
       child: InkWell(
+        canRequestFocus: !hasKeyboardItem,
         borderRadius: widget.borderRadius,
         onTap: _activate,
         child: widget.child,
+      ),
+    );
+    if (!hasKeyboardItem) return press;
+    return CardContextMenu(
+      builder: (context, _) => MediaLibraryKeyboardItem(
+        itemId: widget.keyboardItemId!,
+        selected: widget.selected,
+        selectionMode: widget.selecting,
+        onActivate: _activate,
+        child: press,
       ),
     );
   }

@@ -25,8 +25,8 @@ void main() {
   setUpAll(() async {
     if (previewDirectory == null) return;
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
@@ -234,7 +234,7 @@ void main() {
                         ? null
                         : ThemeData(
                             brightness: Brightness.dark,
-                            fontFamily: 'MiSans',
+                            fontFamily: 'Noto Sans SC',
                           ),
                     builder: (context, child) => MediaQuery(
                       data: MediaQuery.of(

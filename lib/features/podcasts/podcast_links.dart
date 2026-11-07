@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../services/app_web_navigation.dart';
 import '../../theme/app_tokens.dart';
 import 'podcast_typography.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
@@ -72,45 +72,53 @@ class _PodcastLinksDialogState extends State<_PodcastLinksDialog> {
                     Wrap(
                       spacing: 8,
                       children: [
-                        DesktopButtonClickRegion(child: TextButton.icon(
-                          icon: const Icon(Icons.copy_rounded, size: 16),
-                          label: Text(_copied == link.url ? '已复制' : '复制链接'),
-                          onPressed: () async {
-                            try {
-                              await Clipboard.setData(
-                                ClipboardData(text: link.url),
-                              );
-                              if (mounted) {
-                                setState(() {
-                                  _copied = link.url;
-                                  _error = null;
-                                });
+                        DesktopButtonClickRegion(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.copy_rounded, size: 16),
+                            label: Text(_copied == link.url ? '已复制' : '复制链接'),
+                            onPressed: () async {
+                              try {
+                                await Clipboard.setData(
+                                  ClipboardData(text: link.url),
+                                );
+                                if (mounted) {
+                                  setState(() {
+                                    _copied = link.url;
+                                    _error = null;
+                                  });
+                                }
+                              } catch (_) {
+                                if (mounted) {
+                                  setState(
+                                    () => _error = '复制失败，可以长按或选中上方链接复制。',
+                                  );
+                                }
                               }
-                            } catch (_) {
-                              if (mounted) {
-                                setState(() => _error = '复制失败，可以长按或选中上方链接复制。');
+                            },
+                          ),
+                        ),
+                        DesktopButtonClickRegion(
+                          child: TextButton.icon(
+                            icon: const Icon(
+                              Icons.open_in_new_rounded,
+                              size: 16,
+                            ),
+                            label: const Text('打开'),
+                            onPressed: () async {
+                              try {
+                                await AppWebNavigation.open(
+                                  context,
+                                  Uri.parse(link.url),
+                                  title: link.label,
+                                );
+                              } catch (_) {
+                                if (mounted) {
+                                  setState(() => _error = '无法打开链接，可复制后在浏览器查看。');
+                                }
                               }
-                            }
-                          },
-                        )),
-                        DesktopButtonClickRegion(child: TextButton.icon(
-                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                          label: const Text('打开'),
-                          onPressed: () async {
-                            try {
-                              if (!await launchUrl(
-                                Uri.parse(link.url),
-                                mode: LaunchMode.externalApplication,
-                              )) {
-                                throw StateError('open failed');
-                              }
-                            } catch (_) {
-                              if (mounted) {
-                                setState(() => _error = '暂时无法打开，可以复制链接到浏览器。');
-                              }
-                            }
-                          },
-                        )),
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -124,10 +132,12 @@ class _PodcastLinksDialogState extends State<_PodcastLinksDialog> {
       ),
     ),
     actions: [
-      DesktopButtonClickRegion(child: TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('完成'),
-      )),
+      DesktopButtonClickRegion(
+        child: TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('完成'),
+        ),
+      ),
     ],
   );
 }

@@ -8,6 +8,7 @@ import '../../services/media_artwork_repository.dart';
 import '../../theme/app_tokens.dart';
 import '../../theme/app_interaction_theme.dart';
 import '../../widgets/media_artwork_view.dart';
+import '../../widgets/media_library_empty_viewport.dart';
 import '../../widgets/cached_thumbnail_widget.dart';
 import 'podcast_models.dart';
 import 'podcast_runtime.dart';
@@ -378,38 +379,35 @@ class PodcastEmpty extends StatelessWidget {
     required this.title,
     required this.message,
     this.action,
+    this.bottomPadding = 0,
   });
   final String title, message;
   final Widget? action;
+  final double bottomPadding;
   @override
-  Widget build(BuildContext context) => Center(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.podcasts_rounded,
-              size: 44,
-              color: AppTokens.text3,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              message,
-              style: const TextStyle(color: AppTokens.text2, height: 1.7),
-              textAlign: TextAlign.center,
-            ),
-            if (action != null) ...[const SizedBox(height: 22), action!],
-          ],
-        ),
+  Widget build(BuildContext context) => MediaLibraryEmptyViewport(
+    bottomPadding: bottomPadding,
+    padding: const EdgeInsets.all(32),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.podcasts_rounded, size: 44, color: AppTokens.text3),
+          const SizedBox(height: 20),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: const TextStyle(color: AppTokens.text2, height: 1.7),
+            textAlign: TextAlign.center,
+          ),
+          if (action != null) ...[const SizedBox(height: 22), action!],
+        ],
       ),
     ),
   );
@@ -526,8 +524,9 @@ class PodcastCardCover extends StatelessWidget {
 }
 
 class PodcastGate extends StatefulWidget {
-  const PodcastGate({super.key, required this.builder});
+  const PodcastGate({super.key, required this.builder, this.bottomPadding = 0});
   final Widget Function(PodcastRuntime) builder;
+  final double bottomPadding;
   @override
   State<PodcastGate> createState() => _PodcastGateState();
 }
@@ -546,6 +545,7 @@ class _PodcastGateState extends State<PodcastGate> {
         final runtime = PodcastRuntime.instance;
         if (runtime.initializationError != null) {
           return PodcastEmpty(
+            bottomPadding: widget.bottomPadding,
             title: '暂时无法打开播客',
             message: runtime.initializationError!,
             action: DesktopButtonClickRegion(
@@ -561,7 +561,10 @@ class _PodcastGateState extends State<PodcastGate> {
                 listenable: runtime.playlist ?? const AlwaysStoppedAnimation(0),
                 builder: (_, _) => widget.builder(runtime),
               )
-            : const PodcastSkeleton();
+            : Padding(
+                padding: EdgeInsets.only(bottom: widget.bottomPadding),
+                child: const PodcastSkeleton(),
+              );
       },
     ),
   );

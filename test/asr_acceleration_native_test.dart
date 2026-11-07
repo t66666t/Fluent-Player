@@ -14,6 +14,7 @@ import 'package:video_player_app/features/model_center/asr_enhancement_options.d
 import 'package:video_player_app/features/model_center/local_asr_worker.dart';
 import 'package:video_player_app/features/model_center/model_catalog.dart';
 import 'package:video_player_app/models/subtitle_model.dart';
+import '../tool/local_asr_probe_assets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -65,7 +66,7 @@ void main() {
         }) async {
           final worker = LocalAsrWorker(
             libraryDirectory:
-                'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+                '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
           );
           var killed = false;
           final cancellation = Completer<void>();
@@ -106,7 +107,7 @@ void main() {
             await worker.start(
               engine: model.engine,
               directory: cpuDirectory,
-              vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+              vadPath: asrProbeVadPath(),
               language: 'auto',
               threads: 2,
               stage: LocalAsrStage.recognition,
@@ -319,7 +320,7 @@ Future<String> _zipformerFloatReference(
   List<SubtitleItem> cues,
 ) async {
   sherpa.initBindings(
-    'C:/Users/11/AppData/Local/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
+    '${Platform.environment['LOCALAPPDATA']}/Pub/Cache/hosted/pub.dev/sherpa_onnx_windows-1.12.12/windows',
   );
   final samples = decodeModelWave(await wave.readAsBytes());
   final recognizer = sherpa.OnlineRecognizer(

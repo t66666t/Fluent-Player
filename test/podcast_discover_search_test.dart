@@ -252,6 +252,7 @@ void main() {
     expect(find.text('Apple Podcasts'), findsOneWidget);
     expect(find.byTooltip('搜索筛选'), findsNothing);
     await submit(tester, '生活');
+    expect(find.text('来源：Apple Podcasts / iTunes Search API'), findsOneWidget);
     await tester.tap(find.text('中国大陆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('美国').last);
@@ -262,6 +263,7 @@ void main() {
     await tester.tap(find.text('Podcast Index').last);
     await tester.pumpAndSettle();
     expect(client.filters.last, ('US', 'index'));
+    expect(find.text('来源：Podcast Index'), findsOneWidget);
     await chooseMode(tester, '链接导入');
     await chooseMode(tester, '在线搜索');
     expect(find.text('美国'), findsOneWidget);
@@ -389,7 +391,7 @@ void main() {
       await tester.runAsync(() async {
         await (FontLoader(
           'MiSans',
-        )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+        )..addFont(rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'))).load();
         await (FontLoader(
           'MaterialIcons',
         )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();

@@ -500,6 +500,7 @@ class PodcastFeedParser {
           imageUrl: image(entry),
           link: link(entry, 'alternate'),
           media: media.values.toList(),
+          sourceFeedUrl: feedUrl,
           publishedMs: pub,
           durationMs: podcastDuration(text(entry, ['duration'])),
           season: int.tryParse(text(entry, ['season'])),

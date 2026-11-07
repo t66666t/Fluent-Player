@@ -16,11 +16,9 @@ import 'package:video_player_app/features/cloud_drive/providers/cloud_drive_prov
 import 'package:video_player_app/features/cloud_drive/providers/quark_cloud_drive_provider.dart';
 import 'package:video_player_app/features/cloud_drive/providers/uc_cloud_drive_provider.dart';
 import 'package:video_player_app/features/cloud_drive/services/cloud_drive_account_repository.dart';
-import 'package:video_player_app/features/cloud_drive/services/cloud_drive_browser_controller.dart';
 import 'package:video_player_app/features/cloud_drive/services/cloud_drive_materialization.dart';
 import 'package:video_player_app/features/cloud_drive/services/cloud_drive_playback_service.dart';
 import 'package:video_player_app/features/cloud_drive/services/cloud_drive_thumbnails.dart';
-import 'package:video_player_app/features/media_cache/media_cache_models.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/media_materialization_service.dart';
 
@@ -211,21 +209,13 @@ void main() {
     },
   );
 
-  test('UC login jar keeps only its own domains', () {
-    final jar = CloudDriveLoginBrowser(UcCloudDriveProvider()).credentialFrom([
-      ..._ucCredential.cookies,
-      const CloudDriveCookie(
-        name: '__puus',
-        value: 'quark-secret',
-        domain: '.quark.cn',
-      ),
-    ])!;
-    expect(jar.cookies.length, 2);
+  test('retired UC browser login refuses Cookie capture', () {
     expect(
-      jar.headerFor(Uri.parse('https://pc-api.uc.cn/1/clouddrive/file/sort')),
-      contains('uc-secret'),
+      () => CloudDriveLoginBrowser(
+        UcCloudDriveProvider(),
+      ).credentialFrom([..._ucCredential.cookies]),
+      throwsUnsupportedError,
     );
-    expect(jar.headerFor(Uri.parse('https://drive-pc.quark.cn/')), isEmpty);
   });
 
   test('device signing uses a random or restored secp256k1 device key', () {
@@ -607,7 +597,7 @@ void main() {
 
   for (final code in ['Forbidden', 'AccessTokenInvalid private_key=secret']) {
     test(
-      'Aliyun playback failures retain safe API diagnostics: $code',
+      'retired Aliyun playback rejects before API resolution: $code',
       () async {
         final http = _Http((r) {
           if (r.uri.path == '/v2/file/get_download_url' ||
@@ -646,17 +636,9 @@ void main() {
         addTearDown(playback.close);
         await expectLater(
           playback.open(item, qualityId: 'original'),
-          throwsA(isA<CloudDriveFailure>()),
+          throwsUnsupportedError,
         );
-        expect(playback.diagnosticText, contains('resolve failed'));
-        expect(
-          playback.diagnosticText,
-          contains('api=/v2/file/get_download_url http=403'),
-        );
-        expect(
-          playback.diagnosticText,
-          contains('code=${code == 'Forbidden' ? 'Forbidden' : 'unknown'}'),
-        );
+        expect(playback.diagnosticText, isEmpty);
         expect(playback.diagnosticText, isNot(contains('secret')));
         expect(playback.diagnosticText, isNot(contains('refresh-1')));
         expect(playback.diagnosticText, isNot(contains(entry.name)));
@@ -1290,189 +1272,53 @@ void main() {
 
   for (final providerId in ['uc', 'aliyun']) {
     test(
-      '$providerId login, directory, gateway Range, cache, restart and AI audio material run together',
+      '$providerId playback and materialization fail before provider requests',
       () async {
-        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-        addTearDown(() => server.close(force: true));
-        final uri = Uri.parse('http://127.0.0.1:${server.port}/video.mp4');
-        final payload = List<int>.generate(256, (i) => i);
-        var gets = 0;
-        server.listen((request) async {
-          gets++;
-          final range = request.headers.value('range');
-          final match = range == null
-              ? null
-              : RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range);
-          final start = match == null ? 0 : int.parse(match[1]!);
-          final end = match == null || match[2]!.isEmpty
-              ? payload.length - 1
-              : int.parse(match[2]!);
-          request.response.headers.set('accept-ranges', 'bytes');
-          request.response.headers.contentType = ContentType('video', 'mp4');
-          request.response.statusCode = match == null ? 200 : 206;
-          if (match != null) {
-            request.response.headers.set(
-              'content-range',
-              'bytes $start-$end/${payload.length}',
-            );
-          }
-          final bytes = payload.sublist(start, end + 1);
-          request.response.contentLength = bytes.length;
-          request.response.add(bytes);
-          await request.response.close();
+        var requests = 0;
+        final http = _Http((request) {
+          requests++;
+          throw StateError('Retired integrations must not issue requests');
         });
-        final root = await Directory.systemTemp.createTemp(
-          'extended-cloud-workflow-',
-        );
-        addTearDown(() => root.delete(recursive: true));
-        var autoPlaybackRequests = 0;
-        final http = _Http((r) async {
-          if (r.uri.host == '127.0.0.1') return NetworkCloudDriveHttp().send(r);
-          if (r.uri.path.endsWith('/file/v2/play') ||
-              r.uri.path == '/v2/file/get_video_preview_play_info') {
-            autoPlaybackRequests++;
-          }
-          if (providerId == 'aliyun') {
-            if (r.uri.path == '/v2/file/get_download_url') {
-              return _json(r, {'url': uri.toString()});
-            }
-            return _aliDefault(r);
-          }
-          if (r.uri.path == '/account/info') {
-            return _json(r, {
-              'success': true,
-              'code': 'OK',
-              'data': {'uid': 'uc-user', 'nickname': 'UC测试'},
-            });
-          }
-          if (r.uri.path.endsWith('/file/download')) {
-            return _json(r, {
-              'code': 0,
-              'data': [
-                {'download_url': uri.toString(), 'size': payload.length},
-              ],
-            });
-          }
-          return _json(r, {
-            'code': 0,
-            'data': {
-              'list': [
-                {
-                  'fid': 'video',
-                  'file_name': 'lesson.mp4',
-                  'file': true,
-                  'file_type': 1,
-                  'category': 1,
-                  'pdir_fid': '0',
-                  'size': payload.length,
-                  'updated_at': 'revision',
-                },
-              ],
-            },
-            'metadata': {'_total': 1},
-          });
-        });
-        final CloudDriveProvider p = providerId == 'uc'
+        final CloudDriveProvider provider = providerId == 'uc'
             ? UcCloudDriveProvider(http: http)
             : AliyunCloudDriveProvider(http: http);
-        final credential = providerId == 'uc' ? _ucCredential : _aliCredential;
-        final verified = await p.verifySession(credential);
-        final secrets = _Secrets();
+        final registry = CloudDriveProviderRegistry([provider]);
         final accounts = CloudDriveAccountRepository(
-          credentials: CloudDriveCredentialStore(storage: secrets),
+          credentials: CloudDriveCredentialStore(storage: _Secrets()),
           metadata: MemoryCloudDriveAccountMetadataStore(),
         );
-        final account = await accounts.commitVerified(
-          providerId: p.id,
-          remoteAccountId: verified.remoteAccountId,
-          displayName: verified.displayName,
-          credential: verified.refreshedCredential ?? credential,
-          driveId: verified.driveId,
-        );
-        final registry = CloudDriveProviderRegistry([p]);
-        final browser = CloudDriveBrowserController(
-          providers: registry,
-          accounts: accounts,
-        );
-        final page = await browser.openAccount(
-          account,
-          directoryId: providerId == 'uc' ? '0' : '@aliyun:resource:root',
-        );
-        expect(page.error, isNull);
-        final entry = page.entries.single;
-        final ref = cloudDriveEntrySource(entry);
         final item = VideoItem(
-          id: ref.cloudDrive!.itemId,
-          path: ref.cloudDrive!.logicalUri,
-          title: entry.name,
-          durationMs: 60000,
+          id: 'retired-$providerId',
+          path: 'cloud-drive://$providerId/file',
+          title: 'Retired',
+          durationMs: 0,
           lastUpdated: 0,
-          sourceRef: ref,
-        );
-        expect(
-          CacheSource.fromItem(item)!.providerLabel,
-          cloudDriveProviderNames[providerId],
         );
         final playback = CloudDrivePlaybackService(
           providers: registry,
           accounts: accounts,
-          subtitleCacheRoot: root,
         );
         addTearDown(playback.close);
-        final prepared = await playback.open(item, qualityId: 'original');
-        final client = HttpClient();
-        addTearDown(() => client.close(force: true));
-        final request = await client.getUrl(prepared.lease.loopbackUri);
-        request.headers.set('range', 'bytes=20-29');
-        final response = await request.close();
-        expect(response.statusCode, 206);
-        expect(
-          await response.fold<List<int>>([], (a, b) => a..addAll(b)),
-          payload.sublist(20, 30),
+        await expectLater(playback.open(item), throwsUnsupportedError);
+        final root = await Directory.systemTemp.createTemp(
+          'retired-cloud-boundary-',
         );
-        await prepared.lease.release();
+        addTearDown(() => root.delete(recursive: true));
         final material = CloudDriveMaterialization(
           providers: registry,
           accounts: accounts,
-          cacheRoot: Directory('${root.path}/material'),
-          parallelProgressive: false,
+          cacheRoot: root,
         );
         addTearDown(material.prepareStorageMigration);
-        final media = await material.acquire(
-          item,
-          MediaMaterializationRequirement.completeMedia,
+        await expectLater(
+          material.estimate(item, MediaMaterializationRequirement.audioOnly),
+          throwsUnsupportedError,
         );
-        expect(await File(media.requiredVideoPath).readAsBytes(), payload);
-        // Downloads and subtitle audio must keep the original representation
-        // even when automatic playback prefers a faster transcode.
-        expect(autoPlaybackRequests, 0);
-        final cachedPath = media.requiredVideoPath;
-        await media.release();
-        final beforeReuse = gets;
-        // This is the same audioOnly lease requested by TranscriptionManager.
-        final audio = await material.acquire(
-          item,
-          MediaMaterializationRequirement.audioOnly,
+        await expectLater(
+          material.acquire(item, MediaMaterializationRequirement.audioOnly),
+          throwsUnsupportedError,
         );
-        expect(audio.requiredAudioPath, cachedPath);
-        expect(gets, beforeReuse);
-        await audio.release();
-        final restarted = CloudDriveMaterialization(
-          providers: registry,
-          accounts: accounts,
-          cacheRoot: Directory('${root.path}/material'),
-          parallelProgressive: false,
-        );
-        addTearDown(restarted.prepareStorageMigration);
-        final reloaded = await restarted.acquire(
-          item,
-          MediaMaterializationRequirement.audioOnly,
-        );
-        expect(await File(reloaded.requiredAudioPath).readAsBytes(), payload);
-        expect(gets, beforeReuse);
-        await reloaded.release();
-        expect(jsonEncode(ref.toJson()), isNot(contains('refresh_token')));
-        expect(jsonEncode(ref.toJson()), isNot(contains('uc-secret')));
+        expect(requests, 0);
       },
     );
   }

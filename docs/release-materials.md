@@ -23,9 +23,10 @@ python tool/package_release_source.py --output .artifacts/releases/fluent-player
 | Windows FFmpeg / FFprobe | Gyan 8.0.1；FFmpeg 提交 `894da5ca7d`；配置和外部库版本见 `FFmpeg-Windows-build.txt` | 同构建外部依赖源码、补丁和构建配置；其中 publisher 记录仍有 `openal-soft latest`，不能自行编造精确版本 |
 | Windows libmpv | media_kit_libs_windows_video 1.0.11；构建 2023-09-24，mpv 提交 `652a1dd`；许可已随应用提供 | 该构建的 FFmpeg 及全部相关依赖源码与脚本 |
 | FFmpegKit | Dart 包 4.6.2；平台脚本引用 Full GPL 8.1.2；本机 Windows 构建还受 `FFMPEGKIT_LOCAL_DIR` 覆盖，实际本地库报告 FFmpeg `n7.1.1`、GPLv3+；保留 GPL/LGPL 文本和源仓库 | 各目标平台预编译包与 sk3llo/ffmpeg-kit 中实际构建提交、依赖和补丁的对应关系；Windows 本地 bundle 的完整构建材料也需补齐，不能拿 CLI 的 FFmpeg 8.0.1 源码代替 |
-| yt-dlp 独立包 | 2026.10.21，官方 SHA-256 和第三方声明已固定 | 按官方 ThirdPartyNotices 为打包依赖准备匹配源码，不能只提供 yt-dlp 自身 Python 文件 |
 
 这个缺口不能通过新增一个 GPL 文件消除。收齐前可继续内部测试和审阅应用源代码，不能把本记录描述成“所有版权义务已履行”。
+
+社区版不分发 yt-dlp、嵌入式 Python 或 QuickJS-NG 下载运行时，不为这些已移除组件准备新的运行包。本地媒体功能仍实际分发的 FFmpeg/libmpv 等原生组件需要对应源码交付材料。正式发布须以每个平台实际构建的依赖、配置和哈希为准，逐项填写验证记录；不能用另一版本或另一平台的源码充数。
 
 ## 发布范围
 

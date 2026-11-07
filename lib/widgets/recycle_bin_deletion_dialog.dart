@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/library_service.dart';
+import 'confirmation_dialog_shortcuts.dart';
 import 'operation_status.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
@@ -120,81 +122,89 @@ class _RecycleBinDeletionDialogState extends State<RecycleBinDeletionDialog> {
         result.failedIds.keys.any((id) => !result.restoredIds.contains(id));
     return PopScope(
       canPop: !_busy,
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: Text('永久删除 $count 项', style: const TextStyle(fontSize: 16)),
-        content: SizedBox(
-          width: 540,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!_busy && result == null && _error == null)
-                  const Text('删除所选项及文件夹内的内容，删除后无法恢复。'),
-                if (_busy)
-                  OperationStatus(
-                    title: '正在处理',
-                    message: '已处理 $_processed 项，请等待完成。',
-                    kind: OperationStatusKind.progress,
-                  ),
-                if (_error != null)
-                  OperationStatus(
-                    title: '删除未完成',
-                    message: _error,
-                    kind: OperationStatusKind.error,
-                  ),
-                if (!_busy && result != null) ...[
-                  if (failed > 0)
+      child: ConfirmationDialogShortcuts(
+        onCancel: _busy ? null : () => Navigator.pop(context, _result),
+        confirmKey: LogicalKeyboardKey.keyD,
+        onConfirm: _busy || result != null || _error != null ? null : _delete,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: Text('永久删除 $count 项', style: const TextStyle(fontSize: 16)),
+          content: SizedBox(
+            width: 540,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!_busy && result == null && _error == null)
+                    const Text('删除所选项及文件夹内的内容，删除后无法恢复。'),
+                  if (_busy)
                     OperationStatus(
-                      title: '有 $failed 项未能删除，记录已保留。',
-                      kind: OperationStatusKind.error,
-                      details: result.failedIds.keys
-                          .map(
-                            (id) =>
-                                '${_titles[id] ?? '媒体项'}：${result.failedIds[id]}',
-                          )
-                          .join('\n'),
+                      title: '正在处理',
+                      message: '已处理 $_processed 项，请等待完成。',
+                      kind: OperationStatusKind.progress,
                     ),
-                  if (!result.saved ||
-                      widget.library.hasPersistenceFailure) ...[
-                    const SizedBox(height: 12),
+                  if (_error != null)
                     OperationStatus(
-                      title: '删除结果尚未保存',
-                      message: '请保持存储位置可用后重试保存。',
+                      title: '删除未完成',
+                      message: _error,
                       kind: OperationStatusKind.error,
-                      actions: [
-                        DesktopButtonClickRegion(
-                          child: TextButton(
-                            onPressed: _retrySave,
-                            child: const Text('重试保存'),
+                    ),
+                  if (!_busy && result != null) ...[
+                    if (failed > 0)
+                      OperationStatus(
+                        title: '有 $failed 项未能删除，记录已保留。',
+                        kind: OperationStatusKind.error,
+                        details: result.failedIds.keys
+                            .map(
+                              (id) =>
+                                  '${_titles[id] ?? '媒体项'}：${result.failedIds[id]}',
+                            )
+                            .join('\n'),
+                      ),
+                    if (!result.saved ||
+                        widget.library.hasPersistenceFailure) ...[
+                      const SizedBox(height: 12),
+                      OperationStatus(
+                        title: '删除结果尚未保存',
+                        message: '请保持存储位置可用后重试保存。',
+                        kind: OperationStatusKind.error,
+                        actions: [
+                          DesktopButtonClickRegion(
+                            child: TextButton(
+                              onPressed: _retrySave,
+                              child: const Text('重试保存'),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          DesktopButtonClickRegion(
-            child: TextButton(
-              onPressed: _busy ? null : () => Navigator.pop(context, _result),
-              child: Text(result == null ? '取消' : '关闭'),
-            ),
-          ),
-          if (result == null || retryable)
+          actions: [
             DesktopButtonClickRegion(
-              child: FilledButton(
-                onPressed: _busy ? null : _delete,
-                child: Text(
-                  result == null && _error == null ? '永久删除' : '重试未完成项',
+              child: TextButton(
+                onPressed: _busy ? null : () => Navigator.pop(context, _result),
+                child: ConfirmationShortcutLabel(
+                  result == null ? '取消' : '关闭',
+                  'Esc',
                 ),
               ),
             ),
-        ],
+            if (result == null || retryable)
+              DesktopButtonClickRegion(
+                child: FilledButton(
+                  onPressed: _busy ? null : _delete,
+                  child: result == null && _error == null
+                      ? const ConfirmationShortcutLabel('永久删除', 'Enter / D')
+                      : const Text('重试未完成项'),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

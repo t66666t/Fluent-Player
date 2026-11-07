@@ -6,7 +6,6 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../../models/subtitle_model.dart';
@@ -25,6 +24,7 @@ import 'asr_progress_tracker.dart';
 import 'audio_chunk_prefetcher.dart';
 import 'asr_acceleration.dart';
 import 'cohere_asr_runtime.dart';
+import 'qwen_asr_runtime.dart';
 import 'asr_accelerator_transport.dart';
 import 'bounded_model_pipeline.dart';
 import 'inference_scheduler.dart';
@@ -95,6 +95,7 @@ String _phaseLabel(String phase) => switch (phase) {
   'punctuating' => '补标点',
   'refining' => '边界修整',
   'acceleration' => '选择计算设备',
+  'acceleration-ready' => '识别语音',
   _ => '识别语音',
 };
 
@@ -263,6 +264,7 @@ class ModelTranscriptionRunner {
         ? StreamingSubtitleAssembler(
             spec.subtitleSegmentation,
             version: streamAssemblyVersion,
+            textProcessingVersion: spec.asrTextProcessingVersion,
           )
         : null;
     final streamed = <SubtitleItem>[];
@@ -575,7 +577,11 @@ class ModelTranscriptionRunner {
           .995,
         ),
       );
-      final result = await segmentAsrSubtitlesAsync(merged, grouping);
+      final result = await segmentAsrSubtitlesAsync(
+        merged,
+        grouping,
+        textProcessingVersion: spec.asrTextProcessingVersion,
+      );
       check();
       workFinished = true;
       onProgress(
@@ -1073,7 +1079,9 @@ class ModelTranscriptionRunner {
                     report(_nativeStage(phase), message);
                   },
                 );
-                await tune(recognizer, slice.start + slice.count);
+                // Avoid reloading the recognizer for an automatic probe before
+                // the current batch can reach refinement and publication.
+                // Pipelined work still reuses previously saved tuning results.
                 final audio = recognizer.takePreparedAudio();
                 if (audio == null) throw StateError('识别阶段未交付增强所需音频');
                 return (cues: cues, audio: audio);
@@ -1133,6 +1141,7 @@ class ModelTranscriptionRunner {
                       },
                     );
                   }),
+                  priority: 1,
                 );
             if (prepared.completed == null) {
               enhanced[slice.key] = {
@@ -1307,7 +1316,7 @@ class ModelTranscriptionRunner {
                     tracking?.front(index, _phaseLabel(phase), value);
                   }
                   final (stage, from, width) = switch (phase) {
-                    'acceleration' => (
+                    'acceleration' || 'acceleration-ready' => (
                       ModelProcessingStage.recognizing,
                       options.enabled ? .08 : 0.0,
                       options.enabled ? .44 : 1.0,
@@ -1554,7 +1563,7 @@ class ModelTranscriptionRunner {
         enableAudioPrefetch();
         return await process(null);
       }
-      await center.prepareAsrEnhancements(
+      final vad = await center.prepareAsrModels(
         spec,
         cancelSignal: cancelSignal,
         onProgress: (message) => onProgress(
@@ -1576,21 +1585,6 @@ class ModelTranscriptionRunner {
             throw StateError('任务要求的模型版本已变更，请重新创建任务');
           }
           check();
-          final vad = File(
-            p.join((await center.modelRoot()).path, 'silero_vad.onnx'),
-          );
-          if (!await vad.exists()) {
-            final bytes = await rootBundle.load(
-              'assets/models/asr/silero_vad.onnx',
-            );
-            await vad.writeAsBytes(
-              bytes.buffer.asUint8List(
-                bytes.offsetInBytes,
-                bytes.lengthInBytes,
-              ),
-              flush: true,
-            );
-          }
           final resources = InferenceResourceSession.current!;
           final snapshot = resources.governor.snapshot;
           final device = _customDeviceInfo
@@ -1730,11 +1724,18 @@ class ModelTranscriptionRunner {
           );
           worker.onBudget = (lane, threads, budget) =>
               tracking?.configure(lane, threads, budget);
+          Map<String, dynamic>? sharedAcceleration;
+          void Function(Map<String, dynamic>)? recordAcceleration;
           {
             final packId = asrAccelerationPackId(model.id);
-            worker.configureAcceleration(
-              {
+            sharedAcceleration = {
                 'automaticTuningAllowed': false,
+                'conservativeGpu': Platform.isAndroid || Platform.isIOS,
+                'runtimeStamp': QwenAsrRuntime.desktopRuntimeStamp(),
+                'language': spec.profile.language,
+                'hotwords': spec.asrEnhancements?.enabled == true
+                    ? spec.asrEnhancements!.hotwords.trim()
+                    : '',
                 'mode': (spec.asrAcceleration ?? AsrAcceleration.cpu).name,
                 'legacy': spec.asrAcceleration == null,
                 'accelerationEnvironment': ?accelerationEnvironment,
@@ -1778,15 +1779,18 @@ class ModelTranscriptionRunner {
                     if (entry.key.startsWith('${model.id}:'))
                       entry.value.toJson(),
                 ],
-              },
-              onState: (state) {
-                tracking?.backend = state['backend'] as String? ?? 'CPU';
-                unawaited(
-                  center
-                      .recordAsrState(model.id, state)
-                      .catchError((Object _) {}),
-                );
-              },
+              };
+            recordAcceleration = (state) {
+              tracking?.backend = state['backend'] as String? ?? 'CPU';
+              unawaited(
+                center
+                    .recordAsrState(model.id, state)
+                    .catchError((Object _) {}),
+              );
+            };
+            worker.configureAcceleration(
+              sharedAcceleration,
+              onState: recordAcceleration,
             );
           }
           LocalAsrWorker? postWorker;
@@ -1825,6 +1829,10 @@ class ModelTranscriptionRunner {
             if (plan.pipeline) {
               postWorker = _createLocalWorker();
               postWorker.configureResources(resources);
+              postWorker.configureAcceleration(
+                sharedAcceleration,
+                onState: recordAcceleration,
+              );
               postWorker.onBudget = (lane, threads, budget) =>
                   tracking?.configure(lane, threads, budget);
               await postWorker.start(

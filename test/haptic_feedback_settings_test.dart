@@ -58,7 +58,7 @@ void main() {
       platformCalls.where(
         (call) =>
             call.method == 'HapticFeedback.vibrate' &&
-            call.arguments == 'HapticFeedbackType.mediumImpact',
+            call.arguments == 'HapticFeedbackType.lightImpact',
       ),
       hasLength(2),
     );
@@ -97,7 +97,7 @@ void main() {
     expect(platformCalls, hasLength(2));
   });
 
-  test('任务排序开始、跨越位置和完成使用分级震动并受总开关控制', () async {
+  test('任务排序使用轻触和选择反馈并受总开关控制', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
     await AppHaptics.reorderDragStarted(settings);
@@ -105,7 +105,7 @@ void main() {
     await AppHaptics.reorderDragCompleted(settings);
 
     expect(platformCalls.map((call) => call.arguments), [
-      'HapticFeedbackType.mediumImpact',
+      'HapticFeedbackType.lightImpact',
       'HapticFeedbackType.selectionClick',
       'HapticFeedbackType.lightImpact',
     ]);

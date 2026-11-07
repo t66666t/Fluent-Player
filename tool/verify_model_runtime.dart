@@ -9,6 +9,7 @@ import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import 'package:path/path.dart' as p;
 import 'package:video_player_app/features/model_center/local_asr_worker.dart';
 import 'package:video_player_app/features/model_center/subtitle_segmentation.dart';
+import 'local_asr_probe_assets.dart';
 
 Future<Map<String, Object?>> runModelRuntimeProbe(
   List<String> args, {
@@ -40,7 +41,7 @@ Future<Map<String, Object?>> runModelRuntimeProbe(
       await worker.start(
         engine: entry.value,
         directory: folder,
-        vadPath: p.absolute('assets/models/asr/silero_vad.onnx'),
+        vadPath: asrProbeVadPath(modelRoot: args[0]),
         language: 'auto',
         threads: 2,
         libraryDirectory: p.dirname(p.absolute(args[1])),

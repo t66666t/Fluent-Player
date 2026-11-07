@@ -8,10 +8,10 @@ import 'package:path/path.dart' as p;
 
 import '../models/subtitle_model.dart';
 import '../models/subtitle_punctuation.dart';
+import '../models/transcription_progress.dart';
 import 'subtitle_output_preparer.dart';
 import 'subtitle_translation_languages.dart';
 export 'subtitle_translation_languages.dart';
-import 'subtitle_translation_policy.dart';
 export 'subtitle_translation_policy.dart';
 import 'smart_subtitle_translator.dart';
 import '../utils/subtitle_parser.dart';
@@ -22,16 +22,29 @@ import '../features/model_center/model_catalog.dart';
 import '../features/model_center/model_center_service.dart';
 import '../features/model_center/local_subtitle_translator.dart';
 import '../features/model_center/inference_scheduler.dart';
+import 'subtitle_optimization.dart';
+import 'subtitle_file_postprocessor.dart';
+import 'subtitle_translate_settings.dart';
+import 'generated_subtitle_names.dart';
+import 'subtitle_file_stream_source.dart';
+import 'streaming_subtitle_store.dart';
+import '../models/subtitle_stream.dart';
 
 enum SubtitleTranslateProvider { bing, ai, local }
 
 class SubtitleTranslationResult {
   final String outputPath;
   final int totalCount;
+  final String? optimizedPath;
+  final String optimizationWarning;
+  final bool translationEnabled;
 
   const SubtitleTranslationResult({
     required this.outputPath,
     required this.totalCount,
+    this.optimizedPath,
+    this.optimizationWarning = '',
+    this.translationEnabled = true,
   });
 }
 
@@ -93,6 +106,8 @@ class SubtitleTranslationService extends ChangeNotifier {
   static final SubtitleTranslationService instance =
       SubtitleTranslationService._internal();
 
+  final streamSource = SubtitleFileStreamSource();
+
   /// 仅供测试注入使用；UI 层应使用 [instance]。
   SubtitleTranslationService({
     Dio? dio,
@@ -117,15 +132,19 @@ class SubtitleTranslationService extends ChangeNotifier {
 
   bool _isTranslating = false;
   double _progress = 0;
+  SubtitleOptimizationProgress? _optimizationProgress;
   String? _activity;
   String? _activeInputPath;
   String? _activeVideoPath;
   SubtitleTranslateProvider? _activeProvider;
   String? _activeSourceLanguage;
   String? _activeTargetLanguage;
+  bool? _activeOptimizationEnabled, _activeTranslationEnabled;
 
   bool get isTranslating => _isTranslating;
   double get progress => _progress;
+  SubtitleOptimizationProgress? get optimizationProgress =>
+      _optimizationProgress;
 
   /// Short status for the current AI batch, such as "AI 翻译 12/80".
   String? get activity => _activity;
@@ -134,6 +153,8 @@ class SubtitleTranslationService extends ChangeNotifier {
   SubtitleTranslateProvider? get activeProvider => _activeProvider;
   String? get activeSourceLanguage => _activeSourceLanguage;
   String? get activeTargetLanguage => _activeTargetLanguage;
+  bool? get activeOptimizationEnabled => _activeOptimizationEnabled;
+  bool? get activeTranslationEnabled => _activeTranslationEnabled;
 
   /// Whether the current task belongs to [videoPath].
   ///
@@ -209,6 +230,50 @@ class SubtitleTranslationService extends ChangeNotifier {
     ModelJobSpec? localSpecification,
     String checkpointScope = '',
     SmartTranslationPolicy? smartPolicy,
+  }) => processSubtitleFile(
+    inputPath: inputPath,
+    sourceText: sourceText,
+    outputPunctuation: outputPunctuation,
+    sourceLanguage: sourceLanguage,
+    targetLanguage: targetLanguage,
+    provider: provider,
+    onProgress: onProgress,
+    onActivity: onActivity,
+    outputDirectory: outputDirectory,
+    outputFilePrefix: outputFilePrefix,
+    videoPath: videoPath,
+    aiOptions: aiOptions,
+    aiEndpoint: aiEndpoint,
+    cancelSignal: cancelSignal,
+    localSpecification: localSpecification,
+    checkpointScope: checkpointScope,
+    smartPolicy: smartPolicy,
+  );
+
+  Future<SubtitleTranslationResult> processSubtitleFile({
+    SubtitleOptimizationChoice optimization =
+        const SubtitleOptimizationChoice.off(),
+    AiSubtitleApiSettings? optimizationEndpoint,
+    bool translationEnabled = true,
+    SubtitleOptimizer? optimizer,
+    Future<void> Function(SubtitleTranslationResult)? onBatchCommitted,
+    required String inputPath,
+    String? sourceText,
+    SubtitlePunctuation outputPunctuation = SubtitlePunctuation.preserve,
+    required String sourceLanguage,
+    required String targetLanguage,
+    required SubtitleTranslateProvider provider,
+    required void Function(double progress) onProgress,
+    void Function(String? activity)? onActivity,
+    String? outputDirectory,
+    String? outputFilePrefix,
+    String? videoPath,
+    AiSubtitleTranslationSettings? aiOptions,
+    AiSubtitleApiSettings? aiEndpoint,
+    Future<void>? cancelSignal,
+    ModelJobSpec? localSpecification,
+    String checkpointScope = '',
+    SmartTranslationPolicy? smartPolicy,
   }) async {
     final previous = _translationTail;
     final epoch = _cancellationEpoch;
@@ -220,7 +285,8 @@ class SubtitleTranslationService extends ChangeNotifier {
       if (!finished) cancelled = true;
     });
     try {
-      final frozenLocal = provider == SubtitleTranslateProvider.local
+      final frozenLocal =
+          translationEnabled && provider == SubtitleTranslateProvider.local
           ? localSpecification ??
                 await captureLocalTranslation(ModelCenterService.instance)
           : null;
@@ -228,6 +294,11 @@ class SubtitleTranslationService extends ChangeNotifier {
       await previous;
       if (cancelled || epoch != _cancellationEpoch) throw StateError('字幕翻译已取消');
       return await _translateSubtitleFileNow(
+        optimization: optimization,
+        optimizationEndpoint: optimizationEndpoint,
+        translationEnabled: translationEnabled,
+        optimizer: optimizer,
+        onBatchCommitted: onBatchCommitted,
         inputPath: inputPath,
         sourceText: sourceText,
         outputPunctuation: outputPunctuation,
@@ -254,6 +325,12 @@ class SubtitleTranslationService extends ChangeNotifier {
   }
 
   Future<SubtitleTranslationResult> _translateSubtitleFileNow({
+    SubtitleOptimizationChoice optimization =
+        const SubtitleOptimizationChoice.off(),
+    AiSubtitleApiSettings? optimizationEndpoint,
+    bool translationEnabled = true,
+    SubtitleOptimizer? optimizer,
+    Future<void> Function(SubtitleTranslationResult)? onBatchCommitted,
     required String inputPath,
     String? sourceText,
     SubtitlePunctuation outputPunctuation = SubtitlePunctuation.preserve,
@@ -276,6 +353,7 @@ class SubtitleTranslationService extends ChangeNotifier {
       throw StateError('已有字幕翻译任务正在进行，请等待当前任务完成');
     }
     final token = CancelToken();
+    final stopped = Completer<void>();
     _activeCancelToken = token;
     var finished = false;
     cancelSignal?.then((_) {
@@ -284,13 +362,42 @@ class SubtitleTranslationService extends ChangeNotifier {
     // 设置活跃任务状态，通知 UI（含重开后的新 UI）能恢复进度显示
     _isTranslating = true;
     _progress = 0;
+    _optimizationProgress = null;
     _activity = null;
     _activeInputPath = inputPath;
     _activeVideoPath = videoPath;
     _activeProvider = provider;
     _activeSourceLanguage = sourceLanguage;
     _activeTargetLanguage = smartPolicy == null ? targetLanguage : 'mul';
+    _activeOptimizationEnabled = optimization.enabled;
+    _activeTranslationEnabled = translationEnabled;
     notifyListeners();
+
+    StreamingSubtitleStore? processingStore;
+    SubtitleTranslationResult resultFor(StreamingSubtitleStore store) =>
+        SubtitleTranslationResult(
+          outputPath: translationEnabled
+              ? store.secondaryPath!
+              : store.primaryPath,
+          totalCount: store.primary.snapshot.length,
+          optimizedPath: store.primaryPath,
+          optimizationWarning: store.optimizationWarning,
+          translationEnabled: translationEnabled,
+        );
+    void publishStore(
+      StreamingSubtitleStore store, {
+      List<SubtitleItem> primary = const [],
+      List<SubtitleItem> secondary = const [],
+    }) {
+      if (videoPath != null && videoPath.isNotEmpty) {
+        streamSource.publish(
+          store,
+          videoPath: videoPath,
+          primary: primary,
+          secondary: secondary,
+        );
+      }
+    }
 
     try {
       _checkCancelled();
@@ -323,6 +430,10 @@ class SubtitleTranslationService extends ChangeNotifier {
 
       void combinedActivity(String? message) {
         providerActivity = message;
+        if (optimization.enabled) {
+          publishActivity(message ?? '正在处理字幕');
+          return;
+        }
         publishActivity(
           '已处理 $done/${items.length} 条'
           '${message == null || message.isEmpty ? '' : ' · $message'}',
@@ -341,6 +452,96 @@ class SubtitleTranslationService extends ChangeNotifier {
       }
 
       combinedProgress(0);
+
+      if (optimization.enabled) {
+        final bound =
+            optimizationEndpoint ??
+            await AiSubtitleApiSettingsStore().loadForSnapshot(
+              optimization.endpoint!,
+            );
+        final store = await processSubtitleFileBatches(
+          inputPath: inputPath,
+          items: items,
+          outputDirectory: outputDirectory ?? p.dirname(inputPath),
+          optimization: optimization,
+          optimizationEndpoint: bound,
+          optimizer: optimizer,
+          translation: TranscriptTranslateChoice(
+            enabled: translationEnabled,
+            direction: TranscriptTranslateDirection.auto,
+            provider: provider,
+            aiOptions: aiOptions ?? AiSubtitleTranslationSettings.defaults,
+            apiEndpoint: aiEndpoint,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            localSpecification: localSpecification,
+            smartPolicy: smartPolicy,
+          ),
+          translationEndpoint: aiEndpoint,
+          translator: this,
+          punctuation: outputPunctuation,
+          cancelSignal: token.whenCancel.then<void>((_) {}),
+          checkCancelled: _checkCancelled,
+          onProgress: combinedProgress,
+          onActivity: combinedActivity,
+          onOptimizationProgress: (value) {
+            _optimizationProgress = value;
+            notifyListeners();
+          },
+          onOpened: (value) async {
+            processingStore = value;
+            if (videoPath != null && videoPath.isNotEmpty) {
+              streamSource.begin(
+                value,
+                videoPath: videoPath,
+                stop: () async {
+                  token.cancel('用户停止了字幕处理');
+                  await stopped.future;
+                },
+                resume: () async {
+                  await processSubtitleFile(
+                    inputPath: inputPath,
+                    sourceText: sourceText,
+                    optimization: optimization,
+                    optimizationEndpoint: optimizationEndpoint,
+                    optimizer: optimizer,
+                    onBatchCommitted: onBatchCommitted,
+                    translationEnabled: translationEnabled,
+                    outputPunctuation: outputPunctuation,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
+                    provider: provider,
+                    onProgress: onProgress,
+                    onActivity: onActivity,
+                    outputDirectory: outputDirectory,
+                    outputFilePrefix: outputFilePrefix,
+                    videoPath: videoPath,
+                    aiOptions: aiOptions,
+                    aiEndpoint: aiEndpoint,
+                    localSpecification: localSpecification,
+                    checkpointScope: checkpointScope,
+                    smartPolicy: smartPolicy,
+                  );
+                },
+              );
+            }
+          },
+          onCommitted: (value, primary, secondary) async {
+            await onBatchCommitted?.call(resultFor(value));
+            publishStore(value, primary: primary, secondary: secondary);
+          },
+        );
+        publishStore(store);
+        final result = resultFor(store);
+        _notifyCompletion(
+          SubtitleTranslationCompletion(
+            videoPath: videoPath ?? '',
+            result: result,
+          ),
+        );
+        return result;
+      }
+      if (!translationEnabled) throw StateError('请至少开启优化或翻译');
 
       final translatedTexts = await _translateItems(
         items: items,
@@ -390,6 +591,15 @@ class SubtitleTranslationService extends ChangeNotifier {
       );
       return result;
     } catch (e) {
+      if (processingStore case final store?) {
+        await store.setPhase(
+          token.isCancelled
+              ? SubtitleStreamPhase.paused
+              : SubtitleStreamPhase.failed,
+          '已保留原字幕及处理进度，可继续',
+        );
+        publishStore(store);
+      }
       _notifyCompletion(
         SubtitleTranslationCompletion(videoPath: videoPath ?? '', error: e),
       );
@@ -399,12 +609,16 @@ class SubtitleTranslationService extends ChangeNotifier {
       _activeCancelToken = null;
       _isTranslating = false;
       _progress = 0;
+      _optimizationProgress = null;
       _activity = null;
       _activeInputPath = null;
       _activeVideoPath = null;
       _activeProvider = null;
       _activeSourceLanguage = null;
       _activeTargetLanguage = null;
+      _activeOptimizationEnabled = null;
+      _activeTranslationEnabled = null;
+      stopped.complete();
       notifyListeners();
     }
   }
@@ -660,24 +874,34 @@ class SubtitleTranslationService extends ChangeNotifier {
     final dir = outputDirectory?.trim().isNotEmpty == true
         ? p.normalize(outputDirectory!.trim())
         : p.dirname(inputPath);
-    final base = (outputFilePrefix?.trim().isNotEmpty == true)
+    final prefix = (outputFilePrefix?.trim().isNotEmpty == true)
         ? outputFilePrefix!.trim()
         : p.basenameWithoutExtension(inputPath);
+    final base = localizedSubtitleResultName(prefix);
     final ext = '.srt';
-    final normalizedLang = targetLanguage.replaceAll(
-      RegExp(r'[^a-zA-Z0-9\-]'),
+    final languageName = targetLanguage == 'mul'
+        ? '中英互译'
+        : subtitleLanguageLabel(targetLanguage);
+    final normalizedLang = languageName.replaceAll(
+      RegExp(r'[<>:"/\\|?*\x00-\x1f]'),
       '_',
     );
 
-    var candidate = p.join(dir, '$base.translated.$normalizedLang$ext');
+    var candidate = p.join(dir, '$base.翻译.$normalizedLang$ext');
     if (!File(candidate).existsSync()) {
       return candidate;
     }
 
     candidate = p.join(
       dir,
-      '$base.translated.$normalizedLang.${DateTime.now().millisecondsSinceEpoch}$ext',
+      '$base.翻译.$normalizedLang.${DateTime.now().millisecondsSinceEpoch}$ext',
     );
     return candidate;
+  }
+
+  @override
+  void dispose() {
+    streamSource.dispose();
+    super.dispose();
   }
 }

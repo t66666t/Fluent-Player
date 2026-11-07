@@ -83,7 +83,9 @@ void main() {
   for (final portrait in [true, false]) {
     for (final width in [
       80.0,
+      if (!portrait) ...[100.0, 155.0, 156.0],
       160.0,
+      if (!portrait) 192.0,
       240.0,
       280.0,
       320.0,
@@ -109,7 +111,7 @@ void main() {
           of: toolbar,
           matching: find.byType(InkWell),
         );
-        final count = portrait ? 15 : 11;
+        final count = portrait ? 16 : 12;
         expect(buttons, findsNWidgets(count));
         expect(find.byType(PopupMenuButton), findsNothing);
         for (final tooltip in ['字幕样式设置', '字幕编辑', '合成视频', '识别画面字幕（OCR）']) {
@@ -124,14 +126,18 @@ void main() {
           findsNothing,
         );
         var previousRight = bounds.left;
-        for (var index = 0; index < count; index++) {
+        var previousTop = bounds.top;
+        for (var index = 0; index < count - 1; index++) {
           final rect = tester.getRect(buttons.at(index));
+          if (rect.top != previousTop) previousRight = bounds.left;
+          previousTop = rect.top;
           expect(rect.left, greaterThanOrEqualTo(previousRight - 0.001));
           expect(rect.right, lessThanOrEqualTo(bounds.right + 0.001));
-          expect(rect.top, bounds.top);
+          expect(rect.top, greaterThanOrEqualTo(bounds.top));
+          expect(rect.bottom, lessThanOrEqualTo(bounds.bottom));
           expect(rect.height, 44);
           expect(rect.width, greaterThan(0));
-          expect(rect.width, lessThanOrEqualTo(36.001));
+          expect(rect.width, lessThanOrEqualTo(32.001));
           final glyph = tester.renderObject<RenderBox>(
             find.descendant(
               of: buttons.at(index),
@@ -148,13 +154,48 @@ void main() {
           previousRight = rect.right;
         }
         expect(previousRight, lessThanOrEqualTo(bounds.right + 0.001));
-        final settingsRect = tester.getRect(buttons.last);
-        final precedingRect = tester.getRect(buttons.at(count - 2));
-        expect(settingsRect.left, closeTo(precedingRect.right, 0.001));
+        final settingsRect = tester.getRect(buttons.at(count - 2));
+        final precedingRect = tester.getRect(buttons.at(count - 3));
+        if (settingsRect.top == precedingRect.top) {
+          expect(settingsRect.left, closeTo(precedingRect.right, 0.001));
+        }
         expect(settingsRect.width, closeTo(precedingRect.width, 0.001));
         if (width >= 600) {
-          expect(settingsRect.width, 36);
+          expect(settingsRect.width, 32);
           expect(settingsRect.right, lessThan(bounds.right));
+        }
+        final toggleRect = tester.getRect(buttons.last);
+        expect(toggleRect.right, bounds.right);
+        expect(toggleRect.width, closeTo(settingsRect.width, .001));
+        expect(toggleRect.top, bounds.top);
+        if (width >= count * (portrait ? 20 : 13)) {
+          expect(bounds.height, 44);
+          expect(toggleRect.left, closeTo(settingsRect.right, .001));
+          final viewSurface = tester.getRect(
+            find.byKey(const ValueKey('subtitle-toolbar-view-surface')),
+          );
+          final languageSurface = tester.getRect(
+            find.byKey(const ValueKey('subtitle-toolbar-language-surface')),
+          );
+          Rect paintedIcon(Finder button) {
+            final icon = tester.renderObject<RenderBox>(
+              find.descendant(of: button, matching: find.byType(Icon)),
+            );
+            return MatrixUtils.transformRect(
+              icon.getTransformTo(null),
+              Offset.zero & icon.size,
+            );
+          }
+
+          final ordinaryBefore = paintedIcon(buttons.at(count - 3));
+          final ordinaryAfter = paintedIcon(buttons.at(count - 2));
+          expect(
+            languageSurface.left - viewSurface.right,
+            closeTo(ordinaryAfter.left - ordinaryBefore.right, .001),
+          );
+        } else {
+          expect(bounds.height, greaterThan(44));
+          expect(settingsRect.width, greaterThanOrEqualTo(portrait ? 24 : 13));
         }
         for (final (group, count) in [('view', 2), ('language', 3)]) {
           expect(
@@ -189,10 +230,11 @@ void main() {
         // must shrink by the same factor, including with 2x system text.
         expect(badgeScale, closeTo(iconScale, 0.000001));
         expect(badgeScale, lessThanOrEqualTo(1.000001));
-        if (width <= 160 || (portrait && width <= 280)) {
-          expect(badgeScale, lessThan(1.0));
+        if (settingsRect.width < 20) {
+          expect(badgeScale, inInclusiveRange(12 / 19 - .001, 1));
+        } else {
+          expect(badgeScale, closeTo(1, .001));
         }
-        if (!portrait && width >= 240) expect(badgeScale, 1);
         final badgeBounds = MatrixUtils.transformRect(
           badgeTransform,
           Offset.zero & badge.size,

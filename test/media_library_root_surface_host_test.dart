@@ -13,6 +13,83 @@ import 'package:video_player_app/widgets/media_library_root_surface_host.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets(
+    'stale video and cloud entries stay closed while podcasts mount normally',
+    (tester) async {
+      final inits = <String, int>{};
+      final highlight = ValueNotifier<double>(0);
+      addTearDown(highlight.dispose);
+      var displayed = MediaLibraryRootEntry.bilibili;
+      Widget host() => MaterialApp(
+        home: Scaffold(
+          body: MediaLibraryRootSurfaceHost(
+            displayedEntry: displayed,
+            entryOrder: const [
+              MediaLibraryRootEntry.cloudDrive,
+              MediaLibraryRootEntry.recent,
+              MediaLibraryRootEntry.podcasts,
+              MediaLibraryRootEntry.recent,
+            ],
+            swipeHighlightIndex: highlight,
+            continueBuilder: (_, _) => _InitProbe(id: 'continue', inits: inits),
+            recentBuilder: (_, _) => _InitProbe(id: 'recent', inits: inits),
+            foldersBuilder: (_, _) => _InitProbe(id: 'folders', inits: inits),
+            podcastsBuilder: (_, _) => _InitProbe(id: 'podcasts', inits: inits),
+          ),
+        ),
+      );
+      for (final retired in [
+        MediaLibraryRootEntry.bilibili,
+        MediaLibraryRootEntry.cloudDrive,
+      ]) {
+        displayed = retired;
+        await tester.pumpWidget(host());
+        await tester.pumpAndSettle();
+        expect(
+          find
+              .byKey(
+                const ValueKey<MediaLibraryRootEntry>(
+                  MediaLibraryRootEntry.folders,
+                ),
+              )
+              .hitTestable(),
+          findsOneWidget,
+        );
+        expect(highlight.value, 3);
+        for (final remote in MediaLibraryRootEntry.values.where(
+          (entry) => !entry.isAvailable,
+        )) {
+          expect(
+            find.byKey(ValueKey<MediaLibraryRootEntry>(remote)),
+            findsNothing,
+          );
+        }
+      }
+      displayed = MediaLibraryRootEntry.podcasts;
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+      expect(
+        find
+            .byKey(
+              const ValueKey<MediaLibraryRootEntry>(
+                MediaLibraryRootEntry.podcasts,
+              ),
+            )
+            .hitTestable(),
+        findsOneWidget,
+      );
+      expect(highlight.value, 1);
+      // Idle prewarming remains bounded to the active community surfaces.
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(kMediaLibraryRootPrewarmDelay);
+        await tester.pumpAndSettle();
+      }
+      expect(inits, {'folders': 1, 'recent': 1, 'continue': 1, 'podcasts': 1});
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('initial folder highlight updates an already built title', (
     tester,
   ) async {
@@ -317,8 +394,8 @@ void main() {
       1800,
     );
     await tester.pumpAndSettle();
-    expect(displayed, MediaLibraryRootEntry.recent);
-    expect(swiped, contains(MediaLibraryRootEntry.recent));
+    expect(displayed, MediaLibraryRootEntryOrder.defaults[2]);
+    expect(swiped, contains(MediaLibraryRootEntryOrder.defaults[2]));
   });
 
   for (final width in [400.0, 800.0]) {
@@ -390,7 +467,7 @@ void main() {
       const Duration(milliseconds: 600),
     );
     await tester.pumpAndSettle();
-    expect(state.displayed, MediaLibraryRootEntry.recent);
+    expect(state.displayed, MediaLibraryRootEntryOrder.defaults[2]);
     expect(state.highlight.value, 2);
   });
 
@@ -429,7 +506,7 @@ void main() {
     }
     await gesture.up(timeStamp: const Duration(milliseconds: 125));
     await tester.pumpAndSettle();
-    expect(state.displayed, MediaLibraryRootEntry.recent);
+    expect(state.displayed, MediaLibraryRootEntryOrder.defaults[2]);
     expect(state.highlight.value, 2);
     expect(state.settled.value, isTrue);
   });
@@ -463,10 +540,10 @@ void main() {
       await _shortFlick(tester, -40);
     }
     await tester.pumpAndSettle();
-    expect(state.displayed, MediaLibraryRootEntry.cloudDrive);
+    expect(state.displayed, MediaLibraryRootEntryOrder.defaults.last);
     await _shortFlick(tester, -40);
     await tester.pumpAndSettle();
-    expect(state.displayed, MediaLibraryRootEntry.cloudDrive);
+    expect(state.displayed, MediaLibraryRootEntryOrder.defaults.last);
     expect(
       state.highlight.value,
       MediaLibraryRootEntryOrder.defaults.length - 1,
@@ -627,7 +704,6 @@ void main() {
                       continueBuilder: (_, _) => page('continue'),
                       foldersBuilder: (_, _) => page('folders'),
                       recentBuilder: (_, _) => page('recent'),
-                      bilibiliBuilder: (_, _) => page('bilibili'),
                     ),
                   ),
                 ],
@@ -888,7 +964,6 @@ Future<_SwipeHostState> _pumpSwipeHost(
                   ),
             foldersBuilder: (_, _) => const Center(child: Text('folders')),
             recentBuilder: (_, _) => const Center(child: Text('recent')),
-            bilibiliBuilder: (_, _) => const Center(child: Text('bilibili')),
           ),
         ),
       ),

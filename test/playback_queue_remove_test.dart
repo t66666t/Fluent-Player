@@ -84,8 +84,8 @@ void main() {
 
   setUpAll(() async {
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
@@ -218,7 +218,7 @@ void main() {
                 theme: ThemeData.dark().copyWith(
                   visualDensity: VisualDensity.compact,
                   textTheme: ThemeData.dark().textTheme.apply(
-                    fontFamily: 'MiSans',
+                    fontFamily: 'Noto Sans SC',
                   ),
                 ),
                 builder: (context, child) => MediaQuery(

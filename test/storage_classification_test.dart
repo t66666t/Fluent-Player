@@ -22,6 +22,139 @@ void main() {
   }
 
   test(
+    'cache cleanup preserves exports, saved covers, media and OCR models',
+    () async {
+      final saved = [
+        await write('portable_transfer/lesson.fluentpack'),
+        await write('imported_videos/original.mp4'),
+        await write('subtitles/unlinked.srt'),
+        await write('yt_dlp_downloads/finished.mp4'),
+        await write('thumbnails/selected-cover.jpg'),
+        await write('ocr_models/det.onnx'),
+      ];
+      final cache = [
+        await write('chapter_thumbnails/scene.jpg'),
+        await write('ocr_temp/frame.png'),
+      ];
+      final input = StorageScanInput(
+        roots: [StorageRoot(sandbox.path, 'data', StorageRootKind.data)],
+      );
+      final service = StorageAuditService(
+        buildInput: () async => input,
+        deletionBlockedReason: () => null,
+      );
+      addTearDown(service.dispose);
+      final snapshot = await service.scan();
+      for (final file in snapshot.files.where(
+        (entry) => saved.any((file) => file.path == entry.path),
+      )) {
+        expect(file.canDelete, isTrue, reason: file.path);
+        expect(
+          storageDeletionPermitted(StorageCleanupAction.clearCache, file),
+          isFalse,
+          reason: file.path,
+        );
+      }
+      final result = await service.delete(
+        StorageDeletionPlan(
+          snapshot.files,
+          action: StorageCleanupAction.clearCache,
+        ),
+      );
+      expect(
+        result.deletedPaths,
+        unorderedEquals(cache.map((file) => file.path)),
+      );
+      expect(result.skipped, hasLength(saved.length));
+      for (final file in saved) {
+        expect(await file.exists(), isTrue, reason: file.path);
+      }
+      expect(service.lastSnapshot!.appBytes, 17 * saved.length);
+    },
+  );
+
+  test(
+    'Agent journals and managed media workspaces retain their purpose',
+    () async {
+      final records = [
+        await write('external_ai/actions-v1.json'),
+        await write('external_ai/actions-v1.json.bak'),
+        await write('external_ai/actions-v1.json.tmp'),
+      ];
+      final work = await write('protected_media_workspaces_v1/task/audio.wav');
+      final snapshot = await scanStorageFiles(
+        StorageScanInput(
+          roots: [
+            StorageRoot(
+              sandbox.path,
+              'data',
+              StorageRootKind.data,
+              scoped: true,
+            ),
+          ],
+        ),
+      );
+      expect(snapshot.files, hasLength(4));
+      for (final file in snapshot.files) {
+        expect(
+          file.category,
+          records.any((record) => record.path == file.path)
+              ? StorageCategory.metadata
+              : StorageCategory.workTemp,
+        );
+        expect(file.canDelete, isFalse, reason: file.path);
+        expect(file.explicitDelete, isFalse, reason: file.path);
+      }
+      expect(snapshot.files.any((file) => file.path == work.path), isTrue);
+    },
+  );
+
+  test(
+    'origins follow logical roots rather than unrelated absolute path names',
+    () async {
+      final examples = <String, StorageOrigin>{
+        'downloads/bilibili/files/a.mp4': StorageOrigin.bilibili,
+        'downloads/douyin/files/a.mp4': StorageOrigin.douyin,
+        'downloads/web/files/a.mp4': StorageOrigin.web,
+        'downloads/yt_dlp/files/a.mp4': StorageOrigin.ytDlp,
+        'web_media_downloads/a.mp4': StorageOrigin.web,
+        'douyin_browser/Default/History': StorageOrigin.douyin,
+        'external_ai/actions-v1.json': StorageOrigin.appData,
+        'imported_media/bilibili-holiday.mp4': StorageOrigin.localMedia,
+        'personal_bilibili_export.bin': StorageOrigin.unknown,
+      };
+      for (final path in examples.keys) {
+        await write(path);
+      }
+      final snapshot = await scanStorageFiles(
+        StorageScanInput(
+          roots: [StorageRoot(sandbox.path, 'data', StorageRootKind.data)],
+        ),
+      );
+      for (final file in snapshot.files) {
+        final relative = p
+            .relative(file.path, from: sandbox.path)
+            .replaceAll('\\', '/');
+        expect(file.origin, examples[relative], reason: relative);
+      }
+      final renamed = await write('historical-destination/files/a.mp4');
+      final restored = await scanStorageFiles(
+        StorageScanInput(
+          roots: [
+            StorageRoot(
+              renamed.parent.parent.path,
+              'restored',
+              StorageRootKind.data,
+              feature: 'web_media_downloads',
+            ),
+          ],
+        ),
+      );
+      expect(restored.files.single.origin, StorageOrigin.web);
+    },
+  );
+
+  test(
     'models and their partial downloads keep their category across roots',
     () async {
       final paths = [

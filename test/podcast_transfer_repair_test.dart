@@ -117,6 +117,7 @@ void main() {
 
   PodcastEpisode episode(String id) {
     final value = PodcastEpisode(
+      sourceFeedUrl: 'https://publisher.test/rss',
       id: id,
       channelId: 'c',
       title: id,

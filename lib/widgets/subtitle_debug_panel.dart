@@ -370,7 +370,16 @@ class _SubtitleDebugPanelState extends State<SubtitleDebugPanel> {
                                                   ],
                                                 ),
                                                 Text(
-                                                  p.fontSummary,
+                                                  p.primaryFont ==
+                                                              'Noto Serif CJK SC' &&
+                                                          _session
+                                                                  .resolvedForDisplay(
+                                                                    p.id,
+                                                                  )
+                                                                  .primaryFont ==
+                                                              'Noto Sans SC'
+                                                      ? '思源宋体需下载 · 当前使用思源黑体'
+                                                      : p.fontSummary,
                                                   maxLines: chrome.isPhone
                                                       ? 1
                                                       : 2,
@@ -392,7 +401,11 @@ class _SubtitleDebugPanelState extends State<SubtitleDebugPanel> {
                                                     '风起时，我们再次相遇。',
                                                     maxLines: 1,
                                                     style: TextStyle(
-                                                      fontFamily: p.primaryFont,
+                                                      fontFamily: _session
+                                                          .resolvedForDisplay(
+                                                            p.id,
+                                                          )
+                                                          .primaryFont,
                                                       fontWeight:
                                                           FontWeight.values[p
                                                                       .primaryWeight ~/

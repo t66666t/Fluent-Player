@@ -93,9 +93,7 @@ double resolveDanmakuSpeedWithLockedPlaybackBaseline({
 /// default font, which is also the historical danmaku appearance.
 const List<String?> kDanmakuFontFamilies = <String?>[
   null,
-  'MiSans',
   'Noto Sans SC',
-  'Noto Serif CJK SC',
   'Swei Gothic CJK SC',
   'Comic Relief',
   'Roboto',

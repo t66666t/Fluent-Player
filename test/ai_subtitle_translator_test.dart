@@ -13,6 +13,14 @@ import 'package:video_player_app/services/ai_subtitle_translator.dart';
 import 'package:video_player_app/services/subtitle_translation_service.dart';
 import 'package:video_player_app/widgets/ai_subtitle_api_dialog.dart';
 
+class _NoNetworkModelTransport extends AiChatTransport {
+  @override
+  Future<List<AiModelInfo>> fetchModels(
+    AiChatSettings settings, {
+    AiChatCancellation? cancellation,
+  }) async => [];
+}
+
 class _MemorySecrets implements AiChatSecretStorage {
   final values = <String, String>{};
 
@@ -249,10 +257,56 @@ void main() {
     expect(accepted, {0: '已完成译文'});
     expect(requests, hasLength(6));
     for (final request in requests) {
-      expect(request.first['content'], contains('Yesterday Acme'));
+      expect(request.first['content'], isNot(contains('Yesterday Acme')));
+      expect(
+        request.map((message) => message['content']).join('\n'),
+        contains('Yesterday Acme'),
+      );
       expect(request.first['content'], contains('Acme 译为艾克米'));
     }
   });
+
+  test(
+    'DeepSeek keeps a stable rule prefix, disables thinking and isolates context caches',
+    () async {
+      const endpoint = AiSubtitleApiSettings(
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-flash',
+      );
+      final requests = <List<Map<String, String>>>[];
+      final client = translator(
+        settings: endpoint.toChatSettings(),
+        complete: (settings, messages) async {
+          final body = AiChatTransport.apiRequestBody(settings, messages);
+          expect(body['thinking'], {'type': 'disabled'});
+          requests.add(List.of(messages));
+          return echo(messages);
+        },
+      );
+      Future<List<String>> translateWith(String context) => client.translate(
+        texts: ['Good morning.'],
+        sourceLanguage: 'en',
+        targetLanguage: 'zh-CN',
+        targetLabel: '简体中文',
+        options: const AiSubtitleTranslationSettings(
+          threadNum: 1,
+          customPrompt: 'Acme 译为艾克米',
+        ),
+        precedingContext: context,
+        requireAll: true,
+        onProgress: (_) {},
+      );
+      await translateWith('前文甲');
+      await translateWith('前文乙');
+      await translateWith('前文乙');
+      expect(requests, hasLength(2));
+      expect(requests[0].first, requests[1].first);
+      expect(requests[0].first['content'], contains('Acme 译为艾克米'));
+      expect(requests[0].first['content'], isNot(contains('前文甲')));
+      expect(requests[0].last['content'], contains('前文甲'));
+      expect(requests[1].last['content'], contains('前文乙'));
+    },
+  );
 
   test('API 可以并发，Codex 与 OpenCode 按顺序翻译', () async {
     Future<int> peak({
@@ -537,6 +591,8 @@ void main() {
     );
 
     final written = await File(result.outputPath).readAsString();
+    expect(result.outputPath, contains('.翻译.简体中文.srt'));
+    expect(result.outputPath, isNot(contains('.translated.')));
     expect(written, contains('译:Hello'));
     expect(written, contains('译:World'));
     expect(service.activity, isNull);
@@ -561,7 +617,7 @@ void main() {
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
 
-    expect(find.text('翻译接口'), findsOneWidget);
+    expect(find.text('优化/翻译接口'), findsOneWidget);
     expect(find.text('检查连接'), findsOneWidget);
     final box = tester
         .renderObjectList<RenderConstrainedBox>(
@@ -586,9 +642,13 @@ void main() {
   });
 
   testWidgets('切换服务商会保留各自已经输入的密钥', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(
-      const MaterialApp(
-        home: AiSubtitleApiDialog(settings: AiSubtitleApiSettings()),
+      MaterialApp(
+        home: AiSubtitleApiDialog(
+          settings: const AiSubtitleApiSettings(),
+          transport: _NoNetworkModelTransport(),
+        ),
       ),
     );
     await tester.pumpAndSettle();

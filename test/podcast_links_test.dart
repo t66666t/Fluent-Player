@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_app/features/podcasts/podcast_links.dart';
+import 'package:video_player_app/services/app_web_navigation.dart';
 
 void main() {
   for (final (width, scale) in [(320.0, 1.7), (390.0, 1.0), (1100.0, 1.0)]) {
@@ -13,6 +14,12 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final copied = <String>[];
+      final opened = <Uri>[];
+      AppWebNavigation.rootOpenerForTesting = (url, {title}) async {
+        opened.add(url);
+        return true;
+      };
+      addTearDown(() => AppWebNavigation.rootOpenerForTesting = null);
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
         (call) async {
@@ -68,6 +75,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(copied, [rss]);
       expect(find.text('已复制'), findsOneWidget);
+      expect(opened, isEmpty);
+      await tester.tap(find.widgetWithText(TextButton, '打开').first);
+      await tester.pumpAndSettle();
+      expect(opened, [Uri.parse(rss)]);
       expect(find.byType(SnackBar), findsNothing);
       expect(tester.takeException(), isNull);
     });

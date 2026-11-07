@@ -1059,7 +1059,9 @@ class _PodcastSettingsPageState extends State<PodcastSettingsPage>
   }
 
   Future<void> _credentials() async {
-    const storage = FlutterSecureStorage();
+    const storage = FlutterSecureStorage(
+      aOptions: AndroidOptions(resetOnError: false),
+    );
     final key = TextEditingController(
       text: await storage.read(key: 'podcastIndexKey'),
     );

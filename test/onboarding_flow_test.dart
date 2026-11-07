@@ -6,7 +6,6 @@ import 'package:video_player_app/features/onboarding/onboarding_flow.dart';
 import 'package:video_player_app/features/onboarding/onboarding_screen.dart';
 import 'package:video_player_app/features/onboarding/onboarding_store.dart';
 import 'package:video_player_app/features/model_center/model_center_screen.dart';
-import 'package:video_player_app/screens/import_location_settings_screen.dart';
 import 'package:video_player_app/screens/network_settings_screen.dart';
 import 'package:video_player_app/services/bilibili/bilibili_api_service.dart';
 import 'package:video_player_app/services/bilibili/bilibili_download_service.dart';
@@ -121,12 +120,16 @@ void main() {
   );
 
   testWidgets(
-    'setup opens the existing network, import and model-center screens',
+    'setup opens network and model-center screens without placement settings',
     (tester) async {
       await host(tester);
+      expect(
+        find.byKey(const ValueKey('onboarding-importLocation')),
+        findsNothing,
+      );
+      expect(find.text('导入位置与整理'), findsNothing);
       for (final (destination, type) in [
         (OnboardingDestination.network, NetworkSettingsScreen),
-        (OnboardingDestination.importLocation, ImportLocationSettingsScreen),
         (OnboardingDestination.subtitleServices, ModelCenterScreen),
       ]) {
         final tile = find.byKey(ValueKey('onboarding-${destination.name}'));
@@ -135,7 +138,9 @@ void main() {
           180,
           scrollable: find.byType(Scrollable).first,
         );
-        await tester.tap(tile);
+        await tester.ensureVisible(tile);
+        await tester.pumpAndSettle();
+        await tester.tap(tile.hitTestable());
         final route = routes.last! as MaterialPageRoute;
         // Inspect the real destination before mounting native services.
         expect(
@@ -153,23 +158,18 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Bilibili action uses the real login dialog and cancel returns to setup',
-    (tester) async {
-      await host(tester);
-      await tester.tap(find.byKey(const ValueKey('onboarding-bilibili')));
-      await tester.pumpAndSettle();
-      expect(api.loads, greaterThan(0));
-      expect(find.text('Bilibili 登录'), findsOneWidget);
-      expect(find.text('扫码登录'), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(find.text('使用前设置'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('onboarding-close')));
-      await tester.pumpAndSettle();
-    },
-  );
+  testWidgets('local setup contains no website player or account login', (
+    tester,
+  ) async {
+    await host(tester);
+    expect(api.loads, 0);
+    expect(find.byKey(const ValueKey('onboarding-bilibili')), findsNothing);
+    expect(find.textContaining('官方播放'), findsNothing);
+    expect(find.text('扫码登录'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('onboarding-close')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('first launch can be skipped immediately and will not repeat', (
     tester,

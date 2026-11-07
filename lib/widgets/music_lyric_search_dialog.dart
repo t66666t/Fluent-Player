@@ -24,7 +24,7 @@ final _lyricSearchTheme = ThemeData.dark(useMaterial3: true).copyWith(
   ),
   textTheme: ThemeData.dark().textTheme.apply(
     fontFamily: 'Inter',
-    fontFamilyFallback: const ['Noto Sans SC'],
+    fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,

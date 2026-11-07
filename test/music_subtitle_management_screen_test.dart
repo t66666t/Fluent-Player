@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -20,10 +21,13 @@ import 'package:video_player_app/services/embedded_subtitle_service.dart';
 import 'package:video_player_app/services/library_service.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/services/settings_service.dart';
+import 'package:video_player_app/services/subtitle_file_processing_settings.dart';
+import 'package:video_player_app/services/subtitle_optimization.dart';
+import 'package:video_player_app/services/subtitle_translation_service.dart';
+import 'package:video_player_app/widgets/subtitle_processing_stage.dart';
 import 'package:video_player_app/services/transcription_manager.dart';
 import 'package:video_player_app/widgets/ai_transcription_panel.dart';
 import 'package:video_player_app/widgets/subtitle_management_sheet.dart';
-import 'package:video_player_app/widgets/subtitle_row_action_menu.dart';
 import 'package:video_player_app/widgets/music_album_cover.dart';
 import 'package:video_player_app/widgets/music_lyric_view.dart';
 import 'package:video_player_app/widgets/capsule_selector.dart';
@@ -41,6 +45,11 @@ void main() {
   late File chinese;
 
   setUp(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+          (_) async => null,
+        );
     SharedPreferences.setMockInitialValues({});
     root = Directory.systemTemp.createTempSync('music_subtitle_page_');
     originalPaths = PathProviderPlatform.instance;
@@ -370,11 +379,16 @@ void main() {
     },
   );
 
-  testWidgets(
-    'growing files show progress and stop or resume actions without rediscovery',
-    (tester) async {
+  for (final appearance in SubtitleManagementAppearance.values) {
+    testWidgets('growing files keep stop and resume actions in $appearance', (
+      tester,
+    ) async {
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.binding.setSurfaceSize(const Size(480, 900));
+      await tester.binding.setSurfaceSize(
+        appearance == SubtitleManagementAppearance.standard
+            ? const Size(480, 900)
+            : const Size(220, 640),
+      );
       transcription.dispose();
       final streamManager = _StreamingManager(settings: settings);
       transcription = streamManager;
@@ -416,6 +430,7 @@ void main() {
           body: SubtitleManagementSheet(
             videoPath: item.path,
             videoId: item.id,
+            appearance: appearance,
             showEmbeddedSubtitles: false,
             onSubtitleChanged: () {},
             onOpenAi: () {},
@@ -460,61 +475,136 @@ void main() {
       expect(streamManager.resumes, 1);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(host(const SizedBox.shrink()));
-    },
-  );
+    });
+  }
 
-  testWidgets('lyric and online search adapt between row and stack', (
+  testWidgets('search entries stay beside close in the header at every width', (
     tester,
   ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final semantics = tester.ensureSemantics();
     const lyricKey = ValueKey('subtitle-lyric-search-entry');
     const onlineKey = ValueKey('subtitle-online-search-entry');
-    Future<void> pumpSheet(Size size, SubtitleManagementAppearance appearance) {
-      return pumpPage(
-        tester,
-        SizedBox(
-          width: size.width,
-          height: size.height,
-          child: Scaffold(
-            backgroundColor: const Color(0xFF1E1E1E),
-            body: SubtitleManagementSheet(
-              videoPath: item.path,
-              videoId: item.id,
-              appearance: appearance,
-              showHeader: appearance == SubtitleManagementAppearance.standard,
-              showEmbeddedSubtitles: false,
-              associatedSubtitles: item.downloadAssociatedSubtitles,
-              onSubtitleChanged: () {},
-              onOpenAi: () {},
-            ),
-          ),
-        ),
-      );
+    var lyricSearches = 0;
+    try {
+      for (final appearance in SubtitleManagementAppearance.values) {
+        for (final width in [220.0, 320.0, 390.0, 768.0, 1280.0]) {
+          for (final scale in [1.0, 1.6]) {
+            await tester.binding.setSurfaceSize(Size(width, 800));
+            await pumpPage(
+              tester,
+              Scaffold(
+                body: MediaQuery(
+                  data: MediaQueryData(
+                    size: Size(width, 800),
+                    textScaler: TextScaler.linear(scale),
+                  ),
+                  child: SubtitleManagementSheet(
+                    key: ValueKey('$appearance-$width-$scale'),
+                    videoPath: item.path,
+                    videoId: item.id,
+                    appearance: appearance,
+                    showEmbeddedSubtitles: false,
+                    associatedSubtitles: item.downloadAssociatedSubtitles,
+                    onSubtitleChanged: () {},
+                    onOpenAi: () {},
+                    onSearchLyrics: () async => lyricSearches++,
+                  ),
+                ),
+              ),
+            );
+            final header = find.byKey(
+              const ValueKey('subtitle-management-header'),
+            );
+            final lyric = find.byKey(lyricKey);
+            final online = find.byKey(onlineKey);
+            final close = find.byKey(
+              ValueKey(
+                appearance == SubtitleManagementAppearance.musicIOS
+                    ? 'music-subtitle-dialog-close'
+                    : 'subtitle-management-close',
+              ),
+            );
+            expect(
+              find.descendant(of: header, matching: lyric),
+              findsOneWidget,
+            );
+            expect(
+              find.descendant(of: header, matching: online),
+              findsOneWidget,
+            );
+            final lyricRect = tester.getRect(lyric);
+            final onlineRect = tester.getRect(online);
+            final closeRect = tester.getRect(close);
+            expect(lyricRect.right, lessThan(onlineRect.left));
+            expect(onlineRect.right, lessThan(closeRect.left));
+            expect(
+              (lyricRect.center.dy - closeRect.center.dy).abs(),
+              lessThan(1),
+            );
+            expect(
+              (onlineRect.center.dy - closeRect.center.dy).abs(),
+              lessThan(1),
+            );
+            expect(tester.getRect(header).contains(lyricRect.topLeft), isTrue);
+            expect(onlineRect.right, lessThanOrEqualTo(width));
+            for (final label in ['搜索歌词', '搜索在线字幕']) {
+              final node = find.byWidgetPredicate(
+                (widget) =>
+                    widget is Semantics && widget.properties.label == label,
+              );
+              expect(
+                tester
+                    .getSemantics(node)
+                    .getSemanticsData()
+                    .hasAction(ui.SemanticsAction.tap),
+                isTrue,
+              );
+            }
+            for (final button in [lyric, online]) {
+              final labels = find.descendant(
+                of: button,
+                matching: find.byType(Text),
+              );
+              if (labels.evaluate().isNotEmpty) {
+                expect(
+                  tester
+                      .renderObject<RenderParagraph>(labels.first)
+                      .didExceedMaxLines,
+                  isFalse,
+                  reason:
+                      'Search labels must stay readable at $appearance $width $scale',
+                );
+              }
+            }
+            if (scale == 1) {
+              expect(
+                tester.getSize(header).height - onlineRect.height,
+                lessThanOrEqualTo(10),
+              );
+            }
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$appearance $width $scale',
+            );
+            if (width == 390 && scale == 1) {
+              await tap(tester, lyric);
+              expect(
+                lyricSearches,
+                appearance == SubtitleManagementAppearance.standard ? 1 : 2,
+              );
+              expect(find.byType(SubtitleManagementSheet), findsOneWidget);
+              expect(find.text('English'), findsOneWidget);
+            }
+            await tester.pumpWidget(const SizedBox.shrink());
+            await flushIO(tester);
+          }
+        }
+      }
+    } finally {
+      semantics.dispose();
     }
-
-    for (final appearance in [
-      SubtitleManagementAppearance.musicIOS,
-      SubtitleManagementAppearance.standard,
-    ]) {
-      await tester.binding.setSurfaceSize(const Size(844, 390));
-      await pumpSheet(const Size(844, 390), appearance);
-      await flushIO(tester);
-      final wideLyric = tester.getRect(find.byKey(lyricKey));
-      final wideOnline = tester.getRect(find.byKey(onlineKey));
-      expect(wideLyric.right, lessThan(wideOnline.left));
-      expect((wideLyric.center.dy - wideOnline.center.dy).abs(), lessThan(4));
-
-      await tester.binding.setSurfaceSize(const Size(220, 480));
-      await pumpSheet(const Size(220, 480), appearance);
-      await flushIO(tester);
-      final narrowLyric = tester.getRect(find.byKey(lyricKey));
-      final narrowOnline = tester.getRect(find.byKey(onlineKey));
-      expect(narrowLyric.bottom, lessThan(narrowOnline.top));
-      expect((narrowLyric.left - narrowOnline.left).abs(), lessThan(2));
-      expect((narrowLyric.width - narrowOnline.width).abs(), lessThan(2));
-    }
-    await tester.pumpWidget(host(const SizedBox.shrink()));
-    await tester.binding.setSurfaceSize(null);
   });
 
   testWidgets('translation model entry fits narrow standard and music panels', (
@@ -539,74 +629,228 @@ void main() {
             ),
           ),
         );
-        if (appearance == SubtitleManagementAppearance.musicIOS) {
-          await tap(
-            tester,
-            find.byKey(ValueKey('music-subtitle-actions-${english.path}')),
-          );
-          await tap(tester, find.text('翻译字幕'));
-        } else {
-          await tap(tester, find.byTooltip('翻译字幕').first);
-        }
+        await tap(tester, find.byTooltip('优化 / 翻译字幕').first);
         await tester.pumpAndSettle();
         expect(find.byType(ModelCenterButton), findsOneWidget);
+        await tester.ensureVisible(find.byType(ModelCenterButton));
+        final modelEntry = tester.getRect(find.byType(ModelCenterButton));
+        expect(modelEntry.left, greaterThanOrEqualTo(0));
+        expect(modelEntry.right, lessThanOrEqualTo(width));
+        expect(find.byType(ModelCenterButton).hitTestable(), findsOneWidget);
         expect(tester.takeException(), isNull, reason: '$appearance at $width');
-        await tester.pumpWidget(host(const SizedBox.shrink()));
+        // Scrolling to the model entry must not leave PageStorage offsets in
+        // the shared Navigator for the next independent width/appearance.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
       }
     }
   });
 
-  testWidgets('three row actions open in a menu anchored to the button', (
+  testWidgets('music subtitle actions stay compact at every width', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Padding(
-            padding: const EdgeInsets.only(top: 120, right: 40),
-            child: Align(
-              alignment: Alignment.topRight,
-              child: SubtitleRowActionMenuButton(
-                key: const ValueKey('subtitle-row-actions'),
-                actions: [
-                  SubtitleRowAction(label: '导出字幕', onSelected: () {}),
-                  SubtitleRowAction(label: '翻译字幕', onSelected: () {}),
-                  SubtitleRowAction(
-                    label: '删除字幕',
-                    onSelected: () {},
-                    destructive: true,
-                  ),
-                ],
-              ),
-            ),
-          ),
+    const localName = '音乐访谈原文字幕（完整校对版）.srt';
+    final local = File(
+      p.join(root.path, localName),
+    )..writeAsStringSync('1\n00:00:00,000 --> 00:00:04,000\nMusic interview\n');
+    item.localSubtitles = {'访谈字幕': local.path};
+    const captureUI = bool.fromEnvironment('CAPTURE_MUSIC_ROW_ACTIONS');
+    if (captureUI) {
+      for (final font in {
+        'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Regular.otf',
+        'Roboto': 'assets/fonts/NotoSansCJKsc-Regular.otf',
+        'Inter': 'assets/fonts/Inter-Regular.otf',
+        'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
+        'packages/cupertino_icons/CupertinoIcons':
+            'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+      }.entries) {
+        await tester.runAsync(
+          () => (FontLoader(
+            font.key,
+          )..addFont(rootBundle.load(font.value))).load(),
+        );
+      }
+    }
+
+    Finder row(String title) => find.ancestor(
+      of: find.text(title),
+      matching: find.byType(CupertinoListTile),
+    );
+    Finder action(Finder row, String tooltip) =>
+        find.descendant(of: row, matching: find.byTooltip(tooltip));
+    final capture = GlobalKey();
+    for (final (size, name) in [
+      (const Size(220, 640), 'narrow'),
+      (const Size(320, 720), 'small-phone'),
+      (const Size(390, 844), 'phone'),
+      (const Size(844, 390), 'landscape'),
+      (const Size(1440, 900), 'desktop'),
+    ]) {
+      await tester.binding.setSurfaceSize(size);
+      await pumpPage(
+        tester,
+        const MusicSubtitleManagementDialog(),
+        capture: capture,
+      );
+      await flushIO(tester);
+      final localRow = row(localName);
+      final boundRow = row('English');
+      await tester.ensureVisible(localRow);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: localRow,
+          matching: find.byIcon(CupertinoIcons.ellipsis),
         ),
-      ),
-    );
-    final button = find.byKey(const ValueKey('subtitle-row-actions'));
-    await tester.tap(button);
+        findsNothing,
+      );
+      expect(action(boundRow, '删除字幕'), findsNothing);
+      expect(action(boundRow, '导出字幕'), findsOneWidget);
+      expect(action(boundRow, '优化 / 翻译字幕'), findsOneWidget);
+      final rowRect = tester.getRect(localRow);
+      final buttons = [
+        for (final tooltip in ['导出字幕', '优化 / 翻译字幕', '删除字幕'])
+          tester.getRect(action(localRow, tooltip)),
+      ];
+      for (final button in buttons) {
+        expect(button.size, Size(size.width == 220 ? 28 : 32, 40));
+        expect(button.center.dy, closeTo(rowRect.center.dy, .1));
+      }
+      expect(buttons[0].right, closeTo(buttons[1].left, .1));
+      expect(buttons[1].right, closeTo(buttons[2].left, .1));
+      expect(buttons.last.right, closeTo(rowRect.right - 8, .1));
+      expect(
+        tester.getSize(find.text(localName)).width,
+        greaterThan(size.width == 220 ? 45 : 80),
+      );
+      expect(action(localRow, '删除字幕').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: '$size');
+      if (captureUI && size.width >= 320) {
+        final boundary =
+            capture.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 1.5);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          final file = File('artifacts/music_subtitle_row_actions/$name.png');
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+      }
+    }
+    await tap(tester, action(row(localName), '删除字幕'));
+    expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+    expect(find.text('删除外部字幕文件'), findsOneWidget);
+    await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    final menu = find.byKey(const ValueKey('subtitle-row-action-menu'));
-    expect(menu, findsOneWidget);
-    expect(find.text('导出字幕'), findsOneWidget);
-    expect(find.text('翻译字幕'), findsOneWidget);
-    expect(find.text('删除字幕'), findsOneWidget);
-    expect(find.byType(CupertinoActionSheet), findsNothing);
-    final buttonRect = tester.getRect(button);
-    final menuRect = tester.getRect(menu);
-    expect(menuRect.top - buttonRect.bottom, inInclusiveRange(0, 16));
-    expect((menuRect.right - buttonRect.right).abs(), lessThan(8));
-    expect(
-      tester.widget<Text>(find.text('删除字幕')).style?.color,
-      const Color(0xFFFF8A80),
-    );
+    expect(local.existsSync(), isTrue);
+    expect(playback.subtitlePaths, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  for (final (music, width) in [
+    (false, 220.0),
+    (false, 1280.0),
+    (true, 320.0),
+    (true, 1280.0),
+  ]) {
+    testWidgets('subtitle details in ${music ? 'music' : 'video'} at $width', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 680));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const name = '深夜访谈 · 原声对谈 · 嘉宾逐字稿（完整校对版与双语时间轴）.srt';
+      final local = File(p.join(root.path, name))
+        ..writeAsStringSync(
+          '1\n00:00:00,000 --> 00:00:04,000\nMusic interview\n',
+        );
+      item.localSubtitles = {'访谈字幕': local.path};
+      List<String> selected = [];
+      final clipboard =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      String? copied;
+      clipboard.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      });
+      addTearDown(
+        () => clipboard.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await pumpPage(
+        tester,
+        music
+            ? const MusicSubtitleManagementDialog()
+            : Theme(
+                data: ThemeData.dark().copyWith(
+                  platform: width > 700 ? TargetPlatform.windows : null,
+                ),
+                child: Scaffold(
+                  body: Center(
+                    child: SizedBox(
+                      width: width > 700 ? 420 : width,
+                      child: SubtitleManagementSheet(
+                        videoPath: item.path,
+                        videoId: item.id,
+                        showEmbeddedSubtitles: false,
+                        associatedSubtitles: item.downloadAssociatedSubtitles,
+                        localSubtitles: item.localSubtitles,
+                        onSubtitleChanged: () {},
+                        onOpenAi: () {},
+                        onSubtitleSelected: (paths) {
+                          selected = List.of(paths);
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+      );
+      await flushIO(tester);
+
+      final title = find.byWidgetPredicate((w) => w is Text && w.data == name);
+      final details = find.byWidgetPredicate(
+        (w) => w is SelectableText && w.data == name,
+      );
+      expect(details, findsNothing);
+      await tester.ensureVisible(title);
+      await tester.pumpAndSettle();
+      if (width > 700) {
+        await tester.tap(
+          title,
+          buttons: kSecondaryMouseButton,
+          kind: ui.PointerDeviceKind.mouse,
+        );
+      } else {
+        await tester.longPress(title);
+      }
+      await tester.pumpAndSettle();
+      expect(details, findsOneWidget);
+      expect(
+        tester.getTopLeft(details).dy,
+        greaterThan(tester.getBottomLeft(title).dy),
+      );
+      expect(find.textContaining('SRT ·'), findsOneWidget);
+      expect(music ? playback.subtitlePaths : selected, isEmpty);
+
+      await tap(tester, find.byTooltip('复制完整名称'));
+      expect(copied, name);
+      await tap(tester, find.byTooltip('收起字幕信息'));
+      expect(details, findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tap(tester, title);
+      expect(music ? playback.subtitlePaths : selected, [local.path]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets(
-    'import keeps an action sheet and row actions open a quality-style menu',
+    'import keeps its action sheet and translate opens directly from the row',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(844, 390));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -619,34 +863,20 @@ void main() {
       expect(find.text('手动输入文本'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      final actionButton = find.byKey(
-        ValueKey('music-subtitle-actions-${english.path}'),
-      );
-      await tap(tester, actionButton);
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('导出字幕'), findsNWidgets(2));
+      await tap(tester, find.byTooltip('优化 / 翻译字幕').first);
       expect(find.byType(CupertinoActionSheet), findsNothing);
-      final menu = find.byKey(const ValueKey('subtitle-row-action-menu'));
-      expect(menu, findsOneWidget);
-      expect(find.text('导出字幕'), findsOneWidget);
-      expect(find.text('翻译字幕'), findsOneWidget);
-      expect(find.text('取消'), findsNothing);
-      final buttonRect = tester.getRect(actionButton);
-      final menuRect = tester.getRect(menu);
-      final verticalGap = menuRect.top >= buttonRect.bottom
-          ? menuRect.top - buttonRect.bottom
-          : buttonRect.top - menuRect.bottom;
-      expect(verticalGap, inInclusiveRange(0, 16));
-      expect((menuRect.right - buttonRect.right).abs(), lessThan(8));
-      expect(menuRect.width, greaterThan(buttonRect.width));
-      await tap(tester, find.text('翻译字幕'));
-      await tester.pumpAndSettle();
-      expect(menu, findsNothing);
+      expect(playback.subtitlePaths, isEmpty);
       expect(
         find.byType(CupertinoSlidingSegmentedControl<bool>),
         findsOneWidget,
       );
       expect(
-        find.byType(CapsuleDropdownButtonFormField<String>),
+        find.byKey(const ValueKey('subtitle-file-translation-options')),
+        findsOneWidget,
+      );
+      expect(
+        find.byType(CapsuleDropdownButtonFormField<SubtitleTranslateProvider>),
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('smart-rule-0-source')), findsOneWidget);
@@ -655,6 +885,8 @@ void main() {
       expect(find.byType(ModelCenterButton), findsOneWidget);
       await tap(tester, find.text('手动翻译'));
       expect(find.text('输入翻译结果'), findsOneWidget);
+      // 手动翻译不调用内部引擎，语言设置里不能再标出必应/AI/本地模型。
+      expect(find.textContaining('当前翻译：'), findsNothing);
       await tester.pumpWidget(host(const SizedBox.shrink()));
     },
   );
@@ -699,12 +931,7 @@ void main() {
         addTearDown(tester.view.reset);
         await pumpPage(tester, const MusicSubtitleManagementDialog());
         await flushIO(tester);
-        await tap(
-          tester,
-          find.byKey(ValueKey('music-subtitle-actions-${english.path}')),
-        );
-        await tester.pumpAndSettle();
-        await tap(tester, find.text('翻译字幕'));
+        await tap(tester, find.byTooltip('优化 / 翻译字幕').first);
         await tap(tester, find.text('手动翻译'));
         await tap(tester, find.text('编辑翻译提示词'));
         await tester.pumpAndSettle();
@@ -770,6 +997,365 @@ void main() {
       await tester.pumpWidget(host(const SizedBox.shrink()));
     },
   );
+
+  for (final appearance in SubtitleManagementAppearance.values) {
+    testWidgets(
+      'file stages persist independently of expansion and transcription in $appearance',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(390, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        const optimizeKey = ValueKey('subtitle-optimization-toggle');
+        const translateKey = ValueKey('subtitle-file-translation-toggle');
+        const settingsKey = ValueKey('subtitle-file-translation-settings');
+        final options = find.byKey(
+          const ValueKey('subtitle-file-translation-options'),
+        );
+        Future<void> open(
+          String path, {
+          SubtitleManagementAppearance? nextAppearance,
+        }) async {
+          await pumpPage(
+            tester,
+            Scaffold(
+              body: SubtitleManagementSheet(
+                videoPath: item.path,
+                videoId: item.id,
+                appearance: nextAppearance ?? appearance,
+                showEmbeddedSubtitles: false,
+                associatedSubtitles: item.downloadAssociatedSubtitles,
+                onSubtitleChanged: () {},
+                onOpenAi: () {},
+              ),
+            ),
+          );
+          // The fixture renders English first and Chinese second.
+          await tap(
+            tester,
+            find.byTooltip('优化 / 翻译字幕').at(path == english.path ? 0 : 1),
+          );
+          await flushIO(tester);
+        }
+
+        bool selected(Key key) => tester.widget<Switch>(find.byKey(key)).value;
+        Future<void> setStage(Key key, bool value) async {
+          await tester.runAsync(() async {
+            tester.widget<Switch>(find.byKey(key)).onChanged!(value);
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          });
+          await flushIO(tester);
+        }
+
+        await open(english.path);
+        final panel = tester.widget<Container>(
+          find.byKey(const ValueKey('subtitle-processing-panel')),
+        );
+        expect((panel.margin as EdgeInsets).top, 12);
+        final stages = find.byType(SubtitleProcessingStage);
+        expect(stages, findsNWidgets(2));
+        expect(
+          tester.getSize(stages.first).height,
+          tester.getSize(stages.last).height,
+        );
+        expect(selected(optimizeKey), isFalse);
+        expect(selected(translateKey), isTrue);
+        expect(
+          find.byKey(const ValueKey('subtitle-file-translation-options')),
+          findsOneWidget,
+        );
+        // Both shortcuts are visible actions; neither enables processing.
+        expect(find.text('模型'), findsNWidgets(2));
+        expect(find.text('提示词'), findsOneWidget);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('subtitle-optimization-settings')),
+        );
+        expect(find.text('优化模型'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('subtitle-api-model')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('subtitle-optimization-prompt')),
+          findsNothing,
+        );
+        await tap(tester, find.byTooltip('关闭优化设置'));
+        await tap(
+          tester,
+          find.byKey(const ValueKey('subtitle-optimization-prompt-button')),
+        );
+        final prompt = find.byKey(
+          const ValueKey('subtitle-optimization-prompt'),
+        );
+        expect(prompt, findsOneWidget);
+        await tester.ensureVisible(prompt);
+        await tester.enterText(prompt, '保留原意与时间轴');
+        await tap(tester, find.text('保存'));
+        expect(selected(optimizeKey), isFalse);
+        expect(selected(translateKey), isTrue);
+        final configuration = await tester.runAsync(
+          SubtitleOptimizationSettings.load,
+        );
+        expect(configuration!.prompt, '保留原意与时间轴');
+        expect(configuration.enabled, isFalse);
+        await setStage(optimizeKey, true);
+        await setStage(translateKey, false);
+        expect(tester.widget(find.byKey(settingsKey)), isA<TextButton>());
+        await tap(tester, find.byKey(settingsKey));
+        expect(
+          find.byKey(const ValueKey('subtitle-file-translation-options')),
+          findsNothing,
+        );
+        final expandButton = find.byKey(
+          const ValueKey('subtitle-file-translation-expand'),
+        );
+        expect(
+          tester
+              .getRect(find.byKey(settingsKey))
+              .contains(tester.getCenter(expandButton)),
+          isTrue,
+          reason: 'Label and expansion arrow share one action.',
+        );
+        await tap(tester, expandButton);
+        expect(options, findsOneWidget);
+        expect(selected(translateKey), isFalse);
+        await tap(tester, find.byKey(settingsKey));
+        expect(options, findsNothing);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('subtitle-processing-close')),
+        );
+        expect(
+          find.byKey(const ValueKey('subtitle-processing-panel')),
+          findsNothing,
+        );
+        await tap(tester, find.byTooltip('优化 / 翻译字幕').first);
+        expect(options, findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await flushIO(tester);
+        // Another workflow changes the shared optimizer enable flag.
+        await tester.runAsync(
+          () => const SubtitleOptimizationSettings(enabled: false).save(),
+        );
+        await tester.runAsync(() async {
+          await (await SharedPreferences.getInstance()).reload();
+        });
+        await open(
+          chinese.path,
+          nextAppearance: appearance == SubtitleManagementAppearance.standard
+              ? SubtitleManagementAppearance.musicIOS
+              : SubtitleManagementAppearance.standard,
+        );
+        expect(options, findsNothing);
+        expect(selected(optimizeKey), isTrue);
+        expect(selected(translateKey), isFalse);
+        expect(find.text('仅优化字幕'), findsOneWidget);
+        await setStage(optimizeKey, false);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('subtitle-file-processing-start')),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tap(tester, find.byKey(settingsKey));
+        expect(options, findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await flushIO(tester);
+        await open(english.path);
+        expect(options, findsOneWidget);
+        expect(selected(optimizeKey), isFalse);
+        expect(selected(translateKey), isFalse);
+        expect(
+          (await tester.runAsync(SubtitleFileProcessingSettings.load))!.hasWork,
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await flushIO(tester);
+      },
+    );
+  }
+
+  testWidgets('subtitle header previews', (tester) async {
+    const captureUI = bool.fromEnvironment('CAPTURE_SUBTITLE_HEADER');
+    if (!captureUI) return;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final family in [
+      'Roboto',
+      '.SF Pro Text',
+      '.SF Pro Display',
+      'Noto Sans SC',
+      'monospace',
+    ]) {
+      await tester.runAsync(
+        () =>
+            (FontLoader(family)..addFont(
+                  rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'),
+                ))
+                .load(),
+      );
+    }
+    for (final font in {
+      'Inter': 'assets/fonts/Inter-Regular.otf',
+      'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
+      'packages/cupertino_icons/CupertinoIcons':
+          'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+    }.entries) {
+      await tester.runAsync(
+        () =>
+            (FontLoader(font.key)..addFont(rootBundle.load(font.value))).load(),
+      );
+    }
+    final capture = GlobalKey();
+    for (final music in [false, true]) {
+      for (final size in [
+        const Size(390, 844),
+        const Size(768, 900),
+        const Size(1280, 900),
+      ]) {
+        await tester.binding.setSurfaceSize(size);
+        await pumpPage(
+          tester,
+          Theme(
+            data: ThemeData.dark(),
+            child: music
+                ? const MusicSubtitleManagementDialog()
+                : Scaffold(
+                    backgroundColor: const Color(0xFF151618),
+                    body: Center(
+                      child: SizedBox(
+                        width: size.width > 700 ? 640 : size.width,
+                        child: SubtitleManagementSheet(
+                          key: ValueKey(size),
+                          videoPath: item.path,
+                          videoId: item.id,
+                          showEmbeddedSubtitles: false,
+                          associatedSubtitles: item.downloadAssociatedSubtitles,
+                          onSubtitleChanged: () {},
+                          onOpenAi: () {},
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          capture: capture,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final boundary =
+            capture.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 1.5);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          final file = File(
+            'artifacts/subtitle_header_redesign/${music ? 'music' : 'standard'}-${size.width.toInt()}.png',
+          );
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+        await tester.pumpWidget(const SizedBox.shrink());
+        await flushIO(tester);
+      }
+    }
+  });
+
+  testWidgets('subtitle processing previews', (tester) async {
+    const captureUI = bool.fromEnvironment('CAPTURE_SUBTITLE_PROCESSING');
+    if (!captureUI) return;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final family in [
+      'Roboto',
+      '.SF Pro Text',
+      '.SF Pro Display',
+      'Noto Sans SC',
+      'monospace',
+    ]) {
+      await tester.runAsync(
+        () =>
+            (FontLoader(family)..addFont(
+                  rootBundle.load('assets/fonts/NotoSansCJKsc-Regular.otf'),
+                ))
+                .load(),
+      );
+    }
+    for (final font in {
+      'Inter': 'assets/fonts/Inter-Regular.otf',
+      'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
+      'packages/cupertino_icons/CupertinoIcons':
+          'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+    }.entries) {
+      await tester.runAsync(
+        () =>
+            (FontLoader(font.key)..addFont(rootBundle.load(font.value))).load(),
+      );
+    }
+    await tester.runAsync(
+      () => SubtitleFileProcessingSettings.update(
+        optimize: false,
+        translate: true,
+      ),
+    );
+    final capture = GlobalKey();
+    for (final size in [const Size(390, 844), const Size(1280, 900)]) {
+      await tester.binding.setSurfaceSize(size);
+      await pumpPage(
+        tester,
+        Theme(
+          data: ThemeData.dark(),
+          child: Scaffold(
+            backgroundColor: const Color(0xFF151618),
+            body: Center(
+              child: SizedBox(
+                width: size.width > 700 ? 640 : size.width,
+                child: SubtitleManagementSheet(
+                  key: ValueKey(size),
+                  videoPath: item.path,
+                  videoId: item.id,
+                  showEmbeddedSubtitles: false,
+                  associatedSubtitles: item.downloadAssociatedSubtitles,
+                  onSubtitleChanged: () {},
+                  onOpenAi: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+        capture: capture,
+      );
+      await tap(tester, find.byTooltip('优化 / 翻译字幕').first);
+      for (final expanded in [true, false]) {
+        if (!expanded) {
+          await tap(
+            tester,
+            find.byKey(const ValueKey('subtitle-file-translation-settings')),
+          );
+        }
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('subtitle-processing-panel')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final boundary =
+            capture.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 1.5);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          final file = File(
+            'artifacts/subtitle_processing_redesign/${size.width < 700 ? 'mobile' : 'desktop'}-${expanded ? 'expanded' : 'compact'}.png',
+          );
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await flushIO(tester);
+    }
+  });
 
   testWidgets(
     'music manager fits small landscape, portrait and desktop viewports',

@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:video_player_app/features/podcasts/podcast_playback_hooks.dart';
 import 'package:video_player_app/main.dart';
 import 'package:video_player_app/models/media_source_ref.dart';
 import 'package:video_player_app/models/video_item.dart';
@@ -32,15 +31,22 @@ void main() {
     timestamp: 10,
   );
 
-  VideoItem item({String id = 'saved', MediaSourceKind? kind}) => VideoItem(
+  VideoItem item({
+    String id = 'saved',
+    MediaSourceKind? kind,
+    bool downloaded = false,
+  }) => VideoItem(
     id: id,
-    path: switch (kind) {
-      MediaSourceKind.bilibiliStream => 'bilibili://stream/BVoffline?cid=1',
-      MediaSourceKind.cloudDrive => 'cloud-drive:offline',
-      MediaSourceKind.podcastEpisode => 'podcast:offline',
-      MediaSourceKind.url => 'https://example.invalid/offline.mp4',
-      _ => 'local.mp4',
-    },
+    path: downloaded
+        ? 'downloaded.mp4'
+        : switch (kind) {
+            MediaSourceKind.bilibiliStream =>
+              'bilibili://stream/BVoffline?cid=1',
+            MediaSourceKind.cloudDrive => 'cloud-drive:offline',
+            MediaSourceKind.podcastEpisode => 'podcast:offline',
+            MediaSourceKind.url => 'https://example.invalid/offline.mp4',
+            _ => 'local.mp4',
+          },
     title: 'Saved title',
     durationMs: 120000,
     lastUpdated: 0,
@@ -100,7 +106,7 @@ void main() {
     MediaSourceKind.url,
   ]) {
     test(
-      '$kind restores offline metadata without a decoder or network request',
+      '$kind remote bookmark is ignored; local metadata restores without network',
       () async {
         final video = item(kind: kind);
         library.seedVideoForTesting(video);
@@ -112,6 +118,13 @@ void main() {
             throw StateError('Offline');
           },
         );
+        expect(networkRequests, 0);
+        if (kind != null) {
+          expect(preview, isNull);
+          expect(playback.currentItem, isNull);
+          expect(playback.shouldShowMiniPlaybackCard, isFalse);
+          return;
+        }
         expect(preview, isNotNull);
         expect(playback.currentItem, same(video));
         expect(playback.currentItem?.sourceRef, same(video.sourceRef));
@@ -153,7 +166,11 @@ void main() {
   test(
     'a saved manual queue takes precedence over a stale playback snapshot',
     () async {
-      final manual = item(id: 'manual', kind: MediaSourceKind.url);
+      final manual = item(
+        id: 'manual',
+        kind: MediaSourceKind.url,
+        downloaded: true,
+      );
       library.seedVideoForTesting(item());
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -188,7 +205,7 @@ void main() {
         } else if (action == 'stop') {
           await playback.stop();
         } else {
-          playlist.setPlaylist([item(id: 'new', kind: MediaSourceKind.url)]);
+          playlist.setPlaylist([item(id: 'new')]);
         }
         gate.complete(saved);
         expect(await pending, isNull);
@@ -202,7 +219,7 @@ void main() {
     () async {
       library.seedVideoForTesting(item());
       final preview = (await restore())!;
-      playlist.setPlaylist([item(id: 'new', kind: MediaSourceKind.url)]);
+      playlist.setPlaylist([item(id: 'new')]);
       expect(preview.isCurrent(playback, playlist), isFalse);
       await playback.stop();
       expect(preview.isCurrent(playback, playlist), isFalse);
@@ -212,7 +229,9 @@ void main() {
   testWidgets('the first home frame has Mini before deferred services start', (
     tester,
   ) async {
-    library.seedVideoForTesting(item(kind: MediaSourceKind.bilibiliStream));
+    library.seedVideoForTesting(
+      item(kind: MediaSourceKind.bilibiliStream, downloaded: true),
+    );
     var deferredStarted = false;
     // Android completes core initialization before runApp; desktop uses the
     // same core future inside AppStartupGate (covered by app_startup_gate_test).
@@ -242,61 +261,28 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  group('early podcast play', () {
-    late Future<Uri> Function(VideoItem)? previousResolve;
-    setUp(() {
-      previousResolve = PodcastPlaybackHooks.resolve;
-      PodcastPlaybackHooks.resolve = null;
-    });
-    tearDown(() => PodcastPlaybackHooks.resolve = previousResolve);
-
+  for (final kind in MediaSourceKind.values) {
     test(
-      'waits for the installed resolver without delaying the card',
+      'downloaded $kind metadata remains available as local media',
       () async {
-        final sourceReady = Completer<void>();
-        PodcastPlaybackHooks.deferResolveUntil(sourceReady.future);
-        library.seedVideoForTesting(item(kind: MediaSourceKind.podcastEpisode));
-        await restore();
-        expect(playback.currentItem?.title, 'Saved title');
-        expect(playback.controller, isNull);
-        var resolved = false;
-        final pending = PodcastPlaybackHooks.resolve!(playback.currentItem!);
-        PodcastPlaybackHooks.resolve = (value) async {
-          resolved = true;
-          expect(value, same(playback.currentItem));
-          return Uri.parse('http://127.0.0.1/episode');
-        };
-        expect(resolved, isFalse);
-        sourceReady.complete();
-        expect(await pending, Uri.parse('http://127.0.0.1/episode'));
-        expect(resolved, isTrue);
-      },
-    );
-
-    test('keeps an already installed resolver', () async {
-      Future<Uri> existing(VideoItem _) async =>
-          Uri.parse('http://127.0.0.1/ready');
-      PodcastPlaybackHooks.resolve = existing;
-      PodcastPlaybackHooks.deferResolveUntil(Completer<void>().future);
-      expect(PodcastPlaybackHooks.resolve, same(existing));
-      expect(
-        await PodcastPlaybackHooks.resolve!(item()),
-        Uri.parse('http://127.0.0.1/ready'),
-      );
-    });
-
-    test(
-      'failed initialization cannot recurse into the deferred resolver',
-      () async {
-        PodcastPlaybackHooks.deferResolveUntil(Future<void>.value());
-        await expectLater(
-          PodcastPlaybackHooks.resolve!(item()),
-          throwsStateError,
+        final video = item(kind: kind, downloaded: true);
+        library.seedVideoForTesting(video);
+        var requests = 0;
+        final preview = await HttpOverrides.runZoned(
+          restore,
+          createHttpClient: (_) {
+            requests++;
+            throw StateError('Local restore must not fetch media');
+          },
         );
-        expect(playback.controller, isNull);
+        expect(preview, isNotNull);
+        expect(playback.currentItem?.path, 'downloaded.mp4');
+        expect(library.getVideo(video.id)?.sourceRef, same(video.sourceRef));
+        expect(playback.position, const Duration(seconds: 42));
+        expect(requests, 0);
       },
     );
-  });
+  }
 }
 
 class _DelayedProgress extends ProgressTracker {

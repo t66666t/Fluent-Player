@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import '../utils/app_branding.dart';
 
-const linuxApplicationId = 'io.github.t66666t.FluentPlayerCommunity';
-const linuxLegacyApplicationIds = <String>[];
+const linuxApplicationId = kApplicationId;
+// Only the former community edition is eligible for settings/catalog reuse.
+// The unsuffixed identity belongs to historical Pro/full builds.
+const linuxLegacyApplicationIds = <String>['cn.teezy.fluentplayer.community'];
 
 /// Copy the settings used by the old GTK application ID before any preferences
 /// singleton is loaded. Original settings/catalogs/media are never moved.

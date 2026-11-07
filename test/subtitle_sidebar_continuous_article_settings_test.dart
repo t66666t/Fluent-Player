@@ -279,7 +279,10 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.format_size));
       await tester.pump();
-      await tester.drag(find.byType(Slider), const Offset(36, 0));
+      await tester.drag(
+        find.byKey(const ValueKey('subtitle-font-size-slider')),
+        const Offset(36, 0),
+      );
       for (var i = 0; i < 3; i++) {
         await tester.pump();
         expectArticleStays();

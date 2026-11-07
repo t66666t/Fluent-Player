@@ -104,7 +104,7 @@ void main() {
         source.indexOf('  /// Whether newly imported media'),
       );
       final layoutKeys = RegExp(
-        r"'((?:home|mediaList)\w+(?:Portrait|Landscape))'",
+        r"'((?:home|mediaList(?:Rows|Table)?)\w+(?:Portrait|Landscape))'",
       ).allMatches(layoutSection).map((m) => m[1]!).toSet();
       expect(
         SettingsService.mediaLibraryLayoutExportKeys.toSet(),
@@ -224,6 +224,8 @@ void main() {
       'services/ocr_subtitle_manager.dart':
           'OCR model choices, per-video tracks/regions/jobs and machine benchmarks excluded',
       'services/playback_state_store.dart': 'playback history/session excluded',
+      'services/startup_notification_permission.dart':
+          'device-local notification prompt history excluded',
       'services/settings_export_service.dart': 'read-only export coordinator',
       'services/default_settings_trial.dart':
           'immutable local trial backups excluded; never export original settings or trial status',
@@ -233,8 +235,14 @@ void main() {
           'remembered choices only; active countdown excluded',
       'services/subtitle_debug_session.dart':
           'all presets/customizations and independent ghost scales',
+      'services/subtitle_file_processing_settings.dart':
+          'file optimization/translation stage choices exported independently of transcription',
       'services/subtitle_font_service.dart':
           'per-subtitle language/path annotations and font assets excluded; font choices in styles',
+      'services/subtitle_optimization.dart':
+          'only global enabled/prompt exported; connection identity and per-task endpoint/background excluded',
+      'services/subtitle_optimization_background.dart':
+          'read-only media-bound offline metadata used as task background; not portable preferences',
       'services/subtitle_position_store.dart':
           'all global/preset video/audio/ghost positions',
       'services/subtitle_translate_settings.dart':
@@ -242,7 +250,7 @@ void main() {
       'services/transcription_hotword_store.dart':
           'named presets exported; per-media hotwords excluded',
       'widgets/subtitle_management_sheet.dart':
-          'manual translation preferences; subtitle file paths excluded',
+          'manual translation preferences. Panel expansion and subtitle paths stay local.',
     };
     final owners = Directory('lib')
         .listSync(recursive: true)
@@ -299,6 +307,7 @@ void main() {
       expect(aliases.values.toSet().difference(coreKeys), isEmpty);
       const excluded = <String, String>{
         r'cloudDrive.$provider.account': 'account identity',
+        'bilibiliOfflineDetails': 'media-bound offline details and task background',
         'subtitle_search_drafts_v1': 'media-specific drafts',
         'transcription_video_hotwords_v1': 'media-specific hotwords',
         'subtitle_search_recent_v1': 'search history',
@@ -362,6 +371,16 @@ void main() {
         reason: 'New browser options need an export/exclusion decision.',
       );
       final timerSource = _source('services/sleep_timer_controller.dart');
+      final optimizationSource = _source('services/subtitle_optimization.dart');
+      final optimizationSave = optimizationSource.substring(
+        optimizationSource.indexOf('  Future<void> save()'),
+        optimizationSource.indexOf('  static Future<SubtitleOptimizationSettings> load()'),
+      );
+      expect(
+        _literalMapKeys(optimizationSave),
+        {'enabled', 'prompt', 'connectionId'},
+        reason: 'New optimization fields need a portable/excluded decision.',
+      );
       final timerKeys = RegExp(
         r"static const String _\w+Key = '([^']+)'",
       ).allMatches(timerSource).map((m) => m[1]!).toSet();

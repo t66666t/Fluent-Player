@@ -58,7 +58,7 @@ Future<void> _mount(
       theme: ThemeData(
         platform: TargetPlatform.windows,
         brightness: Brightness.dark,
-        fontFamily: 'MiSans',
+        fontFamily: 'Noto Sans SC',
       ),
       home: Scaffold(
         body: SingleChildScrollView(
@@ -96,8 +96,8 @@ Future<void> _loadFonts() async {
     )..addFont(Future.value(data))).load();
   }
   await (FontLoader(
-    'MiSans',
-  )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+    'Noto Sans SC',
+  )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
 }
 
 Future<void> _writeScreenshot(

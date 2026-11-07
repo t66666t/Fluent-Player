@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
-/// Phones prefer two compact columns; larger screens use the available height.
-/// The width budget keeps the actions from covering too much of the library.
+/// Actions share one compact column with the expand/collapse toggle.
+/// Short windows scroll the actions while keeping the toggle visible.
 class VideoActionRailLayout {
   const VideoActionRailLayout._({
     required this.columns,
@@ -44,18 +44,13 @@ class VideoActionRailLayout {
     required double availableHeight,
     required TextScaler textScaler,
     required bool showLabels,
-    int actionCount = 8,
+    required int actionCount,
   }) {
     final height = math.max(0.0, availableHeight);
     // Keep touch controls comfortable on phones/tablets; wide desktop windows
     // can use the original, slightly smaller discs.
     final baseSize = screenSize.width >= 1100 ? 40.0 : 44.0;
-    final twoColumnBudget = math.min(
-      availableWidth,
-      math.min(144.0, screenSize.width * 0.40),
-    );
-
-    VideoActionRailLayout make({int columns = 1, bool compact = false}) {
+    VideoActionRailLayout make({bool compact = false}) {
       final size = baseSize - (compact ? 4 : 0);
       final fontSize = compact ? 10.5 : 11.0;
       final gap = compact ? 2.0 : 3.0;
@@ -66,7 +61,7 @@ class VideoActionRailLayout {
           (scaledFont * labelLineHeight).ceilToDouble() +
           labelVerticalPadding * 2;
       return VideoActionRailLayout._(
-        columns: columns,
+        columns: 1,
         buttonSize: size,
         labelFontSize: fontSize,
         labelGap: gap,
@@ -81,19 +76,9 @@ class VideoActionRailLayout {
     }
 
     final single = make();
-    final preferTwoColumns = screenSize.shortestSide < 600;
-    if (!preferTwoColumns && !single.needsScroll) return single;
+    if (!single.needsScroll && single.width <= availableWidth) return single;
 
-    final doubleColumn = make(columns: 2);
-    if (doubleColumn.width <= twoColumnBudget && !doubleColumn.needsScroll) {
-      return doubleColumn;
-    }
-
-    // Short split-screen windows get a small size reduction. Very large system
-    // text stays in one column if two would cover too much horizontal space.
-    final compactDouble = make(columns: 2, compact: true);
-    if (compactDouble.width <= twoColumnBudget) return compactDouble;
-    if (!single.needsScroll) return single;
+    // Short split-screen windows get a small size reduction before scrolling.
     return make(compact: true);
   }
 }

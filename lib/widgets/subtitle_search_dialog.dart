@@ -4,7 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../services/app_web_navigation.dart';
 
 import '../features/subtitle_search/subtitle_search_models.dart';
 import '../features/subtitle_search/subtitle_search_service.dart';
@@ -257,14 +257,16 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
         ),
         Align(
           alignment: Alignment.centerLeft,
-          child: DesktopButtonClickRegion(child: TextButton.icon(
-            key: const ValueKey('subtitle-search-selected-name'),
-            onPressed: _selectedName.isEmpty
-                ? null
-                : () => _searchName(_selectedName),
-            icon: const Icon(Icons.search, size: 17),
-            label: const Text('搜索选中的文字'),
-          )),
+          child: DesktopButtonClickRegion(
+            child: TextButton.icon(
+              key: const ValueKey('subtitle-search-selected-name'),
+              onPressed: _selectedName.isEmpty
+                  ? null
+                  : () => _searchName(_selectedName),
+              icon: const Icon(Icons.search, size: 17),
+              label: const Text('搜索选中的文字'),
+            ),
+          ),
         ),
       ],
     );
@@ -346,9 +348,10 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
 
   Future<void> _openWebsite(Uri url) async {
     try {
-      if (await launchUrl(url, mode: LaunchMode.externalApplication)) return;
+      await AppWebNavigation.open(context, url);
+      return;
     } catch (_) {}
-    if (mounted) setState(() => _importError = '无法打开浏览器，请稍后重试');
+    if (mounted) setState(() => _importError = '无法在应用内打开网页，请稍后重试');
   }
 
   Future<void> _import() async {
@@ -529,11 +532,13 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
     child: Row(
       children: [
         if (detailOnly)
-          DesktopButtonClickRegion(child: IconButton(
-            tooltip: '返回搜索结果',
-            onPressed: _importing ? null : _back,
-            icon: const Icon(Icons.arrow_back_rounded),
-          ))
+          DesktopButtonClickRegion(
+            child: IconButton(
+              tooltip: '返回搜索结果',
+              onPressed: _importing ? null : _back,
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+          )
         else
           Container(
             width: 38,
@@ -571,23 +576,27 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
             ],
           ),
         ),
-        DesktopButtonClickRegion(child: IconButton(
-          key: const ValueKey('subtitle-search-sources'),
-          tooltip: '管理字幕来源',
-          onPressed: _importing ? null : _connections,
-          icon: Badge(
-            isLabelVisible: workspace.connectedCount > 0,
-            label: Text('${workspace.connectedCount}'),
-            backgroundColor: _accent,
-            textColor: _surface,
-            child: const Icon(Icons.tune_rounded, size: 22),
+        DesktopButtonClickRegion(
+          child: IconButton(
+            key: const ValueKey('subtitle-search-sources'),
+            tooltip: '管理字幕来源',
+            onPressed: _importing ? null : _connections,
+            icon: Badge(
+              isLabelVisible: workspace.connectedCount > 0,
+              label: Text('${workspace.connectedCount}'),
+              backgroundColor: _accent,
+              textColor: _surface,
+              child: const Icon(Icons.tune_rounded, size: 22),
+            ),
           ),
-        )),
-        DesktopButtonClickRegion(child: IconButton(
-          tooltip: '关闭字幕搜索',
-          onPressed: _importing ? null : () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close_rounded),
-        )),
+        ),
+        DesktopButtonClickRegion(
+          child: IconButton(
+            tooltip: '关闭字幕搜索',
+            onPressed: _importing ? null : () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ),
       ],
     ),
   );
@@ -635,11 +644,13 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                         ),
                       ),
                       if (!session.searching)
-                        DesktopButtonClickRegion(child: IconButton(
-                          tooltip: '重新搜索',
-                          onPressed: () => _search(refresh: true),
-                          icon: const Icon(Icons.refresh_rounded, size: 20),
-                        )),
+                        DesktopButtonClickRegion(
+                          child: IconButton(
+                            tooltip: '重新搜索',
+                            onPressed: () => _search(refresh: true),
+                            icon: const Icon(Icons.refresh_rounded, size: 20),
+                          ),
+                        ),
                     ],
                   ),
                   SingleChildScrollView(
@@ -685,15 +696,17 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                         '${error.key.label} · ${error.value}',
                         Icons.cloud_off_outlined,
                         Colors.orangeAccent,
-                        action: DesktopButtonClickRegion(child: TextButton(
-                          onPressed: session.searching
-                              ? null
-                              : () => session.search(
-                                  force: true,
-                                  retry: error.key,
-                                ),
-                          child: const Text('重试'),
-                        )),
+                        action: DesktopButtonClickRegion(
+                          child: TextButton(
+                            onPressed: session.searching
+                                ? null
+                                : () => session.search(
+                                    force: true,
+                                    retry: error.key,
+                                  ),
+                            child: const Text('重试'),
+                          ),
+                        ),
                       ),
                     ),
                   if (!session.searching && session.visibleHits.isEmpty)
@@ -717,17 +730,21 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
             child: Column(
               children: [
                 if (session.more.isNotEmpty)
-                  DesktopButtonClickRegion(child: OutlinedButton.icon(
-                    onPressed: session.searching ? null : session.loadMore,
-                    icon: const Icon(Icons.expand_more),
-                    label: const Text('加载更多字幕'),
-                  )),
+                  DesktopButtonClickRegion(
+                    child: OutlinedButton.icon(
+                      onPressed: session.searching ? null : session.loadMore,
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('加载更多字幕'),
+                    ),
+                  ),
                 if (workspace.connectedCount > 0)
-                  DesktopButtonClickRegion(child: TextButton.icon(
-                    onPressed: _connections,
-                    icon: const Icon(Icons.add_link_rounded, size: 17),
-                    label: Text('默认来源直接可用 · 更多来源'),
-                  )),
+                  DesktopButtonClickRegion(
+                    child: TextButton.icon(
+                      onPressed: _connections,
+                      icon: const Icon(Icons.add_link_rounded, size: 17),
+                      label: Text('默认来源直接可用 · 更多来源'),
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 const Text(
                   '字幕服务由各来源提供。不同发行版本可能需要调整时间。',
@@ -774,28 +791,32 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                       style: const TextStyle(fontSize: 10, color: _muted),
                     ),
                     if (!selected.isMovie && session.episode.isNotEmpty)
-                      DesktopButtonClickRegion(child: TextButton(
-                        onPressed: session.searching
-                            ? null
-                            : () {
-                                session.episode = '';
-                                _episode.clear();
-                                session.edit();
-                                _search();
-                              },
-                        child: const Text(
-                          '浏览本季全部字幕',
-                          style: TextStyle(fontSize: 11),
+                      DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: session.searching
+                              ? null
+                              : () {
+                                  session.episode = '';
+                                  _episode.clear();
+                                  session.edit();
+                                  _search();
+                                },
+                          child: const Text(
+                            '浏览本季全部字幕',
+                            style: TextStyle(fontSize: 11),
+                          ),
                         ),
-                      )),
+                      ),
                   ],
                 ),
               ),
-              DesktopButtonClickRegion(child: IconButton(
-                tooltip: '重新选择作品或季度',
-                onPressed: () => session.updateText(session.text),
-                icon: const Icon(Icons.swap_horiz_rounded, size: 20),
-              )),
+              DesktopButtonClickRegion(
+                child: IconButton(
+                  tooltip: '重新选择作品或季度',
+                  onPressed: () => session.updateText(session.text),
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 20),
+                ),
+              ),
             ],
           ),
         ),
@@ -827,10 +848,12 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
         session.workError!,
         Icons.info_outline,
         _muted,
-        action: DesktopButtonClickRegion(child: TextButton(
-          onPressed: session.lookupWorks,
-          child: const Text('重试目录'),
-        )),
+        action: DesktopButtonClickRegion(
+          child: TextButton(
+            onPressed: session.lookupWorks,
+            child: const Text('重试目录'),
+          ),
+        ),
       );
     }
     if (session.works.isEmpty) return const SizedBox.shrink();
@@ -950,15 +973,17 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
           prefixIcon: const Icon(Icons.search_rounded, color: _accent),
           suffixIcon: _query.text.isEmpty
               ? null
-              : DesktopButtonClickRegion(child: IconButton(
-                  tooltip: '清空片名',
-                  onPressed: () {
-                    _query.clear();
-                    session.updateText('');
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                )),
+              : DesktopButtonClickRegion(
+                  child: IconButton(
+                    tooltip: '清空片名',
+                    onPressed: () {
+                      _query.clear();
+                      session.updateText('');
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                  ),
+                ),
         ),
       ),
       const SizedBox(height: 10),
@@ -990,21 +1015,24 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                 session.edit();
               }),
             ),
-          DesktopButtonClickRegion(child: TextButton.icon(
-            onPressed: () => setState(() => _advanced = !_advanced),
-            icon: Icon(
-              _advanced ? Icons.expand_less : Icons.filter_list_rounded,
-              size: 17,
+          DesktopButtonClickRegion(
+            child: TextButton.icon(
+              onPressed: () => setState(() => _advanced = !_advanced),
+              icon: Icon(
+                _advanced ? Icons.expand_less : Icons.filter_list_rounded,
+                size: 17,
+              ),
+              label: Text(
+                session.season.isEmpty && session.episode.isEmpty
+                    ? '季 / 集'
+                    : [
+                        if (session.season.isNotEmpty) '第 ${session.season} 季',
+                        if (session.episode.isNotEmpty)
+                          '第 ${session.episode} 集',
+                      ].join(' · '),
+              ),
             ),
-            label: Text(
-              session.season.isEmpty && session.episode.isEmpty
-                  ? '季 / 集'
-                  : [
-                      if (session.season.isNotEmpty) '第 ${session.season} 季',
-                      if (session.episode.isNotEmpty) '第 ${session.episode} 集',
-                    ].join(' · '),
-            ),
-          )),
+          ),
         ],
       ),
       _expand(
@@ -1077,28 +1105,32 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
               ),
       ),
       const SizedBox(height: 12),
-      DesktopButtonClickRegion(child: FilledButton.icon(
-        key: const ValueKey('subtitle-search-submit'),
-        onPressed: !workspace.ready
-            ? null
-            : session.searching
-            ? session.cancelSearch
-            : _search,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 46),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
+      DesktopButtonClickRegion(
+        child: FilledButton.icon(
+          key: const ValueKey('subtitle-search-submit'),
+          onPressed: !workspace.ready
+              ? null
+              : session.searching
+              ? session.cancelSearch
+              : _search,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 46),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
+          ),
+          icon: Icon(
+            session.searching
+                ? Icons.stop_rounded
+                : Icons.travel_explore_rounded,
+            size: 20,
+          ),
+          label: Text(
+            session.searching ? '停止搜索' : '搜索字幕',
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
-        icon: Icon(
-          session.searching ? Icons.stop_rounded : Icons.travel_explore_rounded,
-          size: 20,
-        ),
-        label: Text(
-          session.searching ? '停止搜索' : '搜索字幕',
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-      )),
+      ),
     ],
   );
 
@@ -1402,11 +1434,13 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                   if (hit.detailUri != null)
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: DesktopButtonClickRegion(child: TextButton.icon(
-                        onPressed: () => _openWebsite(hit.detailUri!),
-                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
-                        label: const Text('查看这条字幕的详情页'),
-                      )),
+                      child: DesktopButtonClickRegion(
+                        child: TextButton.icon(
+                          onPressed: () => _openWebsite(hit.detailUri!),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                          label: const Text('查看这条字幕的详情页'),
+                        ),
+                      ),
                     )
                   else
                     const Padding(
@@ -1463,48 +1497,54 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                       session.detailError!,
                       Icons.error_outline,
                       Colors.orangeAccent,
-                      action: DesktopButtonClickRegion(child: TextButton(
-                        onPressed: session.availableFiles.isEmpty
-                            ? () {
-                                session.closeDetail();
-                                session.select(hit);
-                              }
-                            : session.preview,
-                        child: const Text('重试'),
-                      )),
+                      action: DesktopButtonClickRegion(
+                        child: TextButton(
+                          onPressed: session.availableFiles.isEmpty
+                              ? () {
+                                  session.closeDetail();
+                                  session.select(hit);
+                                }
+                              : session.preview,
+                          child: const Text('重试'),
+                        ),
+                      ),
                     ),
                   if (widget.batchTargets.length > 1 &&
                       widget.onBatchImport != null &&
                       session.selectedFile != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: DesktopButtonClickRegion(child: OutlinedButton.icon(
-                        key: const ValueKey('subtitle-search-batch'),
-                        onPressed: session.downloading || _importing
-                            ? null
-                            : _batch,
-                        icon: const Icon(
-                          Icons.playlist_add_check_rounded,
-                          size: 19,
+                      child: DesktopButtonClickRegion(
+                        child: OutlinedButton.icon(
+                          key: const ValueKey('subtitle-search-batch'),
+                          onPressed: session.downloading || _importing
+                              ? null
+                              : _batch,
+                          icon: const Icon(
+                            Icons.playlist_add_check_rounded,
+                            size: 19,
+                          ),
+                          label: Text(
+                            '批量匹配本文件夹（${widget.batchTargets.length} 个视频）',
+                          ),
                         ),
-                        label: Text(
-                          '批量匹配本文件夹（${widget.batchTargets.length} 个视频）',
-                        ),
-                      )),
+                      ),
                     ),
                   if (doc == null && session.selectedFile != null) ...[
                     const SizedBox(height: 14),
-                    DesktopButtonClickRegion(child: FilledButton.icon(
-                      onPressed: session.downloading
-                          ? session.cancelDownload
-                          : session.preview,
-                      icon: Icon(
-                        session.downloading
-                            ? Icons.close_rounded
-                            : Icons.visibility_outlined,
+                    DesktopButtonClickRegion(
+                      child: FilledButton.icon(
+                        onPressed: session.downloading
+                            ? session.cancelDownload
+                            : session.preview,
+                        icon: Icon(
+                          session.downloading
+                              ? Icons.close_rounded
+                              : Icons.visibility_outlined,
+                        ),
+                        label: Text(session.downloading ? '取消读取' : '读取并预览字幕'),
                       ),
-                      label: Text(session.downloading ? '取消读取' : '读取并预览字幕'),
-                    )),
+                    ),
                     if (session.downloading)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1658,27 +1698,31 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                       ),
                     ),
                   ),
-                DesktopButtonClickRegion(child: FilledButton.icon(
-                  key: const ValueKey('subtitle-search-import'),
-                  onPressed: _importing || offset == null ? null : _import,
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
-                  icon: _importing
-                      ? const SizedBox(
-                          width: 17,
-                          height: 17,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_rounded, size: 20),
-                  label: Text(
-                    _importing
-                        ? '正在保存…'
-                        : switch (_role) {
-                            SubtitleSearchImportRole.primary => '设为主字幕',
-                            SubtitleSearchImportRole.secondary => '设为副字幕',
-                            SubtitleSearchImportRole.saveOnly => '保存到字幕库',
-                          },
+                DesktopButtonClickRegion(
+                  child: FilledButton.icon(
+                    key: const ValueKey('subtitle-search-import'),
+                    onPressed: _importing || offset == null ? null : _import,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 46),
+                    ),
+                    icon: _importing
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_rounded, size: 20),
+                    label: Text(
+                      _importing
+                          ? '正在保存…'
+                          : switch (_role) {
+                              SubtitleSearchImportRole.primary => '设为主字幕',
+                              SubtitleSearchImportRole.secondary => '设为副字幕',
+                              SubtitleSearchImportRole.saveOnly => '保存到字幕库',
+                            },
+                    ),
                   ),
-                )),
+                ),
               ],
             ),
           ),
@@ -1778,10 +1822,12 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                 ),
               ),
               actions: [
-                DesktopButtonClickRegion(child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('返回'),
-                )),
+                DesktopButtonClickRegion(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('返回'),
+                  ),
+                ),
               ],
             ),
           );
@@ -1837,10 +1883,12 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
           ),
         ),
         actions: [
-          DesktopButtonClickRegion(child: TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('完成'),
-          )),
+          DesktopButtonClickRegion(
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('完成'),
+            ),
+          ),
         ],
       ),
     );
@@ -1907,13 +1955,15 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                           style: const TextStyle(color: _muted, fontSize: 12),
                         ),
                         const SizedBox(height: 10),
-                        DesktopButtonClickRegion(child: OutlinedButton.icon(
-                          onPressed: saving
-                              ? null
-                              : () => _openWebsite(source.accountUrl),
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: const Text('前往来源网站获取密钥'),
-                        )),
+                        DesktopButtonClickRegion(
+                          child: OutlinedButton.icon(
+                            onPressed: saving
+                                ? null
+                                : () => _openWebsite(source.accountUrl),
+                            icon: const Icon(Icons.open_in_new, size: 16),
+                            label: const Text('前往来源网站获取密钥'),
+                          ),
+                        ),
                         const SizedBox(height: 14),
                         TextField(
                           controller: key,
@@ -1927,15 +1977,18 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                                 : '访问密钥（API Key）',
                             helperText: '清空并保存可断开连接',
                             helperMaxLines: 2,
-                            suffixIcon: DesktopButtonClickRegion(child: IconButton(
-                              tooltip: visible ? '隐藏密钥' : '显示密钥',
-                              onPressed: () => update(() => visible = !visible),
-                              icon: Icon(
-                                visible
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
+                            suffixIcon: DesktopButtonClickRegion(
+                              child: IconButton(
+                                tooltip: visible ? '隐藏密钥' : '显示密钥',
+                                onPressed: () =>
+                                    update(() => visible = !visible),
+                                icon: Icon(
+                                  visible
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
                               ),
-                            )),
+                            ),
                           ),
                         ),
                         if (source == SubtitleSearchSource.opensubtitles) ...[
@@ -1988,14 +2041,18 @@ class _SubtitleSearchDialogState extends State<SubtitleSearchDialog> {
                   ),
                 ),
                 actions: [
-                  DesktopButtonClickRegion(child: TextButton(
-                    onPressed: saving ? null : () => Navigator.pop(ctx),
-                    child: const Text('返回'),
-                  )),
-                  DesktopButtonClickRegion(child: FilledButton(
-                    onPressed: saving ? null : save,
-                    child: Text(saving ? '保存中…' : '保存连接'),
-                  )),
+                  DesktopButtonClickRegion(
+                    child: TextButton(
+                      onPressed: saving ? null : () => Navigator.pop(ctx),
+                      child: const Text('返回'),
+                    ),
+                  ),
+                  DesktopButtonClickRegion(
+                    child: FilledButton(
+                      onPressed: saving ? null : save,
+                      child: Text(saving ? '保存中…' : '保存连接'),
+                    ),
+                  ),
                 ],
               ),
             ),

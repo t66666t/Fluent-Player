@@ -7,13 +7,14 @@ import '../../models/managed_subtitle_asset.dart';
 import '../../models/media_chapter.dart';
 import '../../models/media_source_ref.dart';
 import '../../models/podcast_source_ref.dart';
+import '../podcasts/podcast_models.dart';
+import '../podcasts/podcast_feed_parser.dart';
 import '../../models/video_collection.dart';
 import '../../models/video_item.dart';
 import '../../services/library_service.dart';
+import '../../services/community_media_input.dart';
 import '../media_cache/media_cache_models.dart';
-import '../media_cache/media_cache_service.dart';
-import '../podcasts/podcast_models.dart';
-import '../podcasts/podcast_runtime.dart';
+import 'legacy_download_export_policy.dart';
 import 'portable_media_selection.dart';
 
 const _windowsReservedNames = <String>{
@@ -122,7 +123,8 @@ class ZipCandidate {
   final VideoItem item;
   final String parentDirectory;
   final CacheVariant? cachedVariant;
-  String get sourcePath => cachedVariant?.path ?? item.path;
+  String get sourcePath =>
+      communityLocalMediaPath(cachedVariant?.path ?? item.path);
 
   const ZipCandidate({
     required this.item,
@@ -250,11 +252,7 @@ String sanitizeZipName(String input) {
   return cleaned.isEmpty ? '未命名' : cleaned;
 }
 
-bool zipItemIsOnline(VideoItem item) =>
-    item.sourceRef?.kind == MediaSourceKind.bilibiliStream ||
-    item.sourceRef?.kind == MediaSourceKind.cloudDrive ||
-    item.path.startsWith('bilibili://stream/') ||
-    item.path.startsWith('cloud-drive://');
+bool zipItemIsOnline(VideoItem item) => !communityMediaIsLocal(item.path);
 
 bool zipChaptersMatch(
   List<MediaChapter> appChapters,
@@ -349,7 +347,7 @@ String buildZipExportSummary({
 }) {
   final parts = <String>['$mediaCount 个媒体', formatZipBytes(outputBytes)];
   if (referenceCount > 0) parts.add('$referenceCount 个播客卡片引用');
-  if (skippedOnline > 0) parts.add('已跳过 $skippedOnline 个在线卡片');
+  if (skippedOnline > 0) parts.add('已跳过 $skippedOnline 个不支持的条目');
   if (skippedMissing > 0) parts.add('已跳过 $skippedMissing 个缺失文件');
   if (missingSidecars > 0) parts.add('$missingSidecars 个字幕或弹幕文件缺失，未打包');
   if (sidecarFallbacks > 0) parts.add('$sidecarFallbacks 个改为外挂字幕');
@@ -526,6 +524,17 @@ class ZipCandidateSet {
   });
 }
 
+String? _zipPodcastWebUrl(String value) {
+  final uri = Uri.tryParse(value);
+  return uri != null &&
+          const ['http', 'https'].contains(uri.scheme) &&
+          uri.host.isNotEmpty &&
+          uri.userInfo.isEmpty &&
+          !value.contains(RegExp(r'[\r\n]'))
+      ? value
+      : null;
+}
+
 ZipCandidateSet enumerateZipCandidates({
   required LibraryService library,
   required List<String> rootIds,
@@ -534,6 +543,7 @@ ZipCandidateSet enumerateZipCandidates({
   final selection = PortableMediaSelection(rootIds);
   final tree = PortableTreeIndex.fromLibrary(library);
   final inclusion = selection.resolve(tree);
+  final traversalIds = inclusion.traversalIds(tree);
   final candidates = <ZipCandidate>[];
   // Reserve this well-known metadata name before allocating user filenames.
   names.allocate('', zipPodcastReferencesPath);
@@ -542,7 +552,12 @@ ZipCandidateSet enumerateZipCandidates({
   final podcastVideos = <Map<String, dynamic>>[];
   final podcastBundles = <String, Map<String, dynamic>>{};
   final collectionDirectories = <String, String>{};
-  var skippedOnline = 0;
+  var skippedOnline = rootIds.toSet().where((id) {
+    final item = library.getVideo(id);
+    return tree.node(id) == null &&
+        item != null &&
+        !communityMediaIsLocal(item.path);
+  }).length;
   var skippedMissing = 0;
   final visited = <String>{};
 
@@ -551,23 +566,16 @@ ZipCandidateSet enumerateZipCandidates({
     String title, {
     VideoItem? episodeItem,
   }) {
-    final runtime = PodcastRuntime.instance;
-    final stored = runtime.ready ? runtime.store.channel(ref.channelId) : null;
     final bundle = podcastBundles.putIfAbsent(
       ref.channelId,
       () => {
         'version': 2,
         'inheritanceVersion': 1,
-        'channel':
-            (stored ??
-                    PodcastChannel(
-                      id: ref.channelId,
-                      feedUrl: ref.feedUrl,
-                      title: title,
-                    ))
-                .toJson()
-              ..remove('etag')
-              ..remove('lastModified'),
+        'channel': PodcastChannel(
+          id: ref.channelId,
+          feedUrl: ref.feedUrl,
+          title: title,
+        ).toJson(),
         'episodes': <Map<String, dynamic>>[],
         'states': <String, dynamic>{},
         'settings': <String, dynamic>{},
@@ -576,21 +584,16 @@ ZipCandidateSet enumerateZipCandidates({
     );
     final episodeRef = episodeItem?.sourceRef?.podcast;
     if (episodeItem == null || episodeRef == null) return;
-    final episode = runtime.ready
-        ? runtime.store.episode(episodeRef.episodeId)
-        : null;
     final episodes = bundle['episodes'] as List<Map<String, dynamic>>;
     if (episodes.any((row) => row['id'] == episodeRef.episodeId)) return;
     episodes.add(
-      (episode ??
-              PodcastEpisode(
-                id: episodeRef.episodeId,
-                channelId: ref.channelId,
-                title: episodeItem.title,
-                durationMs: episodeItem.durationMs,
-                media: [PodcastMedia(url: episodeRef.mediaUrl)],
-              ))
-          .toJson(),
+      PodcastEpisode(
+        id: episodeRef.episodeId,
+        channelId: ref.channelId,
+        title: episodeItem.title,
+        durationMs: episodeItem.durationMs,
+        media: [PodcastMedia(url: episodeRef.mediaUrl)],
+      ).toJson(),
     );
   }
 
@@ -646,6 +649,7 @@ ZipCandidateSet enumerateZipCandidates({
   }
 
   void walk(String id, String parentDirectory) {
+    if (!traversalIds.contains(id)) return;
     if (!visited.add(id)) return;
     final collection = library.getCollection(id);
     if (collection != null && !collection.isRecycled) {
@@ -655,10 +659,34 @@ ZipCandidateSet enumerateZipCandidates({
         }
         return;
       }
+      // Historical folders containing ordinary local files keep their original
+      // file export behavior. Live podcast cards contain catalog references.
       if (collection.podcastRef != null &&
-          selection.isFullySelected(tree, id)) {
+          selection.isFullySelected(tree, id) &&
+          !library
+              .mediaInFolderTree(collection.id)
+              .any((item) => communityMediaIsLocal(item.path))) {
         final ref = collection.podcastRef!;
-        addLink(collection.name, ref.feedUrl, parentDirectory);
+        if (_zipPodcastWebUrl(ref.feedUrl) == null) {
+          skippedOnline++;
+          omitDescendants(collection);
+          return;
+        }
+        references.add(
+          ZipReferenceEntry(
+            archivePath: names.allocate(
+              parentDirectory,
+              '${sanitizeZipName(collection.name)}.opml',
+            ),
+            contents: PodcastFeedParser().exportOpml([
+              PodcastChannel(
+                id: ref.channelId,
+                feedUrl: ref.feedUrl,
+                title: collection.name,
+              ),
+            ]),
+          ),
+        );
         referenceParent(collection.id);
         addPodcastBundle(ref, collection.name);
         omitDescendants(collection);
@@ -675,11 +703,28 @@ ZipCandidateSet enumerateZipCandidates({
       return;
     }
     final video = library.getVideo(id);
-    if (video == null || video.isRecycled || !inclusion.videoIds.contains(id)) {
+    if (video == null ||
+        video.isRecycled ||
+        video.isTransient ||
+        !inclusion.videoIds.contains(id)) {
       return;
     }
-    if (video.sourceRef?.podcast case final ref?) {
-      addLink(video.title, ref.feedUrl, parentDirectory);
+    if (omitLegacyWebDownload(video, library)) {
+      skippedOnline++;
+      return;
+    }
+    if (!communityMediaIsLocal(video.path) &&
+        video.sourceRef?.podcast != null) {
+      final ref = video.sourceRef!.podcast!;
+      if (!communityMediaIsPlayable(video.path, source: video.sourceRef)) {
+        skippedOnline++;
+        return;
+      }
+      addLink(
+        video.title,
+        _zipPodcastWebUrl(ref.mediaUrl) ?? ref.feedUrl,
+        parentDirectory,
+      );
       // Construct a reference record instead of copying a VideoItem containing
       // device-local download, subtitle, artwork or recycled file paths.
       final referenceItem = VideoItem(
@@ -709,39 +754,16 @@ ZipCandidateSet enumerateZipCandidates({
       );
       return;
     }
-    final cached = MediaCacheService.instance?.completeExportVariant(video);
-    final isCloud =
-        video.sourceRef?.kind == MediaSourceKind.cloudDrive ||
-        video.path.startsWith('cloud-drive://');
-    var localCloudReady = false;
-    if (isCloud && !video.path.contains('://')) {
-      try {
-        final stat = File(video.path).statSync();
-        localCloudReady =
-            stat.type == FileSystemEntityType.file && stat.size > 0;
-      } on FileSystemException {
-        // A disconnected local media path is not an exportable source.
-      }
-    }
-    if (isCloud && cached == null && !localCloudReady) {
-      throw StateError('网盘媒体“${video.title}”尚未完整缓存，请选择画质并完成缓存后再导出');
-    }
-    if (zipItemIsOnline(video) && cached == null && !localCloudReady) {
+    if (!communityMediaIsLocal(video.path)) {
       skippedOnline++;
       return;
     }
-    if (!File(cached?.path ?? video.path).existsSync()) {
-      if (isCloud) throw StateError('网盘缓存文件已不可用，请重新缓存后再导出');
+    final localPath = communityLocalMediaPath(video.path);
+    if (!File(localPath).existsSync()) {
       skippedMissing++;
       return;
     }
-    candidates.add(
-      ZipCandidate(
-        item: video,
-        parentDirectory: parentDirectory,
-        cachedVariant: cached,
-      ),
-    );
+    candidates.add(ZipCandidate(item: video, parentDirectory: parentDirectory));
   }
 
   for (final item in library.getContents(null)) {

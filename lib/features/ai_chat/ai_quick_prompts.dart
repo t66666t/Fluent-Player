@@ -41,8 +41,8 @@ class AiQuickPromptStore extends ChangeNotifier {
     AiQuickPrompt(id: 'summary', name: _copy.summarize, text: _copy.summarize),
     AiQuickPrompt(
       id: 'explain',
-      name: _copy.hardConcept,
-      text: _copy.hardConcept,
+      name: _copy.aboutContent,
+      text: _copy.aboutContent,
     ),
     AiQuickPrompt(
       id: 'key-points',

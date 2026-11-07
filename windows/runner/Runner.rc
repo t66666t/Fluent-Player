@@ -89,16 +89,16 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "Fluent Player Community" "\0"
+            VALUE "CompanyName", "Teezy Community" "\0"
+            VALUE "FileDescription", "Fluent Player" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "fluent_player" "\0"
+            VALUE "InternalName", "fluent-player" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025-2026 Fluent Player Community contributors. GPLv3+." "\0"
-            VALUE "OriginalFilename", "fluent_player_community.exe" "\0"
+            VALUE "OriginalFilename", "fluent-player.exe" "\0"
             // path_provider uses CompanyName/ProductName for persistent paths.
-            // Keep the installed namespace; FileDescription/AppUserModelID
-            // provide the user-visible name independently.
-            VALUE "ProductName", "FluentPlayerCommunity" "\0"
+            // CompanyName separates the editions; ProductName is the display name.
+            // Existing data directories are never deleted by a rename.
+            VALUE "ProductName", "Fluent Player" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

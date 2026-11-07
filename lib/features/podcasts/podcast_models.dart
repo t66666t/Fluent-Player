@@ -85,8 +85,13 @@ class PodcastEpisode {
     this.chaptersUrl,
     this.transcripts = const [],
     this.discoveredMs = 0,
+    this.sourceFeedUrl = '',
   });
   final String id, channelId, title, guid, description, imageUrl, link;
+
+  /// The RSS/Atom document that actually supplied this episode's enclosures.
+  /// Legacy webpage imports have no evidence and must refresh a real feed.
+  final String sourceFeedUrl;
   final List<PodcastMedia> media;
   final int publishedMs, durationMs, discoveredMs;
   final int? season, number;
@@ -117,6 +122,7 @@ class PodcastEpisode {
     'chaptersUrl': chaptersUrl,
     'transcripts': transcripts.map((t) => t.toJson()).toList(),
     'discoveredMs': discoveredMs,
+    'sourceFeedUrl': sourceFeedUrl,
   };
   factory PodcastEpisode.fromJson(Map<String, dynamic> j) => PodcastEpisode(
     id: j['id'],
@@ -138,6 +144,7 @@ class PodcastEpisode {
         .map((m) => PodcastTranscript.fromJson(Map<String, dynamic>.from(m)))
         .toList(),
     discoveredMs: j['discoveredMs'] ?? 0,
+    sourceFeedUrl: j['sourceFeedUrl'] as String? ?? '',
   );
 }
 
@@ -227,8 +234,14 @@ class PodcastEpisodeState {
     this.updatedMs = 0,
     this.playedAtMs = 0,
     this.favoriteUpdatedMs = 0,
+    this.playbackUpdatedMs = 0,
   });
-  int positionMs, lastPlayedMs, updatedMs, playedAtMs, favoriteUpdatedMs;
+  int positionMs,
+      lastPlayedMs,
+      updatedMs,
+      playedAtMs,
+      favoriteUpdatedMs,
+      playbackUpdatedMs;
   bool played, favorite, retained;
 
   /// Display bucket shared by filters and row labels. [played] stays the
@@ -248,6 +261,7 @@ class PodcastEpisodeState {
     'updatedMs': updatedMs,
     'playedAtMs': playedAtMs,
     'favoriteUpdatedMs': favoriteUpdatedMs,
+    'playbackUpdatedMs': playbackUpdatedMs,
   };
   factory PodcastEpisodeState.fromJson(Map<String, dynamic> j) =>
       PodcastEpisodeState(
@@ -259,6 +273,9 @@ class PodcastEpisodeState {
         updatedMs: j['updatedMs'] ?? 0,
         playedAtMs: j['playedAtMs'] ?? 0,
         favoriteUpdatedMs: j['favoriteUpdatedMs'] ?? 0,
+        // Older states had one clock for favorites and listening. Preserve a
+        // deliberate reset rather than silently overwriting it on first sync.
+        playbackUpdatedMs: j['playbackUpdatedMs'] ?? j['updatedMs'] ?? 0,
       );
 }
 

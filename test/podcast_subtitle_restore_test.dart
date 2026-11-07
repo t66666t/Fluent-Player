@@ -202,6 +202,7 @@ void main() {
         );
         final playback = MediaPlaybackService.forTesting();
         final episode = PodcastEpisode(
+          sourceFeedUrl: 'https://publisher.test/rss',
           id: 'saved-episode',
           channelId: 'channel',
           title: 'Saved episode',

@@ -12,7 +12,9 @@ import '../models/subtitle_model.dart';
 import '../models/subtitle_stream.dart';
 import '../models/music_lyric_display_mode.dart';
 import '../models/music_lyric_anchor.dart';
+import '../models/music_lyric_font.dart';
 import '../models/music_lyric_typography.dart';
+import '../models/subtitle_style.dart';
 import '../models/music_lyric_workspace_layout.dart';
 import '../controllers/music_lyric_selection_controller.dart';
 import '../controllers/music_volume_controller.dart';
@@ -24,6 +26,7 @@ import '../utils/app_toast.dart';
 import '../services/audio_playback_compatibility_service.dart';
 import '../services/music_artwork_backdrop_cache.dart';
 import '../services/settings_service.dart';
+import '../services/subtitle_font_service.dart';
 import '../services/playlist_manager.dart';
 import '../widgets/episode_picker_panel.dart';
 import '../utils/android_hardware_input_bridge.dart';
@@ -36,10 +39,12 @@ import '../widgets/music_refresh_rate_scope.dart';
 import '../widgets/music_backdrop_surface.dart';
 import '../widgets/music_ai_chat_page.dart';
 import '../widgets/music_lyric_view.dart';
+import '../widgets/music_text_optical_alignment.dart';
 import '../widgets/music_lyric_region.dart';
 import '../widgets/music_lyric_anchor_guide.dart';
 import '../widgets/music_playback_controls.dart';
 import '../widgets/music_volume_panel.dart';
+import '../widgets/subtitle_font_settings_page.dart';
 import '../widgets/relocate_local_media_source.dart';
 import '../widgets/sleep_timer_dialog.dart';
 import '../widgets/music_subtitle_management_dialog.dart';
@@ -396,6 +401,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       MusicLyricTypography.defaultFontSizeScale;
   double _lyricSpacingScalePortrait = MusicLyricTypography.defaultSpacingScale;
   double _lyricSpacingScaleLandscape = MusicLyricTypography.defaultSpacingScale;
+  double _lyricSecondaryRatioPortrait =
+      MusicLyricTypography.defaultSecondaryRatio;
+  double _lyricSecondaryRatioLandscape =
+      MusicLyricTypography.defaultSecondaryRatio;
+  SubtitleTextStyle _lyricTextStyle = MusicLyricFont.defaultStyle;
   double _lyricAnchorPortrait = MusicLyricAnchor.automatic;
   double _lyricAnchorLandscape = MusicLyricAnchor.automatic;
   bool _isAdjustingLyricAnchor = false;
@@ -416,6 +426,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
 
   /// 是否显示页面设置弹层（字号滑块和开关）
   bool _showFontSizeSlider = false;
+
+  /// 字体设置盖住页面设置。关掉后仍回到页面设置。
+  bool _showLyricFontPanel = false;
+  bool _isAdjustingSecondaryRatio = false;
+  final GlobalKey<SubtitleFontSettingsPageState> _lyricFontPageKey =
+      GlobalKey();
   bool _showVolumePanel = false;
   late final MusicVolumeController _volumeController;
   final GlobalKey _volumeButtonKey = GlobalKey();
@@ -529,6 +545,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _lyricFontSizeScaleLandscape = settings.musicLyricFontSizeScaleLandscape;
     _lyricSpacingScalePortrait = settings.musicLyricSpacingScalePortrait;
     _lyricSpacingScaleLandscape = settings.musicLyricSpacingScaleLandscape;
+    _lyricSecondaryRatioPortrait = settings.musicLyricSecondaryRatioPortrait;
+    _lyricSecondaryRatioLandscape = settings.musicLyricSecondaryRatioLandscape;
+    _lyricTextStyle = settings.musicLyricTextStyle;
     _lyricAnchorPortrait = settings.musicLyricAnchorPortrait;
     _lyricAnchorLandscape = settings.musicLyricAnchorLandscape;
     _lyricWordByWordEnabled = settings.musicLyricWordByWordEnabled;
@@ -926,6 +945,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       _dismissVolumePanel();
       return;
     }
+    if (_showLyricFontPanel) {
+      final page = _lyricFontPageKey.currentState;
+      if (page == null) {
+        _closeLyricFontPanel();
+      } else {
+        page.handleBack();
+      }
+      return;
+    }
     if (_showFontSizeSlider) {
       _dismissFontSizeSlider();
       return;
@@ -950,7 +978,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     }
     _aiChatOpen = true;
     if (_showVolumePanel) setState(() => _showVolumePanel = false);
-    if (_showFontSizeSlider) setState(() => _showFontSizeSlider = false);
+    if (_showFontSizeSlider || _showLyricFontPanel) {
+      setState(() {
+        _showFontSizeSlider = false;
+        _showLyricFontPanel = false;
+        _isAdjustingSecondaryRatio = false;
+      });
+    }
     _cancelAutoHideTimer();
     _hideControlsTimer?.cancel();
     try {
@@ -1499,6 +1533,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     setState(() {
       _lyricSelectionActive = active;
       if (active) _showFontSizeSlider = false;
+      if (active) _showLyricFontPanel = false;
+      if (active) _isAdjustingSecondaryRatio = false;
       if (active) _showVolumePanel = false;
     });
     if (active) {
@@ -1591,6 +1627,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
           isPlaying: mediaService.isPlaying,
           lyricFontSizeScale: fontScale,
           lyricSpacingScale: _currentLyricSpacingScale,
+          lyricSecondaryRatio: _currentLyricSecondaryRatio,
+          lyricTextStyle: _lyricTextStyle,
           wordByWordEnabled: _lyricWordByWordEnabled,
           lyricBlurEnabled: _lyricBlurEnabled,
           anchorFraction: anchorFraction,
@@ -1752,10 +1790,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                                 'music-font-size-dismiss-barrier',
                               ),
                               behavior: HitTestBehavior.opaque,
-                              onTap: _dismissFontSizeSlider,
+                              onTap: _showLyricFontPanel
+                                  ? _closeLyricFontPanel
+                                  : _dismissFontSizeSlider,
                               child: const SizedBox.expand(),
                             ),
-                            _buildFontSizeSliderPositioned(),
+                            _showLyricFontPanel
+                                ? _buildLyricFontPanelPositioned()
+                                : _buildFontSizeSliderPositioned(),
                           ],
                         ),
                       ),
@@ -1815,6 +1857,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   double get _currentLyricSpacingScale => _isPortraitLayout
       ? _lyricSpacingScalePortrait
       : _lyricSpacingScaleLandscape;
+
+  double get _currentLyricSecondaryRatio => _isPortraitLayout
+      ? _lyricSecondaryRatioPortrait
+      : _lyricSecondaryRatioLandscape;
 
   double get _currentLyricAnchor =>
       _isPortraitLayout ? _lyricAnchorPortrait : _lyricAnchorLandscape;
@@ -1911,6 +1957,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _persistLyricTypography();
     setState(() {
       _showFontSizeSlider = false;
+      _showLyricFontPanel = false;
+      _isAdjustingSecondaryRatio = false;
       _clearLyricAnchorPreview();
     });
     _onUserInteraction();
@@ -1921,6 +1969,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     setState(() {
       _clearLyricAnchorPreview();
       _showVolumePanel = false;
+      _showLyricFontPanel = false;
+      _isAdjustingSecondaryRatio = false;
       _showFontSizeSlider = !_showFontSizeSlider;
     });
     _hideControlsTimer?.cancel();
@@ -1940,6 +1990,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     setState(() {
       _clearLyricAnchorPreview();
       _showFontSizeSlider = false;
+      _showLyricFontPanel = false;
+      _isAdjustingSecondaryRatio = false;
       _showVolumePanel = !_showVolumePanel;
     });
     _hideControlsTimer?.cancel();
@@ -2092,6 +2144,89 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         ),
       );
     }
+    if (settings.musicLyricSecondaryRatioPortrait !=
+        _lyricSecondaryRatioPortrait) {
+      unawaited(
+        settings.updateMusicLyricSecondaryRatioPortrait(
+          _lyricSecondaryRatioPortrait,
+        ),
+      );
+    }
+    if (settings.musicLyricSecondaryRatioLandscape !=
+        _lyricSecondaryRatioLandscape) {
+      unawaited(
+        settings.updateMusicLyricSecondaryRatioLandscape(
+          _lyricSecondaryRatioLandscape,
+        ),
+      );
+    }
+  }
+
+  void _openLyricFontSettings() {
+    _onUserInteraction();
+    setState(() {
+      _clearLyricAnchorPreview();
+      _showLyricFontPanel = true;
+    });
+  }
+
+  void _closeLyricFontPanel() {
+    if (!mounted || !_showLyricFontPanel) return;
+    _persistLyricTypography();
+    setState(() {
+      _showLyricFontPanel = false;
+      _isAdjustingSecondaryRatio = false;
+    });
+    _onUserInteraction();
+  }
+
+  void _onSecondaryRatioChanged(double value) {
+    value = MusicLyricTypography.normalizeSecondaryRatio(value);
+    if (_currentLyricSecondaryRatio == value) return;
+    _onUserInteraction();
+    setState(() {
+      if (_isPortraitLayout) {
+        _lyricSecondaryRatioPortrait = value;
+      } else {
+        _lyricSecondaryRatioLandscape = value;
+      }
+      _lyricTypographyDirty = true;
+    });
+  }
+
+  void _onLyricTextStyleChanged(SubtitleTextStyle style) {
+    _onUserInteraction();
+    setState(() => _lyricTextStyle = style);
+    unawaited(_lyricTypographySettings.updateMusicLyricTextStyle(style));
+    unawaited(
+      SubtitleFontService.instance.prepareFamilies([
+        style.defaultFont.family,
+        ...style.resolvedLanguageFonts.values.map((font) => font.family),
+      ]),
+    );
+  }
+
+  String? _lyricFontSource(bool secondary) {
+    if (!widget.followCurrentSession) return null;
+    final paths = _mediaService.subtitlePaths;
+    final primary = paths.isEmpty ? null : paths.first;
+    if (!secondary) return primary;
+    return SubtitleFontService.instance.secondarySource(
+      primary,
+      paths.length > 1 ? paths[1] : null,
+    );
+  }
+
+  String? _lyricFontLanguage(bool secondary) {
+    final source = _lyricFontSource(secondary);
+    if (source == null) return null;
+    final cues = secondary
+        ? _mediaService.secondarySubtitles
+        : _mediaService.subtitles;
+    return SubtitleFontService.instance.languageForSource(
+      source,
+      texts: cues.take(100).map((item) => item.text),
+    );
   }
 
   /// 逐词开关当帧改歌词，同时写入偏好。点开关不会收起弹层。
@@ -2162,6 +2297,50 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                           ),
                         ),
                       ),
+                      Tooltip(
+                        message: '字体设置',
+                        child: DesktopButtonClickRegion(
+                          child: TextButton(
+                            key: const ValueKey('music-lyric-font-settings'),
+                            onPressed: _openLyricFontSettings,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white.withValues(
+                                alpha: 0.92,
+                              ),
+                              minimumSize: const Size(52, 32),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(
+                                  color: Color(0x45FFFFFF),
+                                ),
+                              ),
+                            ),
+                            child: const MusicTextOpticalAlignment(
+                              applyCjkRaise: true,
+                              fontSize: 13,
+                              child: Text(
+                                '字体',
+                                textHeightBehavior: TextHeightBehavior(
+                                  leadingDistribution:
+                                      TextLeadingDistribution.even,
+                                ),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  height: 1,
+                                  leadingDistribution:
+                                      TextLeadingDistribution.even,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
                       DesktopButtonClickRegion(
                         child: IconButton(
                           key: const ValueKey('music-page-settings-close'),
@@ -2170,12 +2349,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                           icon: const Icon(Icons.close_rounded, size: 18),
                           style: IconButton.styleFrom(
                             foregroundColor: Colors.white70,
-                            backgroundColor: const Color(0x0FFFFFFF),
-                            minimumSize: const Size.square(36),
-                            padding: const EdgeInsets.all(8),
+                            minimumSize: const Size.square(32),
+                            fixedSize: const Size.square(32),
+                            padding: EdgeInsets.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: const CircleBorder(),
-                            side: BorderSide.none,
+                            visualDensity: VisualDensity.compact,
                           ),
                         ),
                       ),
@@ -2300,6 +2478,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     VoidCallback? onReset,
     ValueChanged<double>? onChangeStart,
     ValueChanged<double>? onChangeEnd,
+    bool compact = false,
   }) {
     String percent(double scale) => '${(scale * 100).toStringAsFixed(1)}%';
     return Column(
@@ -2310,7 +2489,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 13 : 14,
+                ),
               ),
             ),
             SizedBox(
@@ -2324,7 +2506,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                 style: const TextStyle(color: Colors.white60, fontSize: 12),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 2 : 8),
             // Always occupies the same space, including at the default value.
             DesktopButtonClickRegion(
               child: IconButton(
@@ -2337,14 +2519,16 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                             onChanged(defaultValue);
                             _persistLyricTypography();
                           },
-                icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                icon: Icon(Icons.restart_alt_rounded, size: compact ? 16 : 18),
                 style: IconButton.styleFrom(
                   foregroundColor: Colors.white70,
                   disabledForegroundColor: Colors.white24,
-                  minimumSize: const Size.square(36),
-                  padding: const EdgeInsets.all(8),
+                  minimumSize: Size.square(compact ? 24 : 36),
+                  fixedSize: Size.square(compact ? 24 : 36),
+                  padding: EdgeInsets.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: const CircleBorder(),
+                  visualDensity: VisualDensity.compact,
+                  shape: compact ? null : const CircleBorder(),
                   side: BorderSide.none,
                 ),
               ),
@@ -2355,7 +2539,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
           data: SliderTheme.of(context).copyWith(
             trackHeight: 3,
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            overlayShape: RoundSliderOverlayShape(
+              overlayRadius: compact ? 10 : 14,
+            ),
+            padding: compact ? const EdgeInsets.symmetric(vertical: 4) : null,
             showValueIndicator: ShowValueIndicator.onDrag,
             valueIndicatorColor: Colors.white,
             valueIndicatorTextStyle: Theme.of(context).textTheme.labelMedium
@@ -2483,6 +2670,146 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
           ],
         );
       },
+    );
+  }
+
+  /// 竖屏贴底。横屏跟页面设置一样，贴在页面设置按钮上方。
+  Widget _buildLyricFontPanelPositioned() {
+    return LayoutBuilder(
+      builder: (overlayContext, constraints) {
+        final padding = MediaQuery.paddingOf(overlayContext);
+        final screen = constraints.biggest;
+        final portrait = _isPortraitLayout;
+        final safeTop = padding.top + 8;
+        final safeBottom = padding.bottom + 8;
+        final double left;
+        final double? top;
+        final double? bottom;
+        final double width;
+        final double maxHeight;
+        if (portrait) {
+          final available = (screen.height - safeTop - safeBottom).clamp(
+            1.0,
+            double.infinity,
+          );
+          var cap = available * 0.5;
+          if (cap > 400) cap = 400;
+          maxHeight = cap;
+          width = (screen.width - padding.horizontal - 20).clamp(
+            0.0,
+            screen.width,
+          );
+          left = padding.left + 10;
+          top = null;
+          bottom = safeBottom;
+        } else {
+          final overlayBox = overlayContext.findRenderObject() as RenderBox;
+          final buttonBox =
+              _fontSizeButtonKey.currentContext?.findRenderObject()
+                  as RenderBox?;
+          final buttonPosition = buttonBox == null
+              ? null
+              : overlayBox.globalToLocal(
+                  buttonBox.localToGlobal(Offset.zero),
+                );
+          width = _stylePanelWidth.clamp(0.0, screen.width - 24);
+          left =
+              ((buttonPosition?.dx ?? screen.width) +
+                      (buttonBox?.size.width ?? 0) -
+                      width)
+                  .clamp(12.0, screen.width - width - 12);
+          bottom =
+              (screen.height - (buttonPosition?.dy ?? screen.height - 100) + 8)
+                  .clamp(safeBottom, screen.height - safeTop - 96);
+          top = null;
+          maxHeight = (screen.height - bottom - safeTop).clamp(
+            1.0,
+            double.infinity,
+          );
+        }
+        return Stack(
+          children: [
+            Positioned(
+              key: const ValueKey('music-lyric-font-panel'),
+              left: left,
+              top: top,
+              bottom: bottom,
+              width: width,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                child: _buildLyricFontPanel(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLyricFontPanel() {
+    final dim = _isAdjustingSecondaryRatio;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: dim ? 2 : 18,
+          sigmaY: dim ? 2 : 18,
+        ),
+        child: AnimatedContainer(
+          key: const ValueKey('music-lyric-font-surface'),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            color: dim ? const Color(0x3329292E) : const Color(0xE629292E),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0x24FFFFFF)),
+          ),
+          child: SubtitleFontSettingsPage(
+            key: _lyricFontPageKey,
+            style: _lyricTextStyle,
+            onChanged: _onLyricTextStyleChanged,
+            onBack: _closeLyricFontPanel,
+            onClose: _dismissFontSizeSlider,
+            primarySource: _lyricFontSource(false),
+            secondarySource: _lyricFontSource(true),
+            primaryLanguage: _lyricFontLanguage(false),
+            secondaryLanguage: _lyricFontLanguage(true),
+            transparentBackground: true,
+            dimSurroundings: dim,
+            settingsControl: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 0, 4, 0),
+              child: _buildLyricStyleSlider(
+                sliderKey: const ValueKey(
+                  'music-lyric-secondary-ratio-slider',
+                ),
+                resetKey: const ValueKey(
+                  'music-lyric-secondary-ratio-reset',
+                ),
+                label: '副字幕比例',
+                resetTooltip: '恢复默认比例',
+                value: _currentLyricSecondaryRatio,
+                min: MusicLyricTypography.minSecondaryRatio,
+                max: MusicLyricTypography.maxSecondaryRatio,
+                defaultValue: MusicLyricTypography.defaultSecondaryRatio,
+                compact: true,
+                onChanged: _onSecondaryRatioChanged,
+                onChangeStart: (_) {
+                  if (!_isPortraitLayout || _isAdjustingSecondaryRatio) {
+                    return;
+                  }
+                  setState(() => _isAdjustingSecondaryRatio = true);
+                },
+                onChangeEnd: (_) {
+                  _persistLyricTypography();
+                  if (!_isAdjustingSecondaryRatio || !mounted) return;
+                  setState(() => _isAdjustingSecondaryRatio = false);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

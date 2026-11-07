@@ -24,6 +24,7 @@ class NetworkHttp with WidgetsBindingObserver {
       'speechRecognitionDirectRecovery';
   static const translationConnectionReuseKey = 'translationConnectionReuse';
   static const mediaConnectionReuseKey = 'mediaConnectionReuse';
+  static const modelDownloadFreshConnectionKey = 'modelDownloadFreshConnection';
   static final instance = NetworkHttp();
   final NetworkSettingsService settings;
   final NetworkProxyBridge bridge;
@@ -387,7 +388,10 @@ class NetworkDioAdapter implements HttpClientAdapter {
             context.mode == NetworkMode.direct ||
         scope == NetworkScope.translation &&
             options.extra[NetworkHttp.translationConnectionReuseKey] == true ||
-        scope == NetworkScope.modelDownloads && safe ||
+        scope == NetworkScope.modelDownloads &&
+            safe &&
+            options.extra[NetworkHttp.modelDownloadFreshConnectionKey] !=
+                true ||
         scope == NetworkScope.other &&
             safe &&
             options.extra[NetworkHttp.mediaConnectionReuseKey] == true;

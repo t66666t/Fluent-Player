@@ -6,6 +6,8 @@ import 'package:characters/characters.dart';
 import 'package:path/path.dart' as p;
 
 import '../../models/subtitle_model.dart';
+import 'asr_acceleration.dart';
+import 'inference_resource_governor.dart';
 import 'asr_enhancement_options.dart';
 import 'asr_enhancement_processing.dart';
 import 'qwen_asr_runtime.dart';
@@ -79,6 +81,9 @@ class AsrTextProcessor {
     required this.checkCancelled,
     this.acceleration = 'cpu',
     this.review = true,
+    this.conservativeGpu = false,
+    this.onState,
+    this.accelerationEnvironment,
     QwenAsrRuntime? runtime,
   }) : runtime = runtime ?? QwenAsrRuntime();
   final Map<String, String> directories;
@@ -86,6 +91,11 @@ class AsrTextProcessor {
   final void Function() checkCancelled;
   final String acceleration;
   final bool review;
+
+  /// Phones do not trial the shared aligner on GPU during automatic mode.
+  final bool conservativeGpu;
+  final void Function(Map<String, dynamic>)? onState;
+  final Object? accelerationEnvironment;
   final QwenAsrRuntime runtime;
   String? residentModelId;
   int? _loadedThreads;
@@ -111,7 +121,7 @@ class AsrTextProcessor {
             File(file).lengthSync(),
             gpu:
                 gpu ??
-                (acceleration != 'cpu' &&
+                (_tryAlignmentGpu &&
                     !_alignmentCpuFallback &&
                     !memoryCpuAlignment),
           )
@@ -136,6 +146,11 @@ class AsrTextProcessor {
     }
   }
 
+  /// Manual GPU and desktop automatic mode may probe. Mobile automatic mode
+  /// stays on CPU so a day-to-day transcription does not load Vulkan first.
+  bool get _tryAlignmentGpu =>
+      acceleration == 'gpu' || (acceleration == 'auto' && !conservativeGpu);
+
   Future<void> _load(String id, String kind) async {
     checkCancelled();
     if (residentModelId == id &&
@@ -147,10 +162,16 @@ class AsrTextProcessor {
     if (directory == null) throw StateError('共享增强模型尚未准备完成：$id');
     var backend = 'cpu';
     if (kind == 'aligner' &&
-        acceleration != 'cpu' &&
+        _tryAlignmentGpu &&
         !_alignmentCpuFallback &&
         !memoryCpuAlignment) {
       _alignmentBackend = 'gpu';
+      onState?.call({
+        'backend': 'GPU',
+        'reason': '正在检查 GPU 能力',
+        'weights': id,
+        'selecting': true,
+      });
       backend = await runtime.preferredBackend();
     }
     if (kind == 'aligner') _alignmentBackend = backend;
@@ -434,6 +455,37 @@ class AsrTextProcessor {
       checkCancelled();
       if (_alignmentBackend == 'cpu' && !isQwenWorkerUnavailable(error)) {
         rethrow;
+      }
+      if (_alignmentBackend != 'cpu' &&
+          !isTransientInferencePressure(error) &&
+          !'$error'.contains('转录已取消')) {
+        final exited = isQwenWorkerUnavailable(error);
+        final confirmed =
+            !exited || await QwenAsrRuntime.gpuFaultConfirmed('qwen_asr');
+        if (confirmed) {
+          onState?.call({
+            'backend': 'CPU',
+            'reason': 'GPU 不可用，已回退 CPU',
+            'weights': AsrEnhancementOptions.alignmentQwenId,
+            'profile': AsrPerformanceProfile(
+              signature: qwenAvailabilitySignature({
+                'accelerationEnvironment': accelerationEnvironment,
+                'identity': AsrEnhancementOptions.alignmentQwenId,
+                'language': '',
+                'hotwords': '',
+              }, component: 'qwen-aligner'),
+              testedAt: DateTime.now(),
+              backend: 'GPU',
+              device: 'preflight',
+              weights: AsrEnhancementOptions.alignmentQwenId,
+              sampleSeconds: 1,
+              cpuMs: 0,
+              gpuMs: 0,
+              failed: true,
+              failureReason: '$error',
+            ).toJson(),
+          });
+        }
       }
       _alignmentCpuFallback = true;
       await release();

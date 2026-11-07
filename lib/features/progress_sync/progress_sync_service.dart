@@ -1,3 +1,4 @@
+import 'package:video_player_app/utils/app_branding.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -15,7 +16,9 @@ import '../../models/video_collection.dart';
 import '../../models/video_item.dart';
 import '../../models/podcast_source_ref.dart';
 import '../podcasts/podcast_runtime.dart';
+import '../podcasts/podcast_models.dart';
 import '../podcasts/podcast_sync_codec.dart';
+import '../../services/community_media_input.dart';
 import '../../services/library_service.dart';
 import '../../utils/serial_task_queue.dart';
 import 'progress_sync_lan.dart';
@@ -23,6 +26,7 @@ import 'progress_sync_models.dart';
 import 'progress_sync_store.dart';
 import 'progress_sync_webdav.dart';
 import '../portable_transfer/portable_folder_transfer.dart';
+import '../portable_transfer/legacy_download_export_policy.dart';
 import 'folder_transfer_models.dart';
 import 'folder_transfer_service.dart';
 import 'folder_sync_models.dart';
@@ -58,6 +62,7 @@ class _SyncGroup {
   bool awaitingCatalog;
   int catalogCount;
   Map<String, dynamic> toJson() => {
+    'edition': kApplicationId,
     'id': id,
     'name': name,
     'key': base64Encode(key),
@@ -71,7 +76,14 @@ class _SyncGroup {
     'awaitingCatalog': awaitingCatalog,
     'catalogCount': catalogCount,
   };
-  factory _SyncGroup.fromJson(Map<String, dynamic> j) {
+  factory _SyncGroup.fromJson(
+    Map<String, dynamic> j, {
+    bool allowLegacyLocal = false,
+  }) {
+    if (j['edition'] != kApplicationId &&
+        !(allowLegacyLocal && j['edition'] == null)) {
+      throw const FormatException('同步信息属于其他版本或需要重新生成');
+    }
     final key = base64Decode(j['key'] as String);
     if (key.length != 32 || (j['id'] as String).length > 100) {
       throw const FormatException('同步码无效');
@@ -104,6 +116,12 @@ class _SyncGroup {
   }
 }
 
+class _PodcastSyncEpisode {
+  const _PodcastSyncEpisode(this.episode, this.adapter);
+  final PodcastEpisode episode;
+  final VideoItem? adapter;
+}
+
 /// One local-first merge engine, used by both peer-to-peer and WebDAV routes.
 /// Remote changes never seek the active player or replace the library snapshot.
 class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
@@ -124,6 +142,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, Map<String, dynamic>> _envelopes = {};
   final Map<String, String> _trustedKeys = {}, _pairedNames = {};
   final Map<String, Map<String, String>> _mediaKeys = {};
+  final Map<String, Map<String, _PodcastSyncEpisode>> _podcastEpisodes = {};
+  final Map<String, Set<String>> _excludedNodes = {},
+      _excludedProgressKeys = {};
   final Map<String, Map<String, dynamic>> _fingerprints = {};
   final Map<String, String> _localSignatures = {};
   final Map<String, Map<String, int>> _localClocks = {};
@@ -172,6 +193,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _revokedFolderGroups = {};
   bool _requestingFolderFiles = false;
   Timer? _folderChangeTimer;
+  PodcastRuntime? _observedPodcast;
 
   List<FolderTransferTask> get folderTransfers {
     if (_folderTransfer != null) return _folderTransfer!.tasks;
@@ -346,6 +368,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         for (final value in saved['groups'] as List? ?? []) {
           final g = _SyncGroup.fromJson(
             Map<String, dynamic>.from(value as Map),
+            allowLegacyLocal: true,
           );
           _groups[g.id] = g;
         }
@@ -354,7 +377,10 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
           _fingerprints[m['id'] as String] = m;
         }
         for (final value in saved['envelopes'] as List? ?? []) {
-          await _receiveEnvelope(Map<String, dynamic>.from(value as Map));
+          await _receiveEnvelope(
+            Map<String, dynamic>.from(value as Map),
+            allowLegacyLocal: true,
+          );
         }
         if (saved['webDav'] case final Map config) {
           _webDavConfig = ProgressSyncWebDavConfig(
@@ -372,6 +398,8 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       library.addProgressObserver(_onProgress);
       library.addListener(_onLibraryChanged);
       library.activityRevision.addListener(_onLibraryChanged);
+      _observedPodcast = PodcastRuntime.instance
+        ..addListener(_onPodcastChanged);
       WidgetsBinding.instance.addObserver(this);
       if (_enabled) {
         await _start();
@@ -391,9 +419,10 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   static String _defaultName() {
     final host = Platform.localHostname.trim();
-    return host.isEmpty
+    final device = host.isEmpty
         ? '我的${Platform.operatingSystem}设备'
         : host.substring(0, min(40, host.length));
+    return '$device · $kAppDisplayName';
   }
 
   void _requireStorage() {
@@ -540,9 +569,15 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       protectedIds: _protectedIncomingFolderNodes,
       syncMetadata: (collectionId) => {
         'events':
-            _catalogForCollection(
-              collectionId,
-            )?.activeEvents.map((e) => e.toJson()).toList() ??
+            _catalogForCollection(collectionId)?.activeEvents
+                .where(
+                  (event) =>
+                      !(_excludedNodes[_groupForCollection(collectionId)?.id] ??
+                              const <String>{})
+                          .contains(event.node.id),
+                )
+                .map((e) => e.toJson())
+                .toList() ??
             [],
       },
       onImported: _adoptTransferredFolder,
@@ -814,6 +849,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       return {
         'version': 1,
         'group': {
+          'edition': kApplicationId,
           'id': group.id,
           'name': group.name,
           'key': base64Encode(group.key),
@@ -1493,6 +1529,15 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
+  void _onPodcastChanged() {
+    if (!_enabled || _applying || _disposed) return;
+    _scheduleCapture();
+    _folderChangeTimer?.cancel();
+    _folderChangeTimer = Timer(const Duration(seconds: 2), () {
+      if (_enabled && !_disposed) unawaited(syncNow());
+    });
+  }
+
   void _scheduleCapture() {
     _captureTimer?.cancel();
     _captureTimer = Timer(const Duration(milliseconds: 800), () {
@@ -1628,6 +1673,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
           (_, envelope) => envelope['groupId'] == id,
         );
         _mediaKeys.remove(id);
+        _podcastEpisodes.remove(id);
+        _excludedNodes.remove(id);
+        _excludedProgressKeys.remove(id);
         final events = _events.values
             .where((e) => e.groupId == id)
             .map((e) => e.id)
@@ -1671,6 +1719,20 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     final applying = _applying;
     _applying = true;
     final catalog = _folders.state(group.id, settings: group.settings);
+    final excludedNodes = <String>{}, excludedKeys = <String>{};
+    for (final item in library.mediaInFolderTree(folder)) {
+      if (!omitLegacyWebDownload(item, library)) continue;
+      final node = catalog.nodeIdForLocal(item.id);
+      if (node != null) {
+        excludedNodes.add(node);
+        excludedKeys.add('node:$node');
+        final oldKey = catalog.appliedNode(node)?.contentKey;
+        if (oldKey != null) excludedKeys.add(oldKey);
+      }
+      final previous = _mediaKeys[group.id]?[item.id];
+      if (previous != null) excludedKeys.add(previous);
+    }
+    _excludedNodes[group.id] = excludedNodes;
     final waiting =
         group.awaitingCatalog &&
         (catalog.activeEvents.isEmpty ||
@@ -1681,7 +1743,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         await _folders.capture(group.id, folder, group.settings);
         await _folders.apply(group.id, folder, group.settings);
         _reaffirmOneWaySource(group, catalog);
-        group.catalogCount = catalog.activeEvents.length;
+        group.catalogCount = catalog.activeEvents
+            .where((event) => !excludedNodes.contains(event.node.id))
+            .length;
       }
     } finally {
       _applying = applying;
@@ -1689,10 +1753,95 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     final keys = <String, String>{};
     final items = library
         .mediaInFolderTree(folder)
-        .where((v) => !v.isRecycled && !v.isTransient)
+        .where(
+          (v) =>
+              !v.isRecycled &&
+              !v.isTransient &&
+              !omitLegacyWebDownload(v, library),
+        )
         .toList();
+    final podcastEpisodes = <String, _PodcastSyncEpisode>{};
+    final runtime = PodcastRuntime.instance;
+    if (!runtime.ready &&
+        library.storageCollections.any(
+          (card) => card.podcastRef != null && !card.isRecycled,
+        )) {
+      await runtime.initialize(library: library);
+    }
+    if (runtime.ready) {
+      runtime.controller.flushStates();
+      for (final card in library.storageCollections.where(
+        (card) => card.podcastRef != null && !card.isRecycled,
+      )) {
+        String? ancestor = card.id;
+        final seen = <String>{};
+        while (ancestor != null && ancestor != folder && seen.add(ancestor)) {
+          ancestor = library.getCollection(ancestor)?.parentId;
+        }
+        if (ancestor != folder) continue;
+        for (final episode in runtime.store.episodes(
+          card.podcastRef!.channelId,
+        )) {
+          final localId = '__podcast_state__:${episode.id}';
+          final adapter = items
+              .where(
+                (item) =>
+                    !communityMediaIsLocal(item.path) &&
+                    item.sourceRef?.podcast?.episodeId == episode.id,
+              )
+              .firstOrNull;
+          podcastEpisodes[localId] = _PodcastSyncEpisode(episode, adapter);
+          keys[localId] = 'podcast:${episode.id}';
+          if (adapter != null) {
+            final oldKey = '${group.id}|${adapter.id}';
+            final newKey = '${group.id}|$localId';
+            // Old versions keyed a projected episode by its folder node.
+            // Carry its observed clock to the episode identity, but publish a
+            // new checkpoint unless a newer/equivalent one is already known.
+            if (!_localSignatures.containsKey(newKey) &&
+                _localSignatures[oldKey] ==
+                    _podcastValue(episode, adapter).signature) {
+              final clock = _localClocks[oldKey];
+              if (clock != null) _localClocks[newKey] = Map.of(clock);
+              final heads = _heads(group.id, 'podcast:${episode.id}');
+              final value = _podcastValue(episode, adapter);
+              final same = heads
+                  .where((head) => head.value.signature == value.signature)
+                  .toList();
+              final seen =
+                  clock != null &&
+                  clock.isNotEmpty &&
+                  heads.any(
+                    (head) =>
+                        clock.entries.every(
+                          (entry) =>
+                              (head.clock[entry.key] ?? 0) >= entry.value,
+                        ) &&
+                        {...clock.keys, ...head.clock.keys}.any(
+                          (key) => (head.clock[key] ?? 0) > (clock[key] ?? 0),
+                        ),
+                  );
+              if (same.isNotEmpty || seen) {
+                _localSignatures[newKey] = _podcastSignature(episode, adapter);
+                if (same.isNotEmpty) _localClocks[newKey] = _joinClocks(same);
+              }
+            }
+          }
+        }
+      }
+    }
+    _podcastEpisodes[group.id] = podcastEpisodes;
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
+      if (!communityMediaIsLocal(item.path)) {
+        final podcast = item.sourceRef?.podcast;
+        if (podcast != null &&
+            podcastEpisodes.containsKey(
+              '__podcast_state__:${podcast.episodeId}',
+            )) {
+          continue;
+        }
+      }
       final key = await _contentKey(item);
       if (key != null) {
         final node = catalog.nodeIdForLocal(item.id);
@@ -1721,6 +1870,8 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     _mediaKeys[group.id] = keys;
+    excludedKeys.removeAll(keys.values);
+    _excludedProgressKeys[group.id] = excludedKeys;
     if (reidentified) await _captureGroup(group, initial: true);
   }
 
@@ -1746,7 +1897,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<String?> _contentKey(VideoItem item) async {
-    final source = item.sourceRef;
+    final source = communityMediaIsLocal(item.path) ? null : item.sourceRef;
     if (source?.podcast != null) return 'podcast:${source!.podcast!.episodeId}';
     final cloud = source?.cloudDrive;
     if (cloud != null) {
@@ -1767,7 +1918,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         return remembered['key'] as String?;
       }
     }
-    final path = item.bilibiliDownloadPath ?? item.path;
+    final path = communityMediaIsLocal(item.path)
+        ? item.path
+        : item.bilibiliDownloadPath ?? item.path;
     if (source?.bvid != null && path.startsWith('bilibili:')) {
       final bvid = source!.bvid!;
       return 'bili:$bvid:${source.cid ?? source.page ?? 1}';
@@ -1820,6 +1973,24 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  SyncProgressValue _podcastValue(PodcastEpisode episode, VideoItem? adapter) {
+    final state = PodcastRuntime.instance.controller.state(episode.id);
+    final activity = adapter == null ? null : library.mediaActivity(adapter.id);
+    return SyncProgressValue(
+      positionMs: state.positionMs,
+      completed: state.played,
+      continueEnrolled: state.positionMs > 0 && !state.played,
+      lastPlayedAtMs: state.lastPlayedMs == 0 ? null : state.lastPlayedMs,
+      watchMs: activity?.accumulatedWatchMs ?? 0,
+    );
+  }
+
+  String _podcastSignature(PodcastEpisode episode, VideoItem? adapter) =>
+      jsonEncode([
+        _podcastValue(episode, adapter).toJson(),
+        PodcastRuntime.instance.controller.state(episode.id).playbackUpdatedMs,
+      ]);
+
   List<SyncProgressEvent> _heads(String group, String key) => syncProgressHeads(
     _events.values.where((e) => e.groupId == group && e.mediaKey == key),
   );
@@ -1837,16 +2008,22 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     for (final group in _groups.values) {
       for (final event
           in _folders.state(group.id, settings: group.settings).activeEvents) {
+        if ((_excludedNodes[group.id] ?? const <String>{}).contains(
+          event.node.id,
+        )) {
+          continue;
+        }
         current.add(event.id);
         if (_folderEnvelopes.containsKey(event.id)) continue;
         final box = await _cipher.encrypt(
           utf8.encode(jsonEncode(event.toJson())),
           secretKey: SecretKey(group.key),
-          aad: utf8.encode('folder|${group.id}|${event.id}'),
+          aad: utf8.encode('folder|$kApplicationId|${group.id}|${event.id}'),
         );
         _folderEnvelopes[event.id] = {
           'kind': 'folder-event',
           'version': 1,
+          'edition': kApplicationId,
           'groupId': group.id,
           'eventId': event.id,
           'nonce': base64Encode(box.nonce),
@@ -1874,7 +2051,8 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     if (group == null ||
         id is! String ||
         id.length > 128 ||
-        envelope['version'] != 1) {
+        envelope['version'] != 1 ||
+        envelope['edition'] != kApplicationId) {
       return;
     }
     final plain = await _cipher.decrypt(
@@ -1884,7 +2062,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         mac: Mac(base64Decode(envelope['mac'] as String)),
       ),
       secretKey: SecretKey(group.key),
-      aad: utf8.encode('folder|${group.id}|$id'),
+      aad: utf8.encode('folder|$kApplicationId|${group.id}|$id'),
     );
     if (plain.length > 128 * 1024) throw const FormatException('目录记录过大');
     final event = FolderSyncEvent.fromJson(
@@ -1904,6 +2082,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Map<String, dynamic> _sharedGroup(_SyncGroup group) => {
+    'edition': kApplicationId,
     'id': group.id,
     'name': group.name,
     'key': base64Encode(group.key),
@@ -1913,6 +2092,11 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     'catalogCount': _folders
         .state(group.id, settings: group.settings)
         .activeEvents
+        .where(
+          (event) => !(_excludedNodes[group.id] ?? const <String>{}).contains(
+            event.node.id,
+          ),
+        )
         .length,
   };
   void _mergeFolderSettings(_SyncGroup existing, _SyncGroup incoming) {
@@ -1963,10 +2147,16 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _captureGroup(_SyncGroup group, {bool initial = false}) async {
     for (final entry in (_mediaKeys[group.id] ?? {}).entries) {
-      final item = library.getVideo(entry.key);
-      if (item == null) continue;
-      final value = _value(item), signature = value.signature;
-      final localKey = '${group.id}|${item.id}';
+      final podcast = _podcastEpisodes[group.id]?[entry.key];
+      final item = podcast == null ? library.getVideo(entry.key) : null;
+      if (item == null && podcast == null) continue;
+      final value = podcast == null
+          ? _value(item!)
+          : _podcastValue(podcast.episode, podcast.adapter);
+      final signature = podcast == null
+          ? value.signature
+          : _podcastSignature(podcast.episode, podcast.adapter);
+      final localKey = '${group.id}|${entry.key}';
       if (_localSignatures[localKey] == signature) continue;
       final heads = _heads(group.id, entry.value);
       final hasProgress =
@@ -1974,16 +2164,21 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
           value.completed ||
           value.continueEnrolled ||
           value.lastPlayedAtMs != null ||
-          value.watchMs > 0;
+          value.watchMs > 0 ||
+          podcast != null &&
+              PodcastRuntime.instance.controller
+                      .state(podcast.episode.id)
+                      .playbackUpdatedMs >
+                  0;
       if (_localSignatures[localKey] == null && !hasProgress) {
         _localSignatures[localKey] = signature;
         continue;
       }
       if (_localSignatures[localKey] == null && !initial && heads.isNotEmpty) {
         // Restoration/restart: a matching saved local value is not a new watch.
-        if (heads.any((h) => h.value.signature == signature)) {
+        if (heads.any((h) => h.value.signature == value.signature)) {
           _localSignatures[localKey] = signature;
-          final same = heads.where((h) => h.value.signature == signature);
+          final same = heads.where((h) => h.value.signature == value.signature);
           _localClocks[localKey] = _joinClocks(same);
           continue;
         }
@@ -1999,7 +2194,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         id: const Uuid().v4(),
         groupId: group.id,
         mediaKey: entry.value,
-        title: item.title,
+        title: podcast?.episode.title ?? item!.title,
         deviceId: _deviceId,
         deviceName: _deviceName,
         clock: clock,
@@ -2062,11 +2257,12 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     final box = await _cipher.encrypt(
       utf8.encode(jsonEncode(event.toJson())),
       secretKey: SecretKey(key),
-      aad: utf8.encode('${event.groupId}|${event.id}'),
+      aad: utf8.encode('progress|$kApplicationId|${event.groupId}|${event.id}'),
     );
     return {
       'kind': 'event',
       'version': 1,
+      'edition': kApplicationId,
       'eventId': event.id,
       'groupId': event.groupId,
       'nonce': base64Encode(box.nonce),
@@ -2079,6 +2275,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     Map<String, dynamic> envelope, {
     String? peerId,
     int? trustRevision,
+    bool allowLegacyLocal = false,
   }) async {
     if (peerId != null && !_acceptPeerChanges(peerId, trustRevision)) return;
     final rawGroup = envelope['groupId'], rawId = envelope['eventId'];
@@ -2088,6 +2285,8 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     if (group == null || id.length > 100 || envelope['version'] != 1) {
       return;
     }
+    final legacyLocal = allowLegacyLocal && envelope['edition'] == null;
+    if (!legacyLocal && envelope['edition'] != kApplicationId) return;
     if (_events.containsKey(id)) return;
     final plain = await _cipher.decrypt(
       SecretBox(
@@ -2096,7 +2295,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         mac: Mac(base64Decode(envelope['mac'] as String)),
       ),
       secretKey: SecretKey(group.key),
-      aad: utf8.encode('$groupId|$id'),
+      aad: utf8.encode(
+        legacyLocal ? '$groupId|$id' : 'progress|$kApplicationId|$groupId|$id',
+      ),
     );
     if (plain.length > 128 * 1024) throw const FormatException('同步记录过大');
     final event = SyncProgressEvent.fromJson(
@@ -2109,7 +2310,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       throw const FormatException('同步记录无效');
     }
     if (peerId != null && !_acceptPeerChanges(peerId, trustRevision)) return;
-    await _addEvent(event, envelope: envelope);
+    await _addEvent(event, envelope: legacyLocal ? null : envelope);
   }
 
   Future<List<Map<String, dynamic>>> _outgoing(String peerId) async {
@@ -2134,7 +2335,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       },
       for (final g in allowed) {'kind': 'invite', 'group': _sharedGroup(g)},
       for (final envelope in _envelopes.values)
-        if (allowed.any((g) => g.id == envelope['groupId'])) envelope,
+        if (allowed.any((g) => g.id == envelope['groupId']) &&
+            _progressEnvelopeAllowed(envelope))
+          envelope,
       for (final envelope in _folderEnvelopes.values)
         if (allowed.any((g) => g.id == envelope['groupId'])) envelope,
       if ((_podcastPeerVersions[peerId] ?? 0) >= 1)
@@ -2148,6 +2351,14 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       !_disposed &&
       _trustedKeys.containsKey(peerId) &&
       (revision == null || revision == _trustRevision);
+
+  bool _progressEnvelopeAllowed(Map<String, dynamic> envelope) {
+    final event = _events[envelope['eventId']];
+    return event == null ||
+        !(_excludedProgressKeys[event.groupId] ?? const <String>{}).contains(
+          event.mediaKey,
+        );
+  }
 
   Future<void> _receive(
     String peerId,
@@ -2290,22 +2501,34 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         if (channel == null) continue;
         final node = catalog.nodeIdForLocal(card.id);
         if (node == null) continue;
-        final data = runtime.store.exportChannel(channel.id);
-        final metadata = Map<String, dynamic>.from(data['channel'])
-          ..remove('checkedMs')
-          ..remove('successMs')
-          ..remove('error')
-          ..remove('seenMs');
-        data['channel'] = metadata;
-        for (final raw in (data['states'] as Map).values) {
-          (raw as Map)
-            ..remove('positionMs')
-            ..remove('played')
-            ..remove('lastPlayedMs')
-            ..remove('updatedMs')
-            ..remove('retained')
-            ..remove('playedAtMs');
-        }
+        // The subscription and episode references let the other device show
+        // the channel. Playback state travels as causal progress events; local
+        // download preferences, favorites and presentation stay on this device.
+        final data = <String, dynamic>{
+          'version': 1,
+          'channel': PodcastChannel(
+            id: channel.id,
+            feedUrl: channel.feedUrl,
+            title: channel.title,
+            author: channel.author,
+            imageUrl: channel.imageUrl,
+            guid: channel.guid,
+            aliases: channel.aliases,
+          ).toJson(),
+          'episodes': [
+            for (final episode in runtime.store.episodes(channel.id))
+              PodcastEpisode(
+                id: episode.id,
+                channelId: channel.id,
+                title: episode.title,
+                media: episode.media,
+                guid: episode.guid,
+                publishedMs: episode.publishedMs,
+                durationMs: episode.durationMs,
+                sourceFeedUrl: episode.sourceFeedUrl,
+              ).toJson(),
+          ],
+        };
         for (final record in await PodcastSyncCodec.encode(
           data: data,
           groupId: group.id,
@@ -2338,7 +2561,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       if (_podcastEnvelopes.values.any(
         (r) => _groups[r['groupId']]?.peers.contains(peer.key) == true,
       )) {
-        _error = '对端版本尚不支持播客，请更新后同步播客订阅与设置';
+        _error = '对端版本尚不支持播客，请更新后同步订阅与收听状态';
       }
     }
     for (final peer in _podcastPeerVersions.entries.where(
@@ -2348,7 +2571,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         (record) =>
             _groups[record['groupId']]?.peers.contains(peer.key) == true,
       )) {
-        _error = '对端尚未支持播客顺序与设置继承，这些内容待对端更新后同步';
+        _error = '对端版本较旧，部分单集状态可能无法同步，请更新软件';
       }
     }
   }
@@ -2356,12 +2579,49 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _applyPodcasts() async {
     final runtime = PodcastRuntime.instance;
     if (!runtime.ready) return;
+    var changed = false;
     for (final pending in runtime.store.list('syncPending')) {
+      // Historical pending fragments have no trustworthy edition identity.
+      // Retain them, but apply only records authenticated for this edition.
+      if (pending['edition'] != kApplicationId) continue;
       final groupId = pending['groupId'] as String, group = _groups[groupId];
       if (group == null) continue;
       final local = _folders.state(groupId).localIdForNode(pending['nodeId']);
       if (local == null || library.getCollection(local) == null) continue;
-      final data = Map<String, dynamic>.from(pending['data']);
+      final incoming = Map<String, dynamic>.from(pending['data']);
+      final incomingChannel = PodcastChannel.fromJson(
+        Map<String, dynamic>.from(incoming['channel'] as Map),
+      );
+      final existingChannel = runtime.store.channel(incomingChannel.id);
+      if (existingChannel != null) {
+        final localUrls = {
+          existingChannel.feedUrl,
+          ...existingChannel.aliases,
+        }.map(podcastCanonicalUrl).toSet();
+        final incomingUrls = {
+          incomingChannel.feedUrl,
+          ...incomingChannel.aliases,
+        }.map(podcastCanonicalUrl).toSet();
+        if (localUrls.intersection(incomingUrls).isEmpty) {
+          throw const FormatException('播客频道身份与订阅地址不一致');
+        }
+      }
+      for (final raw in incoming['episodes'] as List? ?? const []) {
+        final episode = PodcastEpisode.fromJson(
+          Map<String, dynamic>.from(raw as Map),
+        );
+        final existing = runtime.store.episode(episode.id);
+        if (existing != null && existing.channelId != incomingChannel.id) {
+          throw const FormatException('播客节目身份不属于此频道');
+        }
+      }
+      // Older devices may still send settings and favorites. Do not apply them
+      // as a side effect of synchronizing podcast listening progress.
+      final data = <String, dynamic>{
+        'version': 1,
+        'channel': incoming['channel'],
+        'episodes': incoming['episodes'] ?? const [],
+      };
       runtime.store.importChannel(data, synchronization: true);
       final raw = Map<String, dynamic>.from(data['channel']);
       await library.setPodcastChannelRef(
@@ -2371,18 +2631,36 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
       if (pending['id'] is String) {
         runtime.store.remove('syncPending', pending['id']);
       }
+      changed = true;
     }
-    runtime.controller.reload();
+    if (changed) {
+      runtime.controller.reload();
+      for (final group in _groups.values.where((g) => g.collectionId != null)) {
+        await _indexGroup(group);
+      }
+      await _applyAll();
+    }
   }
 
   Future<void> _applyAll({String? allowMediaId}) async {
     _applying = true;
     try {
       final pending =
-          <({String groupId, String mediaId, SyncProgressValue value})>[];
+          <
+            ({
+              String groupId,
+              String mediaId,
+              String localId,
+              SyncProgressValue value,
+            })
+          >[];
       for (final group in _groups.values.where((g) => g.collectionId != null)) {
         for (final entry in (_mediaKeys[group.id] ?? {}).entries) {
-          if (_activeMediaId() == entry.key && allowMediaId != entry.key) {
+          final podcast = _podcastEpisodes[group.id]?[entry.key];
+          final activeId = podcast == null
+              ? entry.key
+              : podcast.adapter?.id ?? podcast.episode.id;
+          if (_activeMediaId() == activeId && allowMediaId != activeId) {
             continue;
           }
           final heads = _heads(group.id, entry.value);
@@ -2392,10 +2670,12 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
             continue;
           }
           final event = heads.first;
-          final item = library.getVideo(entry.key);
-          if (item == null) continue;
+          final item = podcast?.adapter ?? library.getVideo(entry.key);
+          if (item == null && podcast == null) continue;
           _localClocks['${group.id}|${entry.key}'] = _joinClocks(heads);
-          final local = _value(item);
+          final local = podcast == null
+              ? _value(item!)
+              : _podcastValue(podcast.episode, podcast.adapter);
           final target = SyncProgressValue(
             positionMs: event.value.positionMs,
             completed: event.value.completed,
@@ -2409,16 +2689,36 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
                   (latest, value) =>
                       latest == null ? value : max(latest, value),
                 ),
-            watchMs: heads.fold(
-              local.watchMs,
-              (longest, head) => max(longest, head.value.watchMs),
-            ),
+            watchMs: podcast != null && podcast.adapter == null
+                ? 0
+                : heads.fold(
+                    local.watchMs,
+                    (longest, head) => max(longest, head.value.watchMs),
+                  ),
           );
-          if (local.signature == target.signature) {
-            _localSignatures['${group.id}|${entry.key}'] = local.signature;
+          if (podcast != null && local.signature != target.signature) {
+            PodcastRuntime.instance.controller.savePlaybackProgress(
+              podcast.episode.id,
+              target.positionMs,
+              completed: target.completed,
+              lastPlayedMs: target.lastPlayedAtMs,
+            );
+          }
+          if (item == null ||
+              (local.signature == target.signature &&
+                  (podcast == null ||
+                      _value(item).signature == target.signature))) {
+            _localSignatures['${group.id}|${entry.key}'] = podcast == null
+                ? local.signature
+                : _podcastSignature(podcast.episode, podcast.adapter);
             continue;
           }
-          pending.add((groupId: group.id, mediaId: entry.key, value: target));
+          pending.add((
+            groupId: group.id,
+            mediaId: item.id,
+            localId: entry.key,
+            value: target,
+          ));
         }
       }
       for (var i = 0; i < pending.length; i++) {
@@ -2434,9 +2734,11 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
         );
         final item = library.getVideo(change.mediaId);
         if (item != null) {
-          _localSignatures['${change.groupId}|${change.mediaId}'] = _value(
-            item,
-          ).signature;
+          final podcast = _podcastEpisodes[change.groupId]?[change.localId];
+          _localSignatures['${change.groupId}|${change.localId}'] =
+              podcast == null
+              ? _value(item).signature
+              : _podcastSignature(podcast.episode, podcast.adapter);
         }
       }
     } finally {
@@ -2596,6 +2898,8 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
                     .where(
                       (e) =>
                           _groups.containsKey(e['groupId']) &&
+                          (e['kind'] != 'event' ||
+                              _progressEnvelopeAllowed(e)) &&
                           !_webDavKnown.contains(e['eventId']),
                     )
                     .toList();
@@ -2712,6 +3016,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     if (_groups.isEmpty) throw const FormatException('先关联一个文件夹');
     final data = {
       'version': 1,
+      'edition': kApplicationId,
       'groups': _groups.values
           .where((g) => g.collectionId != null)
           .map(_sharedGroup)
@@ -2737,6 +3042,9 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
           )
           as Map,
     );
+    if (data['edition'] != kApplicationId) {
+      throw const FormatException('同步码属于其他版本或来自旧版，请在相同版本重新生成');
+    }
     final incoming = (data['groups'] as List)
         .map((g) => _SyncGroup.fromJson(Map<String, dynamic>.from(g as Map)))
         .toList();
@@ -2826,6 +3134,7 @@ class ProgressSyncService extends ChangeNotifier with WidgetsBindingObserver {
     library.removeProgressObserver(_onProgress);
     library.removeListener(_onLibraryChanged);
     library.activityRevision.removeListener(_onLibraryChanged);
+    _observedPodcast?.removeListener(_onPodcastChanged);
     WidgetsBinding.instance.removeObserver(this);
     _lan?.removeListener(_notify);
     _lan?.dispose();

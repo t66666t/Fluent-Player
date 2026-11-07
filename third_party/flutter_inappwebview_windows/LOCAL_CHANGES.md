@@ -1,6 +1,7 @@
 # Local Windows WebView fixes
 
-Based on `flutter_inappwebview_windows` 0.6.0 (upstream LICENSE included).
+Based on `flutter_inappwebview_windows` 0.6.0 (upstream LICENSE included), with
+Dart interface compatibility for the pinned 1.4.0-beta.3 platform interface.
 Only the runtime sources needed by this app are vendored.
 
 The dependency download target is named `inappwebview_deps` to keep MSBuild's
@@ -29,17 +30,23 @@ disposal, and six exit/re-entry cycles while preserving page state and history.
 The browser route also uses the app's normal transition without snapshots;
 native attachment waits for entrance completion and fades in when created.
 
-Generic media discovery now observes `WebResourceResponseReceived` without
-deferring requests or reading response bodies. The internal capability query
-`Fluent.getNetworkObserverCapabilities` lets Dart use this passive path instead
-of sending every image/script request through CDP. Request COM identity and URL
-keep responses scoped to their originating page; duplicate range windows and
-explicit transport segments are filtered before the bridge. Media MIME,
-response filename, total size and exact request headers remain available.
-Responses received before listener registration are buffered and replayed.
+The community build removes the old passive response observer, its media/header
+classification and replay buffers. Network/Fetch CDP commands and events reject
+before native dispatch; the old capability query returns false. Ordinary
+JavaScript and document navigation remain available for in-app player controls.
+Request interception is used only when explicitly enabled by a caller, including
+the application's own YouTube host document; there is no passive media capture.
+Its native filter now covers documents only and passes no request headers or
+cookies into Dart. Media and other subresources never enter that callback.
 
-The Windows Dart controller installs its callback before native registration so
-replayed responses cannot beat the callback map. Older plugin/runtime pairs
-continue with the CDP fallback. Generic real-WebView fixtures are in
-`integration_test/web_media_generic_capture_test.dart`; optional runtime
-validation accepts an address externally and exports counts/timings only.
+The Dart compatibility changes accept both legacy argument-list and new typed
+JavaScript callbacks. New callbacks receive the main-frame URL reported by
+WebView2's message event, not an inferred current page. Print-job callback setup,
+nullable enum values and web-message serialization follow the new interface.
+The native shutdown, null-response and shortened dependency-target fixes remain.
+
+When `useOnDownloadStart` is enabled, WebView2 `DownloadStarting` is cancelled
+synchronously. Cancel/Handled flags are read back before a metadata-free
+notification; Dart callbacks cannot resume a download. Missing guard support
+blocks navigation. A weak lifetime token cancels late events without touching
+the retired owner, and the handler is unregistered at destructor entry.

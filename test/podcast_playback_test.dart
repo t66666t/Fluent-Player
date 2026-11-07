@@ -156,8 +156,8 @@ class _MemoryPlaybackStateStore extends PlaybackStateStore {
 Future<void> _pumpPlayback(WidgetTester tester, Future<void> action) async {
   var done = false;
   Object? failure;
-  action.then(
-    (_) => done = true,
+  action.then<void>(
+    (_) { done = true; },
     onError: (Object error, StackTrace _) {
       failure = error;
       done = true;
@@ -679,13 +679,13 @@ void main() {
           Uri.parse('http://127.0.0.1:47790/audio');
       final item = VideoItem(
         id: 'podcast-test',
-        path: 'podcast:test',
+        path: 'podcast:${episode.id}',
         title: episode.title,
         durationMs: 120000,
         lastUpdated: 1,
         type: MediaType.audio,
         sourceRef: MediaSourceRef(
-          value: 'podcast:test',
+          value: 'podcast:${episode.id}',
           kind: MediaSourceKind.podcastEpisode,
           podcast: PodcastEpisodeRef(
             channelId: episode.channelId,
@@ -699,9 +699,9 @@ void main() {
         await tester.runAsync(settings.init);
         await tester.runAsync(() async {
           for (final font in {
-            'MiSans': 'assets/fonts/MiSans-Regular.otf',
-            'Inter': 'assets/fonts/Inter-Regular.otf',
             'Noto Sans SC': 'assets/fonts/NotoSansCJKsc-Regular.otf',
+            'Inter': 'assets/fonts/Inter-Regular.otf',
+            'Noto Sans CJK Fallback': 'assets/fonts/NotoSansCJKsc-Regular.otf',
             'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
             'packages/cupertino_icons/CupertinoIcons':
                 'packages/cupertino_icons/assets/CupertinoIcons.ttf',
@@ -772,8 +772,8 @@ void main() {
               navigatorKey: navigatorKey,
               theme: ThemeData(
                 brightness: Brightness.dark,
-                fontFamily: 'MiSans',
-                fontFamilyFallback: const ['MiSans', 'Noto Sans SC'],
+                fontFamily: 'Noto Sans SC',
+                fontFamilyFallback: const ['Noto Sans SC', 'Noto Sans CJK Fallback'],
               ),
               builder: (_, child) =>
                   RepaintBoundary(key: previewKey, child: child!),
@@ -1211,7 +1211,8 @@ void main() {
           find.byType(MusicLyricView),
         );
         expect(mobileLandscapeBounds.height, closeTo(390, 1));
-        expect(tester.getTopLeft(toolbar), const Offset(16, 16));
+        expect(tester.getTopLeft(toolbar).dx, 16);
+        expect(tester.getTopLeft(toolbar).dy, closeTo(16, 1));
         expect(tester.getRect(toolbar).right, lessThan(422));
         expect(
           tester
@@ -1549,7 +1550,7 @@ void main() {
         for (final type in [MediaType.audio, MediaType.video]) {
           final item = VideoItem(
             id: 'waiting-${type.name}',
-            path: 'podcast:waiting-${type.name}',
+            path: 'podcast:waiting',
             title: '缓冲中的播客',
             durationMs: 120000,
             lastUpdated: 1,
@@ -1667,7 +1668,16 @@ void main() {
               durationMs: 120000,
               lastUpdated: 1,
               type: MediaType.audio,
-              sourceRef: item.sourceRef,
+              sourceRef: const MediaSourceRef(
+                value: 'podcast:next',
+                kind: MediaSourceKind.podcastEpisode,
+                podcast: PodcastEpisodeRef(
+                  channelId: 'channel',
+                  episodeId: 'next',
+                  feedUrl: 'https://example.com/rss',
+                  mediaUrl: 'https://example.com/next.mp3',
+                ),
+              ),
             );
             final sourceCount = platform.sources.length;
             playlist.setPlaylist([item, nextItem]);

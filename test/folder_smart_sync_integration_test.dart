@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player_app/utils/app_branding.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -272,13 +273,16 @@ void main() {
         final cipher = await AesGcm.with256bits().encrypt(
           utf8.encode(jsonEncode(concurrent.toJson())),
           secretKey: SecretKey(base64Decode(group['key'] as String)),
-          aad: utf8.encode('folder|${group['id']}|${concurrent.id}'),
+          aad: utf8.encode(
+            'folder|$kApplicationId|${group['id']}|${concurrent.id}',
+          ),
         );
         await library.renameItem(pair.original.id, '电脑改名');
         await pair.a.lan!.onChanges(pair.b.deviceId, [
           {
             'kind': 'folder-event',
             'version': 1,
+            'edition': kApplicationId,
             'groupId': group['id'],
             'eventId': concurrent.id,
             'nonce': base64Encode(cipher.nonce),

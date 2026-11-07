@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Fluent Player Community</string>
+	<string>Fluent Player</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Fluent Player Community</string>
+	<string>Fluent Player</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -57,7 +57,7 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.example.video_player_app.podcasts.refresh</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).podcasts.refresh</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>发现并连接您配对的设备，同步媒体库播放进度，或连接您指定的局域网代理。</string>
@@ -114,7 +114,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.fluentplayer.portable-package</string>
+				<string>cn.teezy.fluentplayer.portable-package</string>
 			</array>
 		</dict>
 	</array>
@@ -122,7 +122,7 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.fluentplayer.portable-package</string>
+			<string>cn.teezy.fluentplayer.portable-package</string>
 			<key>UTTypeDescription</key>
 			<string>Fluent Player Portable Package</string>
 			<key>UTTypeConformsTo</key>

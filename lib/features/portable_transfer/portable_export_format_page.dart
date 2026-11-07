@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player_app/theme/app_page_transitions.dart';
 
+import '../../services/app_haptics.dart';
 import '../../services/library_service.dart';
 import '../../utils/android_hardware_input_bridge.dart';
 import '../../utils/app_toast.dart';
@@ -168,8 +169,7 @@ class _PortableExportFormatPageState extends State<PortableExportFormatPage> {
                         key: const ValueKey('export-format-fluentpack'),
                         icon: Icons.inventory_2_outlined,
                         title: 'Fluent Pack',
-                        body:
-                            '迁移到另一台设备，保留文件夹、字幕、弹幕和播放信息。本地下载随包携带，在线缓存可选择携带；播客仅迁移卡片与链接。',
+                        body: '迁移本地媒体到另一台设备，保留文件夹、字幕、笔记、弹幕和播放信息。',
                         onTap: () => _openSettings(
                           PortableExportFormatChoice.fluentPack,
                         ),
@@ -179,7 +179,7 @@ class _PortableExportFormatPageState extends State<PortableExportFormatPage> {
                         key: const ValueKey('export-format-zip'),
                         icon: Icons.folder_zip_outlined,
                         title: 'Zip',
-                        body: '按卡片名称整理本地媒体与完整缓存，可内嵌字幕和弹幕供其他播放器打开；播客保存为卡片与链接。',
+                        body: '按卡片名称整理本地媒体，可内嵌字幕和本地弹幕文件供其他播放器打开。',
                         onTap: () =>
                             _openSettings(PortableExportFormatChoice.zip),
                       ),
@@ -221,7 +221,7 @@ class _FormatCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
+        onTap: AppHaptics.wrap(onTap, light: true),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

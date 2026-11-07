@@ -13,6 +13,7 @@ class BatchSubtitleTaskView {
   final TranscriptionStatus status;
   final double progress;
   final double? translationProgress;
+  final SubtitleOptimizationProgress? optimizationProgress;
   final LocalAsrProgress? localAsrProgress;
   final TranscriptionAudioProgress? audioProgress;
   final String statusMessage;
@@ -20,6 +21,7 @@ class BatchSubtitleTaskView {
   final SubtitleOutputPathStrategy? outputPathStrategy;
   final String? customOutputDir;
   final bool isStarted;
+  final String processingStages;
 
   const BatchSubtitleTaskView({
     required this.mediaKey,
@@ -31,6 +33,7 @@ class BatchSubtitleTaskView {
     required this.status,
     required this.progress,
     this.translationProgress,
+    this.optimizationProgress,
     this.localAsrProgress,
     this.audioProgress,
     this.statusMessage = '',
@@ -38,6 +41,7 @@ class BatchSubtitleTaskView {
     this.outputPathStrategy,
     this.customOutputDir,
     this.isStarted = false,
+    this.processingStages = '',
   });
 
   bool get isRunning => switch (status) {
@@ -57,6 +61,7 @@ class BatchSubtitleTaskView {
     TranscriptionStatus? status,
     double? progress,
     double? translationProgress,
+    SubtitleOptimizationProgress? optimizationProgress,
     LocalAsrProgress? localAsrProgress,
     TranscriptionAudioProgress? audioProgress,
     String? statusMessage,
@@ -64,6 +69,7 @@ class BatchSubtitleTaskView {
     SubtitleOutputPathStrategy? outputPathStrategy,
     String? customOutputDir,
     bool? isStarted,
+    String? processingStages,
   }) {
     return BatchSubtitleTaskView(
       mediaKey: mediaKey ?? this.mediaKey,
@@ -75,6 +81,7 @@ class BatchSubtitleTaskView {
       status: status ?? this.status,
       progress: progress ?? this.progress,
       translationProgress: translationProgress ?? this.translationProgress,
+      optimizationProgress: optimizationProgress ?? this.optimizationProgress,
       localAsrProgress: localAsrProgress ?? this.localAsrProgress,
       audioProgress: audioProgress ?? this.audioProgress,
       statusMessage: statusMessage ?? this.statusMessage,
@@ -82,6 +89,7 @@ class BatchSubtitleTaskView {
       outputPathStrategy: outputPathStrategy ?? this.outputPathStrategy,
       customOutputDir: customOutputDir ?? this.customOutputDir,
       isStarted: isStarted ?? this.isStarted,
+      processingStages: processingStages ?? this.processingStages,
     );
   }
 }

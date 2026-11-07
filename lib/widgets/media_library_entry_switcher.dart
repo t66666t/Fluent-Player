@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_tokens.dart';
 import '../utils/media_library_entry_shortcuts.dart';
+import '../utils/keyboard_focus_visibility.dart';
 
 import '../models/media_library_root_entry.dart';
 import '../models/media_library_root_entry_order.dart';
@@ -490,9 +491,9 @@ class _EntryChip extends StatefulWidget {
   /// so a slightly larger target cannot select the neighbor.
   static EdgeInsets hitPadding(bool compact, {required bool isLeading}) {
     final inset = compact ? 6.0 : 8.0;
-    // The AppBar already supplies the content inset. Do not add a second
-    // inset before the first label or it will drift from the cards below.
-    return EdgeInsets.only(left: isLeading ? 0 : inset, right: inset);
+    // Keep the first chip's existing width while centering its label inside
+    // the focus outline. This also preserves narrow-row reorder geometry.
+    return EdgeInsets.symmetric(horizontal: isLeading ? inset / 2 : inset);
   }
 
   static double gapAfter(bool compact) => compact ? 4 : 6;
@@ -506,6 +507,7 @@ const double _kMouseReorderSlop = 6;
 
 class _EntryChipState extends State<_EntryChip>
     with SingleTickerProviderStateMixin {
+  bool _hasFocus = false;
   int? _pointer;
   Offset? _downPosition;
   bool _passedDragSlop = false;
@@ -661,63 +663,89 @@ class _EntryChipState extends State<_EntryChip>
     // commits changes the glyph color's apparent brightness in one frame,
     // so the highlight looks like it jumps instead of crossfading.
     final canSelect = widget.enabled && !widget.selected;
-    return Semantics(
-      excludeSemantics: true,
-      button: true,
-      selected: widget.selected,
+    return FocusableActionDetector(
       enabled: widget.enabled,
-      label: widget.entry.label,
-      hint: widget.canDragReorder ? '鼠标按住拖动可调整顺序，触屏长按后拖动' : null,
-      onTap: canSelect ? _select : null,
-      child: Padding(
-        padding: EdgeInsets.only(right: widget.trailingGap),
-        child: MouseRegion(
-          cursor: widget.canDragReorder
-              ? SystemMouseCursors.grab
-              : canSelect
-              ? SystemMouseCursors.click
-              : SystemMouseCursors.basic,
-          opaque: true,
-          hitTestBehavior: HitTestBehavior.opaque,
-          child: Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: canSelect ? _onPointerDown : null,
-            child: RepaintBoundary(
-              child: ScaleTransition(
-                scale: _pressScale,
-                child: SizedBox(
-                  height: widget.compact ? 32 : 36,
-                  child: Padding(
-                    padding: _EntryChip.hitPadding(
-                      widget.compact,
-                      isLeading: widget.isLeading,
+      onFocusChange: (focused) {
+        if (mounted && _hasFocus != focused) {
+          setState(() => _hasFocus = focused);
+        }
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            if (canSelect) _select();
+            return null;
+          },
+        ),
+      },
+      child: Semantics(
+        excludeSemantics: true,
+        button: true,
+        selected: widget.selected,
+        enabled: widget.enabled,
+        label: widget.entry.label,
+        hint: widget.canDragReorder ? '鼠标按住拖动可调整顺序，触屏长按后拖动' : null,
+        onTap: canSelect ? _select : null,
+        child: Padding(
+          padding: EdgeInsets.only(right: widget.trailingGap),
+          child: MouseRegion(
+            cursor: widget.canDragReorder
+                ? SystemMouseCursors.grab
+                : canSelect
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
+            opaque: true,
+            hitTestBehavior: HitTestBehavior.opaque,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: canSelect ? _onPointerDown : null,
+              child: RepaintBoundary(
+                child: ScaleTransition(
+                  scale: _pressScale,
+                  child: KeyboardFocusHighlight(
+                    focused: _hasFocus,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.lightBlueAccent,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(5),
                     ),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.center,
-                            child: Text(
-                              widget.entry.label,
-                              maxLines: 1,
-                              style: widget.style.copyWith(
-                                color: color,
-                                fontWeight: widget.enabled
-                                    ? FontWeight.w500
-                                    : widget.style.fontWeight,
+                    child: SizedBox(
+                      height: widget.compact ? 32 : 36,
+                      child: Padding(
+                        padding: _EntryChip.hitPadding(
+                          widget.compact,
+                          isLeading: widget.isLeading,
+                        ),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.center,
+                                child: Text(
+                                  widget.entry.label,
+                                  maxLines: 1,
+                                  style: widget.style.copyWith(
+                                    color: color,
+                                    fontWeight: widget.enabled
+                                        ? FontWeight.w500
+                                        : widget.style.fontWeight,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            Container(
+                              height: 2,
+                              color: Color.lerp(
+                                Colors.transparent,
+                                AppTokens.text1,
+                                widget.enabled ? widget.highlightWeight : 0,
+                              ),
+                            ),
+                          ],
                         ),
-                        Container(
-                          height: 2,
-                          color: Color.lerp(
-                            Colors.transparent,
-                            AppTokens.text1,
-                            widget.enabled ? widget.highlightWeight : 0,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import 'tooltip_hover_policy.dart';
+import 'hardware_keyboard_shortcuts.dart';
 
 typedef AndroidHardwareKeyListener =
     void Function(AndroidHardwareKeyMessage message);
@@ -70,7 +69,7 @@ class AndroidHardwareInputBridge {
   static bool _initialized = false;
 
   static void addKeyListener(AndroidHardwareKeyListener listener) {
-    if (!Platform.isAndroid) return;
+    if (currentNativeTargetPlatform != TargetPlatform.android) return;
     _ensureInitialized();
     _keyListeners.add(listener);
   }

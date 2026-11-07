@@ -8,6 +8,24 @@ import 'landscape_sidebar_layout.dart';
 import 'playback_speed_dialog.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
+const _settingTitleStyle = TextStyle(
+  color: Color(0xFFE9EBEF),
+  fontSize: 13,
+  fontWeight: FontWeight.w500,
+  height: 1.35,
+);
+const _settingDescriptionStyle = TextStyle(
+  color: Color(0xFFA0A4AC),
+  fontSize: 12,
+  height: 1.4,
+);
+const _settingInsets = EdgeInsets.symmetric(horizontal: 12);
+const _settingGroupDecoration = BoxDecoration(
+  color: Color(0xFF232425),
+  borderRadius: BorderRadius.all(Radius.circular(12)),
+  border: Border.fromBorderSide(BorderSide(color: Color(0xFF303234))),
+);
+
 class SettingsPanel extends StatefulWidget {
   final double playbackSpeed;
   final bool isPlaybackSpeedLocked;
@@ -99,6 +117,9 @@ class SettingsPanel extends StatefulWidget {
   final bool enableHapticFeedback;
   final ValueChanged<bool> onEnableHapticFeedbackChanged;
 
+  final bool enableVideoTransformGestures;
+  final ValueChanged<bool> onEnableVideoTransformGesturesChanged;
+
   final bool isLeftHandedMode;
   final ValueChanged<bool> onLeftHandedModeChanged;
 
@@ -173,6 +194,8 @@ class SettingsPanel extends StatefulWidget {
     required this.onEnableSeekPreviewChanged,
     required this.enableHapticFeedback,
     required this.onEnableHapticFeedbackChanged,
+    required this.enableVideoTransformGestures,
+    required this.onEnableVideoTransformGesturesChanged,
     required this.isLeftHandedMode,
     required this.onLeftHandedModeChanged,
     required this.experimentalAmbientLetterbox,
@@ -259,6 +282,40 @@ class _SettingsPanelState extends State<SettingsPanel> {
           )
         : screenSize;
     final layout = LandscapeSidebarLayout.fromSize(sidebarSize);
+    final base = Theme.of(context);
+    return Theme(
+      data: base.copyWith(
+        listTileTheme: base.listTileTheme.copyWith(
+          titleTextStyle: base.textTheme.bodyMedium?.merge(_settingTitleStyle),
+          subtitleTextStyle: base.textTheme.bodySmall?.merge(
+            _settingDescriptionStyle,
+          ),
+          minVerticalPadding: 8,
+        ),
+        switchTheme: base.switchTheme.copyWith(
+          thumbColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? const Color(0xFF86898E)
+                : const Color(0xFFF5F7FA),
+          ),
+          trackColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return const Color(0xFF34373C);
+            }
+            return states.contains(WidgetState.selected)
+                ? const Color(0xFF4B8EF0)
+                : const Color(0xFF4B5058);
+          }),
+          trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+          trackOutlineWidth: const WidgetStatePropertyAll(0),
+          thumbIcon: const WidgetStatePropertyAll(Icon(null)),
+        ),
+      ),
+      child: _buildSurface(layout),
+    );
+  }
+
+  Widget _buildSurface(LandscapeSidebarLayout layout) {
     final paddingValue = layout.horizontalPadding;
     final spacingValue = layout.sectionGap;
 
@@ -268,12 +325,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
         children: [
           // Header
           Container(
-            padding: EdgeInsets.fromLTRB(
-              paddingValue,
-              paddingValue,
-              8,
-              paddingValue / 2,
-            ),
+            constraints: BoxConstraints(minHeight: layout.headerHeight),
+            padding: EdgeInsets.symmetric(horizontal: paddingValue + 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -294,7 +347,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     ),
                     onPressed: widget.onClose,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                     tooltip: "关闭",
                   ),
                 ),
@@ -311,10 +367,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
               clipBehavior: Clip.hardEdge,
               child: ListView(
                 key: const PageStorageKey('settings-scroll'),
-                padding: EdgeInsets.symmetric(
-                  horizontal: paddingValue,
-                  vertical: 8,
-                ),
+                padding: EdgeInsets.all(paddingValue),
                 children: [
                   // Playback behavior is intentionally the first settings group.
                   _buildPlaybackBehaviorSection(),
@@ -325,122 +378,84 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     SizedBox(height: spacingValue),
                   ],
                   if (widget.isAudioMode) ...[
-                    _buildSectionTitle("音频悬浮字幕", Icons.subtitles_outlined),
+                    _buildSectionTitle("音频悬浮字幕"),
                     Ink(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white10),
-                      ),
+                      decoration: _settingGroupDecoration,
                       child: SwitchListTile(
                         title: const Text(
                           "同步视频播放页悬浮字幕样式",
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                          style: _settingTitleStyle,
                         ),
                         subtitle: const Text(
                           "开启后沿用视频页的字体、粗斜体、文本/背景/描边/阴影等样式；字号、间距和位置仍保持音频页独立",
-                          style: TextStyle(color: Colors.white60, fontSize: 12),
+                          style: _settingDescriptionStyle,
                         ),
                         value: widget.syncAudioSubtitleStyleWithVideo,
                         onChanged: _withHaptic(
                           widget.onSyncAudioSubtitleStyleWithVideoChanged,
                         ),
-                        activeThumbColor: Colors.blueAccent,
                         dense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
+                        contentPadding: _settingInsets,
                         visualDensity: VisualDensity.compact,
                       ),
                     ),
                     SizedBox(height: spacingValue),
                   ],
                   if (widget.showMobilePlaybackControls) ...[
-                    _buildSectionTitle("手机端音频控制", Icons.headphones),
+                    _buildSectionTitle("手机端音频控制"),
                     Ink(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white10),
-                      ),
+                      decoration: _settingGroupDecoration,
                       child: Column(
                         children: [
                           SwitchListTile(
                             title: const Text(
                               "离开软件后暂停播放",
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
+                              style: _settingTitleStyle,
                             ),
                             subtitle: const Text(
                               "退到后台或锁屏离开应用时自动暂停当前媒体",
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
+                              style: _settingDescriptionStyle,
                             ),
                             value: widget.pausePlaybackWhenAppBackgrounded,
                             onChanged: _withHaptic(
                               widget.onPausePlaybackWhenAppBackgroundedChanged,
                             ),
-                            activeThumbColor: Colors.blueAccent,
                             dense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                            ),
+                            contentPadding: _settingInsets,
                             visualDensity: VisualDensity.compact,
                           ),
                           SwitchListTile(
                             title: const Text(
                               "允许与其他应用同时播放",
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
+                              style: _settingTitleStyle,
                             ),
                             subtitle: const Text(
                               "开启后与其他应用同时出声、互不打断；关闭后本应用独占音频，其他应用开播时自动暂停",
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
+                              style: _settingDescriptionStyle,
                             ),
                             value: widget.allowConcurrentPlayback,
                             onChanged: _withHaptic(
                               widget.onAllowConcurrentPlaybackChanged,
                             ),
-                            activeThumbColor: Colors.blueAccent,
                             dense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                            ),
+                            contentPadding: _settingInsets,
                             visualDensity: VisualDensity.compact,
                           ),
                           SwitchListTile(
                             title: const Text(
                               "耳机线控控制",
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
+                              style: _settingTitleStyle,
                             ),
                             subtitle: const Text(
                               "允许蓝牙耳机、有线耳机和系统媒体控件控制播放、暂停、上一集、下一集",
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
+                              style: _settingDescriptionStyle,
                             ),
                             value: widget.enableHeadsetMediaControls,
                             onChanged: _withHaptic(
                               widget.onEnableHeadsetMediaControlsChanged,
                             ),
-                            activeThumbColor: Colors.blueAccent,
                             dense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                            ),
+                            contentPadding: _settingInsets,
                             visualDensity: VisualDensity.compact,
                           ),
                         ],
@@ -449,14 +464,15 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     SizedBox(height: spacingValue),
                   ],
                   // 1. 播放速度
-                  _buildSectionTitle("播放速度", Icons.speed),
-                  Row(
+                  _buildSectionTitle("播放速度"),
+                  _buildControlRow(
                     children: [
                       Expanded(
                         child: SingleChildScrollView(
                           key: const PageStorageKey('settings-playback-speeds'),
                           scrollDirection: Axis.horizontal,
                           child: Row(
+                            spacing: 8,
                             children: _availablePlaybackSpeeds().map((speed) {
                               final isSelected =
                                   (speed - widget.playbackSpeed).abs() < 0.001;
@@ -487,26 +503,20 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     ],
                   ),
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
                         _playbackSpeedHint(),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: 12,
-                          height: 1.25,
-                        ),
+                        style: _settingDescriptionStyle,
                       ),
                     ),
                   ),
                   SizedBox(height: spacingValue),
 
                   // 2. 长按倍速
-                  _buildSectionTitle("长按倍速", Icons.bolt),
-                  Row(
+                  _buildSectionTitle("长按倍速"),
+                  _buildControlRow(
                     children: [
                       Expanded(
                         child: SingleChildScrollView(
@@ -515,6 +525,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
                           ),
                           scrollDirection: Axis.horizontal,
                           child: Row(
+                            spacing: 8,
                             children: [1.5, 2.0, 2.5, 3.0, 4.0, 5.0].map((
                               speed,
                             ) {
@@ -539,114 +550,74 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     ],
                   ),
                   _buildShowLongPressSpeedIndicatorTile(
-                    contentPadding: EdgeInsets.zero,
+                    contentPadding: _settingInsets,
                   ),
 
                   SizedBox(height: spacingValue),
 
                   // 3. 字幕设置
-                  _buildSectionTitle("字幕设置", Icons.subtitles),
+                  _buildSectionTitle("字幕设置"),
                   Ink(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white10),
-                    ),
+                    decoration: _settingGroupDecoration,
                     child: Column(
                       children: [
                         SwitchListTile(
                           title: const Text(
                             "字幕连续显示",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
+                            style: _settingTitleStyle,
                           ),
                           subtitle: const Text(
                             "字幕结束时间延后到下一条字幕开始",
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
+                            style: _settingDescriptionStyle,
                           ),
                           value: widget.continuousSubtitle,
                           onChanged: _withHaptic(
                             widget.onContinuousSubtitleChanged,
                           ),
-                          activeThumbColor: Colors.blueAccent,
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
+                          contentPadding: _settingInsets,
                           visualDensity: VisualDensity.compact,
                         ),
                         SwitchListTile(
-                          title: const Text(
-                            "显示字幕",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
+                          title: const Text("显示字幕", style: _settingTitleStyle),
                           value: widget.showSubtitles,
                           onChanged: _withHaptic(widget.onSubtitleToggle),
-                          activeThumbColor: Colors.blueAccent,
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
+                          contentPadding: _settingInsets,
                           visualDensity: VisualDensity.compact,
                         ),
                         SwitchListTile(
                           title: const Text(
                             "自动缓存字幕",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
+                            style: _settingTitleStyle,
                           ),
                           subtitle: const Text(
                             "导入后自动复制到本地",
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
+                            style: _settingDescriptionStyle,
                           ),
                           value: widget.autoCacheSubtitles,
                           onChanged: _withHaptic(
                             widget.onAutoCacheSubtitlesChanged,
                           ),
-                          activeThumbColor: Colors.blueAccent,
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
+                          contentPadding: _settingInsets,
                           visualDensity: VisualDensity.compact,
                         ),
                         SwitchListTile(
                           title: const Text(
                             "识别第一行为主字幕",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
+                            style: _settingTitleStyle,
                           ),
                           subtitle: const Text(
                             "第二行为副字幕。关闭则全部为主字幕",
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
+                            style: _settingDescriptionStyle,
                           ),
                           value: widget.splitSubtitleByLine,
                           onChanged: _withHaptic(
                             widget.onSplitSubtitleByLineChanged,
                           ),
-                          activeThumbColor: Colors.blueAccent,
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
+                          contentPadding: _settingInsets,
                           visualDensity: VisualDensity.compact,
                         ),
                         Padding(
@@ -680,16 +651,12 @@ class _SettingsPanelState extends State<SettingsPanel> {
                   // 4. 字幕同步
                   _buildSectionTitle(
                     "字幕同步 (${widget.subtitleDelay > 0 ? '+' : ''}${widget.subtitleDelay.toStringAsFixed(2)}s)",
-                    Icons.sync,
                   ),
                   SizedBox(
                     height: 30,
-                    child: Row(
+                    child: _buildControlRow(
                       children: [
-                        const Text(
-                          "-5s",
-                          style: TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
+                        const Text("-5s", style: _settingDescriptionStyle),
                         Expanded(
                           child: SliderTheme(
                             data: SliderTheme.of(context).copyWith(
@@ -727,10 +694,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
                             ),
                           ),
                         ),
-                        const Text(
-                          "+5s",
-                          style: TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
+                        const Text("+5s", style: _settingDescriptionStyle),
                       ],
                     ),
                   ),
@@ -739,33 +703,30 @@ class _SettingsPanelState extends State<SettingsPanel> {
 
                   // 5.5 双击跳转字幕
                   SwitchListTile(
-                    title: const Text(
-                      "有字幕时双击跳句",
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
+                    title: const Text("有字幕时双击跳句", style: _settingTitleStyle),
                     subtitle: const Text(
                       "开启后，有字幕时双击左侧跳上一句、右侧跳下一句；没有字幕时按下方秒数快退或快进。关闭后始终按秒数跳转。",
-                      style: TextStyle(color: Colors.white60, fontSize: 12),
+                      style: _settingDescriptionStyle,
                     ),
                     value: widget.enableDoubleTapSubtitleSeek,
                     onChanged: _withHaptic(
                       widget.onDoubleTapSubtitleSeekChanged,
                     ),
-                    activeThumbColor: Colors.blueAccent,
                     dense: true,
-                    contentPadding: EdgeInsets.zero,
+                    contentPadding: _settingInsets,
                     visualDensity: VisualDensity.compact,
                   ),
 
                   // 6. 双击快进
-                  _buildSectionTitle("双击快退 / 快进（秒）", Icons.fast_forward),
-                  Row(
+                  _buildSectionTitle("双击快退 / 快进（秒）"),
+                  _buildControlRow(
                     children: [
                       Expanded(
                         child: SingleChildScrollView(
                           key: const PageStorageKey('settings-seek-intervals'),
                           scrollDirection: Axis.horizontal,
                           child: Row(
+                            spacing: 8,
                             children: [5, 10, 15, 30, 60].map((seconds) {
                               return _buildCompactChip(
                                 label: "${seconds}s",
@@ -791,8 +752,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                   SizedBox(height: spacingValue),
 
                   // 6. 画面调整
-                  _buildSectionTitle("画面调整", Icons.aspect_ratio),
-                  Row(
+                  _buildSectionTitle("画面调整"),
+                  _buildControlRow(
                     children: [
                       Expanded(
                         child: _buildMirrorButton(
@@ -825,39 +786,26 @@ class _SettingsPanelState extends State<SettingsPanel> {
                   ),
                   if (!widget.isAudioMode) ...[
                     SizedBox(height: spacingValue),
-                    _buildSectionTitle("实验功能", Icons.science_outlined),
+                    _buildSectionTitle("实验功能"),
                     Ink(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white10),
-                      ),
+                      decoration: _settingGroupDecoration,
                       child: Material(
                         type: MaterialType.transparency,
                         child: SwitchListTile(
                           title: const Text(
                             "画面留边氛围",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
+                            style: _settingTitleStyle,
                           ),
                           subtitle: const Text(
                             "横屏播放区露出的黑边铺上当前画面的模糊底色。放大、缩小、平移和旋转时背景保持不动。Android 本地文件若无法取帧，仍显示黑边",
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
+                            style: _settingDescriptionStyle,
                           ),
                           value: widget.experimentalAmbientLetterbox,
                           onChanged: _withHaptic(
                             widget.onExperimentalAmbientLetterboxChanged,
                           ),
-                          activeThumbColor: Colors.blueAccent,
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
+                          contentPadding: _settingInsets,
                           visualDensity: VisualDensity.compact,
                         ),
                       ),
@@ -877,17 +825,13 @@ class _SettingsPanelState extends State<SettingsPanel> {
     required EdgeInsetsGeometry contentPadding,
   }) {
     return SwitchListTile(
-      title: const Text(
-        "显示加速浮层",
-        style: TextStyle(color: Colors.white70, fontSize: 13),
-      ),
+      title: const Text("显示加速浮层", style: _settingTitleStyle),
       subtitle: const Text(
         "长按画面或按住右方向键加速时，在画面上显示当前倍速",
-        style: TextStyle(color: Colors.white60, fontSize: 12),
+        style: _settingDescriptionStyle,
       ),
       value: widget.showLongPressSpeedIndicator,
       onChanged: _withHaptic(widget.onShowLongPressSpeedIndicatorChanged),
-      activeThumbColor: Colors.blueAccent,
       dense: true,
       contentPadding: contentPadding,
       visualDensity: VisualDensity.compact,
@@ -898,142 +842,107 @@ class _SettingsPanelState extends State<SettingsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSectionTitle("播放行为", Icons.play_circle_outline),
+        _buildSectionTitle("播放行为"),
         Ink(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white10),
-          ),
+          decoration: _settingGroupDecoration,
           child: Column(
             children: [
               SwitchListTile(
-                title: const Text(
-                  '显示字幕边栏开合按钮',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text('显示字幕边栏开合按钮', style: _settingTitleStyle),
                 subtitle: const Text(
                   '在视频边缘显示用于展开或收起字幕边栏的小按钮',
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.showSubtitleSidebarToggle,
                 onChanged: _withHaptic(
                   widget.onShowSubtitleSidebarToggleChanged,
                 ),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               if (widget.showSkipPortraitPlayerSetting)
                 SwitchListTile(
-                  title: const Text(
-                    "跳过竖屏播放页",
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
+                  title: const Text("跳过竖屏播放页", style: _settingTitleStyle),
                   subtitle: const Text(
                     "点击媒体卡片后直接进入横屏播放页",
-                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                    style: _settingDescriptionStyle,
                   ),
                   value: widget.skipPortraitPlayer,
                   onChanged: _withHaptic(widget.onSkipPortraitPlayerChanged),
-                  activeThumbColor: Colors.blueAccent,
                   dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  contentPadding: _settingInsets,
                   visualDensity: VisualDensity.compact,
                 ),
               SwitchListTile(
-                title: const Text(
-                  "字幕避让播放控件",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("字幕避让播放控件", style: _settingTitleStyle),
                 subtitle: const Text(
                   "播放控件显示时，仅将与进度条或底部按钮重叠的主、副字幕整体上移",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.avoidPlaybackControlsWithSubtitles,
                 onChanged: _withHaptic(
                   widget.onAvoidPlaybackControlsWithSubtitlesChanged,
                 ),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "退出页面自动暂停",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("退出页面自动暂停", style: _settingTitleStyle),
                 subtitle: const Text(
                   "退出播放页面时自动暂停视频",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.autoPauseOnExit,
                 onChanged: _withHaptic(widget.onAutoPauseOnExitChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "进入媒体播放页自动开始播放",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("进入媒体播放页自动开始播放", style: _settingTitleStyle),
                 subtitle: const Text(
                   "从媒体库进入播放页时自动开始；不影响上下集切换、自动连播或页面切换",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.autoPlayOnPageEntry,
                 onChanged: _withHaptic(widget.onAutoPlayOnPageEntryChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "切换上下集自动播放",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("切换上下集自动播放", style: _settingTitleStyle),
                 subtitle: const Text(
                   "切换到上/下一集时自动开始播放",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.autoPlayNextVideo,
                 onChanged: _withHaptic(widget.onAutoPlayNextVideoChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "自动连播",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("自动连播", style: _settingTitleStyle),
                 subtitle: const Text(
                   "按当前播放模式自动播放下一集；单集循环独立生效，定时关闭优先",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.autoPlayOnCompletion,
                 onChanged: _withHaptic(widget.onAutoPlayOnCompletionChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "自动连播时从头开始播放",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("自动连播时从头开始播放", style: _settingTitleStyle),
                 subtitle: Text(
                   widget.autoPlayOnCompletion
                       ? "换到下一集时从头播放；关闭则续播记录位置。单集循环始终从头重播"
                       : "请先开启上方的自动连播",
-                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.autoPlayOnCompletionFromStart,
                 onChanged: _withHaptic(
@@ -1041,77 +950,75 @@ class _SettingsPanelState extends State<SettingsPanel> {
                       ? widget.onAutoPlayOnCompletionFromStartChanged
                       : null,
                 ),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "列表循环",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("列表循环", style: _settingTitleStyle),
                 subtitle: const Text(
                   "顺序播放时首尾相接；随机播放时播完一轮重新洗牌。关闭后队列末尾停止；单集循环仍重复当前集",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.playlistWrapToFirst,
                 onChanged: _withHaptic(widget.onPlaylistWrapToFirstChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               SwitchListTile(
-                title: const Text(
-                  "进度条拖动预览",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("进度条拖动预览", style: _settingTitleStyle),
                 subtitle: const Text(
                   "拖动进度条时显示缩略图",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.enableSeekPreview,
                 onChanged: _withHaptic(widget.onEnableSeekPreviewChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
               _buildShowLongPressSpeedIndicatorTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
               ),
+              if (!widget.isAudioMode)
+                SwitchListTile(
+                  title: const Text('视频缩放、旋转手势', style: _settingTitleStyle),
+                  subtitle: const Text(
+                    '双指缩放、旋转和移动画面；关闭后立即恢复画面',
+                    style: _settingDescriptionStyle,
+                  ),
+                  value: widget.enableVideoTransformGestures,
+                  onChanged: _withHaptic(
+                    widget.onEnableVideoTransformGesturesChanged,
+                  ),
+                  dense: true,
+                  contentPadding: _settingInsets,
+                  visualDensity: VisualDensity.compact,
+                ),
               if (widget.showMobilePlaybackControls)
                 SwitchListTile(
-                  title: const Text(
-                    "震动开关",
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
+                  title: const Text("震动开关", style: _settingTitleStyle),
                   subtitle: const Text(
                     "控制软件内的所有震动反馈",
-                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                    style: _settingDescriptionStyle,
                   ),
                   value: widget.enableHapticFeedback,
                   onChanged: _withHaptic(widget.onEnableHapticFeedbackChanged),
-                  activeThumbColor: Colors.blueAccent,
                   dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  contentPadding: _settingInsets,
                   visualDensity: VisualDensity.compact,
                 ),
               SwitchListTile(
-                title: const Text(
-                  "左手模式",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                title: const Text("左手模式", style: _settingTitleStyle),
                 subtitle: const Text(
                   "镜像侧栏与控制按钮布局",
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: _settingDescriptionStyle,
                 ),
                 value: widget.isLeftHandedMode,
                 onChanged: _withHaptic(widget.onLeftHandedModeChanged),
-                activeThumbColor: Colors.blueAccent,
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                contentPadding: _settingInsets,
                 visualDensity: VisualDensity.compact,
               ),
             ],
@@ -1125,14 +1032,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSectionTitle("解码方式", Icons.memory),
+        _buildSectionTitle("解码方式"),
         Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white10),
-          ),
+          padding: const EdgeInsets.all(12),
+          decoration: _settingGroupDecoration,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1168,11 +1071,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
                 widget.useHardwareVideoDecoding
                     ? "优先使用系统硬件解码器；Android 硬解在首帧前失败时，播放器会以软件解码重新打开一次。"
                     : "强制由 CPU 软件解码。适合排查驱动兼容问题；播放 4K AV1 时可能明显发热或无法实时解码。",
-                style: const TextStyle(
-                  color: Colors.white60,
-                  fontSize: 12,
-                  height: 1.35,
-                ),
+                style: _settingDescriptionStyle,
               ),
             ],
           ),
@@ -1181,27 +1080,25 @@ class _SettingsPanelState extends State<SettingsPanel> {
     );
   }
 
-  Widget _buildSectionTitle(String text, IconData icon) {
+  Widget _buildSectionTitle(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: Colors.blueAccent.withValues(alpha: 0.8)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFFE9EBEF),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+        ),
       ),
     );
   }
+
+  Widget _buildControlRow({required List<Widget> children}) => Padding(
+    padding: _settingInsets,
+    child: Row(children: children),
+  );
 
   Widget _buildCompactChip({
     required String label,
@@ -1212,7 +1109,6 @@ class _SettingsPanelState extends State<SettingsPanel> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected

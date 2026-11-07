@@ -23,7 +23,7 @@ class AiChatMediaCopy {
   String get askTitle => '询问$noun内容';
   String get hint => '询问这个$noun…';
   String get summarize => '总结这个$noun的核心内容和结论';
-  String get hardConcept => '挑出$noun中最难理解的一个概念，用例子讲清楚';
+  String get aboutContent => '这个$noun讲了什么内容？';
   String get timestamps => '整理重点概念，并标注对应时间戳';
   String get completeNotes => '整理这个$noun从头到尾的完整笔记';
   String get completeNotesPrompt =>

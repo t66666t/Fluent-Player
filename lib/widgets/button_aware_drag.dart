@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../services/app_haptics.dart';
 import 'desktop_button_click_region.dart';
 
 /// Buttons inside a draggable card keep their own pointer sequence.
@@ -59,7 +59,7 @@ class ButtonAwareLongPressDraggable<T extends Object>
         ..onStart = (position) {
           final drag = onStart(position);
           if (drag != null && hapticFeedbackOnStart) {
-            HapticFeedback.selectionClick();
+            AppHaptics.pulse();
           }
           return drag;
         };

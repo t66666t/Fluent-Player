@@ -17,8 +17,8 @@ void main() {
   setUpAll(() async {
     if (!_previews) return;
     await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'))).load();
+      'Noto Sans SC',
+    )..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'))).load();
     await (FontLoader(
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
@@ -47,7 +47,7 @@ void main() {
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark(useMaterial3: true).copyWith(
             colorScheme: const ColorScheme.dark(primary: Colors.blue),
-            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -83,7 +83,8 @@ void main() {
   Future<void> click(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
     await tester.pumpAndSettle();
-    await tester.tap(finder);
+    final toggle = find.descendant(of: finder, matching: find.byType(Switch));
+    await tester.tap(toggle.evaluate().length == 1 ? toggle : finder);
     await tester.pumpAndSettle();
   }
 
@@ -124,7 +125,35 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       await capture(tester, name);
-      for (final page in OnboardingDestination.values) {
+      if (scale == 1) {
+        expect(
+          tester
+              .state<ScrollableState>(find.byType(Scrollable).first)
+              .position
+              .maxScrollExtent,
+          closeTo(0, .1),
+          reason: 'The initial choices should fit on one screen at $name.',
+        );
+      }
+      final restore = find.byKey(const ValueKey('mediaLibraryRestoreLastPage'));
+      await click(tester, restore);
+      final picker = find.byKey(const ValueKey('onboarding-startup-entry'));
+      expect(picker, findsOneWidget);
+      if (scale == 1) {
+        expect(
+          tester
+              .state<ScrollableState>(find.byType(Scrollable).first)
+              .position
+              .maxScrollExtent,
+          closeTo(0, .1),
+        );
+      }
+      await capture(tester, '$name-startup');
+      await click(tester, restore);
+      for (final page in const [
+        OnboardingDestination.network,
+        OnboardingDestination.subtitleServices,
+      ]) {
         await tester.scrollUntilVisible(
           find.byKey(ValueKey('onboarding-${page.name}')),
           220,
@@ -133,7 +162,10 @@ void main() {
         await click(tester, find.byKey(ValueKey('onboarding-${page.name}')));
         expect(tester.takeException(), isNull);
       }
-      expect(opened, OnboardingDestination.values);
+      expect(opened, const [
+        OnboardingDestination.network,
+        OnboardingDestination.subtitleServices,
+      ]);
       expect(
         find.byKey(const ValueKey('onboarding-close')).hitTestable(),
         findsOneWidget,

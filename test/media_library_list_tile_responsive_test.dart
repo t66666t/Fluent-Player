@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player_app/models/media_library_view_mode.dart';
 import 'package:video_player_app/models/video_collection.dart';
 import 'package:video_player_app/models/video_item.dart';
 import 'package:video_player_app/services/media_playback_service.dart';
 import 'package:video_player_app/widgets/media_list_layout_metrics.dart';
 import 'package:video_player_app/widgets/media_library_layout_profile.dart';
 import 'package:video_player_app/widgets/media_library_list_tile.dart';
+import 'package:video_player_app/widgets/media_library_view_defaults.dart';
 
 void main() {
-  testWidgets('极窄紧凑列表项同时保留标题、缩略图和元信息', (tester) async {
+  testWidgets('极窄紧凑列表项优先保留标题与缩略图且不溢出', (tester) async {
     final collection = VideoCollection(
       id: 'collection-1',
       name: '需要优先显示的媒体标题',
@@ -33,6 +35,21 @@ void main() {
                 isSelectionMode: false,
                 titleScale: 0.001,
                 onTap: () {},
+                style: const MediaListStyleSettings(
+                  layout: MediaLibraryContentLayout.rows,
+                  crossAxisCount: 1,
+                  titleScale: 0.001,
+                  heightScale: 0.001,
+                  crossSpacingScale: 0,
+                  mainSpacingScale: 0,
+                  showThumbnail: true,
+                  showIndex: true,
+                  rowExtent: 24,
+                  titleSize: 10,
+                  titleLines: 2,
+                  showMeta: true,
+                  showProgress: true,
+                ),
               ),
             ),
           ),
@@ -46,29 +63,18 @@ void main() {
       find.byKey(const ValueKey('media-list-thumbnail-index')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('media-list-metadata')), findsOneWidget);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('media-list-thumbnail'))).width,
-      lessThanOrEqualTo(80 * 0.14),
+    final thumbSize = tester.getSize(
+      find.byKey(const ValueKey('media-list-thumbnail')),
     );
-    final titleRect = tester.getRect(
-      find.byKey(const ValueKey('media-list-title')),
+    expect(thumbSize.height, lessThanOrEqualTo(24));
+    expect(
+      thumbSize.width / thumbSize.height,
+      closeTo(16 / 9, 0.05),
     );
     final cardRect = tester.getRect(
       find.byKey(const ValueKey('media-list-card')),
     );
-    final thumbnailRect = tester.getRect(
-      find.byKey(const ValueKey('media-list-thumbnail')),
-    );
-    final metadataRect = tester.getRect(
-      find.byKey(const ValueKey('media-list-metadata')),
-    );
-    expect(
-      thumbnailRect.left - cardRect.left,
-      closeTo(titleRect.left - thumbnailRect.right, 0.001),
-    );
-    expect(metadataRect.top - titleRect.bottom, lessThanOrEqualTo(24 * 0.08));
-    expect(metadataRect.bottom, lessThan(24));
+    expect(cardRect.bottom, lessThanOrEqualTo(24.01));
     expect(tester.takeException(), isNull);
   });
 
@@ -93,7 +99,7 @@ void main() {
                 alignment: Alignment.topLeft,
                 child: SizedBox(
                   width: 100,
-                  height: 24,
+                  height: 72,
                   child: MediaLibraryListTile.video(
                     item: item,
                     index: 8,
@@ -103,6 +109,21 @@ void main() {
                     isSelectionMode: true,
                     titleScale: 0.065,
                     onTap: () {},
+                    style: const MediaListStyleSettings(
+                      layout: MediaLibraryContentLayout.rows,
+                      crossAxisCount: 1,
+                      titleScale: 0.065,
+                      heightScale: 0.065,
+                      crossSpacingScale: 0,
+                      mainSpacingScale: 0,
+                      showThumbnail: true,
+                      showIndex: true,
+                      rowExtent: 72,
+                      titleSize: 12,
+                      titleLines: 2,
+                      showMeta: true,
+                      showProgress: true,
+                    ),
                   ),
                 ),
               ),
@@ -121,7 +142,7 @@ void main() {
         find.textContaining(type == MediaType.audio ? '音频' : '视频'),
         findsWidgets,
       );
-      expect(find.textContaining('已播放 50%'), findsOneWidget);
+      expect(find.textContaining('已看 50%'), findsOneWidget);
       expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
@@ -416,5 +437,117 @@ void main() {
       MediaListLayoutMetrics.cardGridThumbnailIconSize(34),
       lessThan(50),
     );
+  });
+
+  testWidgets('媒体行在 44px 与 220px 行高下不溢出', (tester) async {
+    final item = VideoItem(
+      id: 'row-fit',
+      path: 'row.mp4',
+      title: '自适应行高标题',
+      durationMs: 60000,
+      lastPositionMs: 15000,
+      lastUpdated: 0,
+    );
+
+    for (final extent in [44.0, 220.0]) {
+      await tester.pumpWidget(
+        ChangeNotifierProvider<MediaPlaybackService>.value(
+          value: MediaPlaybackService(),
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 420,
+                height: extent,
+                child: MediaLibraryListTile.video(
+                  item: item,
+                  index: 0,
+                  showIndex: false,
+                  showThumbnail: true,
+                  isSelected: false,
+                  isSelectionMode: false,
+                  titleScale: 0.042,
+                  onTap: () {},
+                  style: MediaListStyleSettings(
+                    layout: MediaLibraryContentLayout.rows,
+                    crossAxisCount: 1,
+                    titleScale: 0.042,
+                    heightScale: 0.042,
+                    crossSpacingScale: 0,
+                    mainSpacingScale: 0,
+                    showThumbnail: true,
+                    showIndex: false,
+                    rowExtent: extent,
+                    titleSize: MediaLibraryViewDefaults.rowsTitleSize(
+                      Size(420, extent),
+                    ),
+                    titleLines: MediaLibraryViewDefaults.rowsTitleLines,
+                    showMeta: true,
+                    showProgress: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final cardRect = tester.getRect(
+        find.byKey(const ValueKey('media-list-card')),
+      );
+      expect(cardRect.height, lessThanOrEqualTo(extent + 0.01));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('媒体行可关闭缩略图、元信息与进度文案', (tester) async {
+    final item = VideoItem(
+      id: 'row-flags',
+      path: 'flags.mp4',
+      title: '开关测试',
+      durationMs: 120000,
+      lastPositionMs: 60000,
+      lastUpdated: 0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 320,
+            height: 76,
+            child: MediaLibraryListTile.video(
+              item: item,
+              index: 0,
+              showIndex: false,
+              showThumbnail: false,
+              isSelected: false,
+              isSelectionMode: false,
+              titleScale: 0.042,
+              onTap: () {},
+              style: const MediaListStyleSettings(
+                layout: MediaLibraryContentLayout.rows,
+                crossAxisCount: 1,
+                titleScale: 0.042,
+                heightScale: 0.042,
+                crossSpacingScale: 0,
+                mainSpacingScale: 0,
+                showThumbnail: false,
+                showIndex: false,
+                rowExtent: 76,
+                titleSize: 14,
+                titleLines: 2,
+                showMeta: false,
+                showProgress: false,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('media-list-thumbnail')), findsNothing);
+    expect(find.byKey(const ValueKey('media-list-metadata')), findsNothing);
+    expect(find.textContaining('已看'), findsNothing);
+    expect(find.byKey(const ValueKey('media-list-title')), findsOneWidget);
   });
 }

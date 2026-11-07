@@ -355,9 +355,18 @@ extension _PodcastDiscoverySurface on _PodcastDiscoverPageState {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
           child: Semantics(
             liveRegion: true,
-            child: Text(
-              '搜索结果 · ${_results.length}',
-              style: const TextStyle(color: AppTokens.text2, fontSize: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '搜索结果 · ${_results.length}',
+                  style: const TextStyle(color: AppTokens.text2, fontSize: 12),
+                ),
+                Text(
+                  '来源：${_provider == 'index' ? 'Podcast Index' : 'Apple Podcasts / iTunes Search API'}',
+                  style: const TextStyle(color: AppTokens.text2, fontSize: 12),
+                ),
+              ],
             ),
           ),
         ),
@@ -490,6 +499,11 @@ extension _PodcastDiscoverySurface on _PodcastDiscoverPageState {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       if (_tab == 1) ...[
+        const Text(
+          '使用发布者 RSS、正规目录返回的 RSS，或网页明确声明的 RSS。离线收听须遵守来源的订阅和许可条件，RSS 不代表允许转载或分享音频。',
+          style: TextStyle(color: AppTokens.text2, fontSize: 12, height: 1.6),
+        ),
+        const SizedBox(height: 12),
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: _url,
           builder: (context, value, _) => TextField(

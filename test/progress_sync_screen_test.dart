@@ -141,7 +141,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData.dark(useMaterial3: true).copyWith(
-          textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+          textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
         ),
         builder: (_, child) => MediaQuery(
           data: MediaQueryData(
@@ -434,8 +434,8 @@ void main() {
 
   testWidgets('render phone and desktop previews', (tester) async {
     if (!Platform.environment.containsKey('PROGRESS_SYNC_PREVIEW')) return;
-    final loader = FontLoader('MiSans')
-      ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.otf'));
+    final loader = FontLoader('Noto Sans SC')
+      ..addFont(rootBundle.load('assets/fonts/NotoSansSC-Variable.ttf'));
     await loader.load();
     final icons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
@@ -477,7 +477,7 @@ void main() {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark(useMaterial3: true).copyWith(
-            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'MiSans'),
+            textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Noto Sans SC'),
             colorScheme: const ColorScheme.dark(primary: Color(0xFF4B8EF0)),
           ),
           builder: (_, child) => MediaQuery(

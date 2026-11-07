@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../services/transcription_hotword_store.dart';
+import 'subtitle_settings_layout.dart';
 import 'package:video_player_app/widgets/desktop_button_click_region.dart';
 
 Future<void> showTranscriptionHotwords(
@@ -14,11 +15,13 @@ Future<void> showTranscriptionHotwords(
 }) => showDialog<void>(
   context: context,
   barrierDismissible: false,
-  builder: (_) => _HotwordEditor(
-    store: store,
-    mediaKey: mediaKey,
-    mediaTitle: mediaTitle,
-    enhancementsEnabled: enhancementsEnabled,
+  builder: (_) => SubtitleSettingsTheme(
+    child: _HotwordEditor(
+      store: store,
+      mediaKey: mediaKey,
+      mediaTitle: mediaTitle,
+      enhancementsEnabled: enhancementsEnabled,
+    ),
   ),
 );
 
