@@ -117,7 +117,7 @@ APK 位于 `build/app/outputs/flutter-apk/app-release.apk`；Windows 须交付�
 
 ## 交流
 
-软件问题仍可以在 [Issues](https://github.com/t66666t/Fluent-Player/issues) 提出。下面是作者 Teezy11 的交流方式。
+软件问题仍可以在 [Issues](https://github.com/t66666t/Fluent-Player/issues) 提出。下面是我的交流方式与社交媒体账号。
 
 - QQ 交流群：`758634367`
 - [哔哩哔哩](https://b23.tv/tWj0sCw)
