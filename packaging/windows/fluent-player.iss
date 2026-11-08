@@ -34,8 +34,12 @@ WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
 
+; Wizard text comes from the Simplified Chinese translation kept beside this script.
+[Languages]
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
+
 [Tasks]
-Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 
 [Files]
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -49,7 +53,7 @@ Root: HKCU; Subkey: "Software\Classes\AppUserModelId\cn.teezy.fluentplayer.stand
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\cn.teezy.fluentplayer.standard"; ValueType: string; ValueName: "IconUri"; ValueData: "{app}\data\flutter_assets\android\app\src\main\res\mipmap-xxxhdpi\launcher_icon.png"
 
 [Run]
-Filename: "{app}\fluent-player.exe"; Description: "Open Fluent Player"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\fluent-player.exe"; Description: "{cm:LaunchProgram,Fluent Player}"; Flags: nowait postinstall skipifsilent unchecked
 
 #define EditionRunner "fluent-player.exe"
 #define OtherEditionRunner "fluent-player-pro.exe"

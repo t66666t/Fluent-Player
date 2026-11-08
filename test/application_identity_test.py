@@ -68,7 +68,7 @@ class ApplicationIdentityTest(unittest.TestCase):
         self.assertIn('if FileExists(OtherRunner) or DirExists(OtherRunner) then', guard)
         self.assertIn('if not ReadInstalledEdition(OwnRunner, CompanyName, ProductName) then', guard)
         self.assertIn("if (CompanyName <> '{#EditionCompany}') or (ProductName <> '{#EditionProduct}') then", guard)
-        self.assertIn('Please choose a different folder.', guard)
+        self.assertIn('请选择其他文件夹。', guard)
         self.assertNotIn('DeleteFile', guard)
         self.assertNotIn('DelTree', guard)
         self.assertNotIn('RenameFile', guard)

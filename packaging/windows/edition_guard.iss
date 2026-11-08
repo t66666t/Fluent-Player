@@ -1,4 +1,4 @@
-; Runtime guard, including /SILENT and /VERYSILENT installations.
+﻿; Runtime guard, including /SILENT and /VERYSILENT installations.
 ; Never deletes, renames, or automatically changes the selected directory.
 [Code]
 function ReadInstalledEdition(const Filename: String; var CompanyName, ProductName: String): Boolean;
@@ -30,24 +30,24 @@ begin
   OtherRunner := ExpandConstant('{app}\{#OtherEditionRunner}');
   if FileExists(OtherRunner) or DirExists(OtherRunner) then
   begin
-    Result := 'This folder contains another Fluent Player edition. Please choose a different folder. Existing files have not been changed.';
+    Result := '此文件夹包含另一个 Fluent Player 版本。请选择其他文件夹。现有文件未被更改。';
     Exit;
   end;
   if DirExists(OwnRunner) then
   begin
-    Result := 'The application filename is already used by a directory. Please choose a different folder. Existing files have not been changed.';
+    Result := '该程序文件名已被一个文件夹占用。请选择其他文件夹。现有文件未被更改。';
     Exit;
   end;
   if FileExists(OwnRunner) then
   begin
     if not ReadInstalledEdition(OwnRunner, CompanyName, ProductName) then
     begin
-      Result := 'The existing application identity could not be verified. Please choose a different folder. Existing files have not been changed.';
+      Result := '无法核实现有程序的身份。请选择其他文件夹。现有文件未被更改。';
       Exit;
     end;
     if (CompanyName <> '{#EditionCompany}') or (ProductName <> '{#EditionProduct}') then
     begin
-      Result := 'The existing application belongs to another edition or publisher. Please choose a different folder. Existing files have not been changed.';
+      Result := '现有程序属于另一个版本或发布者。请选择其他文件夹。现有文件未被更改。';
       Exit;
     end;
   end;
