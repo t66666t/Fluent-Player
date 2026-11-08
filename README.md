@@ -9,7 +9,8 @@
   <a href="docs/installation.md">安装指南</a> ·
   <a href="docs/user-guide.md">使用手册</a> ·
   <a href="docs/podcasts.md">播客</a> ·
-  <a href="LICENSE">开源许可</a>
+  <a href="LICENSE">开源许可</a> ·
+  <a href="#交流">交流</a>
 </p>
 
 Fluent Player 是基于 Flutter 的媒体播放器与学习工具：导入本地视频和音频，订阅播客，一边播放一边阅读、整理字幕和笔记，也可以按需使用转录、翻译与 AI 辅助学习。
@@ -113,3 +114,19 @@ APK 位于 `build/app/outputs/flutter-apk/app-release.apk`；Windows 须交付�
 这里独立开发，不自动覆盖完整版或反向覆盖其源文件。详见 AGENTS.md。
 分发安装包前仍须准备对应 GPL/LGPL 原生组件的匹配源码、构建配置和许可证，见 docs/release-materials.md。
 没有自动创建 GitHub 仓库、推送、发布安装包或更改完整版许可。
+
+## 交流
+
+软件问题仍可以在 [Issues](https://github.com/t66666t/Fluent-Player/issues) 提出。下面是作者 Teezy11 的交流方式。
+
+- QQ 交流群：`758634367`
+- [哔哩哔哩](https://b23.tv/tWj0sCw)
+- [抖音](https://www.douyin.com/user/MS4wLjABAAAAOfVpmo8nLTjquS_UjRZ66ipgznNJ732NNntAmlG8SHPkHTpKRQNRxrHHo5452OcC)
+- [小红书](https://xhslink.cn/o/6tXB5E8b2iv)
+
+微信视频号没有公开主页链接，请扫描二维码关注 Teezy11。
+
+<p>
+  <img src="docs/community/qq-group.jpg" width="280" alt="Fluent Player QQ 交流群二维码，群号 758634367">
+  <img src="docs/community/wechat-channels.jpg" width="280" alt="Teezy11 微信视频号二维码">
+</p>
